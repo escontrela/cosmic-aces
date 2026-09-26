@@ -1,22 +1,26 @@
 # Cosmic Aces
 
-A vertical-scrolling space shooter inspired by classic arcade combat games. Pilot your spacecraft through a cosmic battlefield, dodge incoming enemies, maneuver across the screen, and fight back.
+Juego arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá desplazarse y virar dentro del viewport, disparar y enfrentarse a enemigos que entran desde la parte superior.
 
-## Status
+La base usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, siguiendo el stack y la estructura sencilla de `escontrela/ghosts-game`. Por ahora solo está implementada la ventana inicial vacía.
 
-Cosmic Aces is in early development.
+## Dirección futura
 
-## Planned Features
+Se contempla añadir funciones en línea mediante WebSockets, por ejemplo para partidas multijugador, salas o rankings. Si se implementan, el servidor podrá desarrollarse como un servicio independiente con Spring Boot; el cliente LibGDX seguirá gestionando el juego y la representación gráfica. Spring Boot todavía no forma parte de este proyecto.
 
-- Continuous vertical scrolling through a space environment
-- Player movement, turning, and shooting
-- Enemies entering from the top of the screen
+LibGDX permite distribuir aplicaciones de escritorio para macOS y Windows, además de otras plataformas. El backend de escritorio actual es LWJGL3.
 
-## Getting Started
+## Requisitos
 
-Setup and run instructions will be added once the project technology and initial game build are in place.
+- JDK 22
+- Maven 3.x
 
-## License
+## Ejecutar
 
-No license has been selected yet.
-# cosmic-aces
+```bash
+mvn compile exec:exec
+```
+
+En macOS, el lanzador Maven ya aplica `-XstartOnFirstThread`.
+
+Consulta [AGENTS.md](AGENTS.md) para la visión y las convenciones de desarrollo.
