@@ -10,7 +10,7 @@ You are the implementation agent. The PO defines product outcomes, Codex decompo
 ## Required context
 
 1. Read repository `AGENTS.md` and [the shared Linear workflow](../../../docs/agent-workflow/linear-workflow.md).
-2. Use the Linear MCP connection named `cosmic-aces-linear`; verify workspace `cosmic-aces` (`https://linear.app/cosmic-aces`) and team `Cosmic-aces`. Never use the generic `Linear` connection or `LastMoveChess`. Resolve real team/status IDs from Linear. No project is currently configured, so preserve the root issue's project field (normally unset) unless the PO establishes one.
+2. In OpenCode, use the MCP server named `linear` from `.opencode/opencode.json`; verify its OAuth connection resolves to workspace `cosmic-aces` (`https://linear.app/cosmic-aces`) and team `Cosmic-aces`. Never use the `LastMoveChess` workspace. Resolve real team/status IDs from Linear. No project is currently configured, so preserve the root issue's project field (normally unset) unless the PO establishes one.
 3. Read the root issue, the selected child, its sibling issues, comments, acceptance criteria, dependency links and relevant code before editing.
 4. Use only the configured Cosmic Aces workspace/repository environment. Never place Linear/GitHub tokens in repository files or issue comments.
 

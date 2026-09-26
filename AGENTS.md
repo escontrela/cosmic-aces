@@ -14,6 +14,8 @@ Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni c
 
 Cosmic Aces es un arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá moverse dentro del viewport, avanzar y retroceder, virar y disparar; los enemigos llegarán desde la parte superior. La base técnica es Java 22, LibGDX 1.12.1, LWJGL3 y Maven. La resolución virtual actual es 800 × 600.
 
+El código actual es un shell mínimo: solo existen `DesktopLauncher` (arranque LWJGL3) y `application.CosmicAcesGame` (`ApplicationAdapter` con `FitViewport`/`OrthographicCamera` que solo limpia la pantalla). No asumas una arquitectura más amplia; el juego real se construirá por subtareas.
+
 La dirección futura contempla WebSockets para funciones en línea. Spring Boot, si se adopta, será un servicio independiente. No añadir Spring Boot, red, entidades de juego, assets, dependencias ni funcionalidades fuera del alcance aprobado por el ticket.
 
 Conserva un estilo arcade espacial claro y legible. La referencia de género informa el tono, no autoriza copiar recursos protegidos.
@@ -61,6 +63,7 @@ No marques como completa una issue porque el código «parece terminado». La ev
 - Revisa el `pom.xml`, código relacionado y convenciones existentes antes de diseñar cambios.
 - Usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, salvo que el PO apruebe un cambio explícito.
 - Para cambios Java, ejecuta como mínimo `mvn compile`; añade pruebas existentes o verificaciones específicas que correspondan a los criterios de aceptación.
+- No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación es `mvn compile` más comprobaciones manuales/visuales del cambio. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
 - Para cambios gráficos o de interacción, valida el comportamiento visible cuando el entorno permita abrir la ventana; explica cuando una validación visual no pueda ejecutarse.
 - No declares tests exitosos si no se ejecutaron. Si una validación no puede ejecutarse, indica el comando y el motivo.
 - Todo recurso LibGDX nativo que se cree debe liberarse; respeta el ciclo de vida `create/render/resize/dispose`.
