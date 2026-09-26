@@ -8,7 +8,7 @@ Lee la skill correspondiente al rol antes de operar sobre tickets:
 - OpenCode, responsable de implementación: [cosmic-aces-developer](.agents/skills/cosmic-aces-developer/SKILL.md).
 - Contrato compartido de estados, subtareas, ramas y revisiones: [flujo Linear](docs/agent-workflow/linear-workflow.md).
 
-Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode no marca tickets como verificados ni cierra el ticket padre.
+Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode cierra cada subtarea hija como `Done` tras superar las verificaciones técnicas definidas abajo. Codex revisa la PR final y cierra la issue raíz; la comprobación visual final de pantallas corresponde al PO humano.
 
 ## Hard prohibition: purchases, accounts, plans, and usage limits
 
@@ -31,7 +31,7 @@ Conserva un estilo arcade espacial claro y legible. La referencia de género inf
 - Lee la issue de Linear y su contexto antes de modificar código o estados.
 - Usa el proyecto y equipo asociados a la issue; no adivines IDs, equipos, estados, labels ni ciclos.
 - Inspecciona los estados disponibles del equipo al iniciar una operación. Mapea los estados por su significado, porque los nombres pueden variar entre equipos.
-- El usuario ha autorizado al Developer a crear ramas, hacer commits, subir la rama y crear una PR cuando el conjunto de subtareas esté verificado. Esa autorización **no** incluye fusionar la PR, desplegar ni cambiar la configuración del equipo de Linear.
+- El usuario ha autorizado al Developer a crear la rama raíz, hacer commits, subir cada commit a GitHub durante la implementación y abrir una PR cuando todas las subtareas estén `Done`. Esa autorización **no** incluye fusionar la PR, desplegar ni cambiar la configuración del equipo de Linear.
 - El Tech Lead está autorizado a comentar, actualizar y transicionar issues de Linear, y a revisar PRs. No puede escribir código, crear commits, hacer push ni fusionar.
 - No almacenes tokens ni credenciales en archivos del repositorio, prompts, comentarios o logs.
 
@@ -43,9 +43,9 @@ Sigue el contrato detallado en `docs/agent-workflow/linear-workflow.md`. Sus inv
 2. Codex analiza su alcance y criterios. Si falta información, comenta preguntas concretas y espera; no inventa decisiones de producto.
 3. Tras el análisis, Codex crea subtareas hijas en Linear con criterios de aceptación verificables y dependencias explícitas. Comprueba las subtareas existentes antes de crear otras para evitar duplicados.
 4. OpenCode toma únicamente subtareas hijas preparadas y desbloqueadas. Trabaja en orden, una subtarea cada vez, sobre una rama común asociada a la issue raíz.
-5. OpenCode implementa, ejecuta la verificación pertinente, hace un commit por cada unidad revisable y deja la subtarea en el estado semántico de revisión con evidencia. No la marca como verificada.
-6. Codex revisa la implementación y cierra cada subtarea verificada en Linear. Si falla, devuelve la subtarea a trabajo con hallazgos accionables.
-7. Cuando todas las subtareas están verificadas, OpenCode publica la rama y abre una PR hacia la rama base predeterminada del repositorio. Enlaza la PR a la issue raíz y la deja lista para revisión.
+5. OpenCode implementa, ejecuta las verificaciones técnicas, hace un commit por cada unidad revisable y sube cada commit a GitHub en la rama compartida para revisión humana. Marca la subtarea `Done` con evidencia cuando compila, pasan las pruebas aplicables, la aplicación arranca sin errores y el commit está confirmado en el remoto. No necesita verificar visualmente la pantalla; esa comprobación la hará el PO humano.
+6. Si falla una verificación técnica o el push, OpenCode deja la subtarea en `In Progress` y registra el fallo. Codex no hace una revisión intermedia ni cierra hijas: verifica el conjunto en la PR final.
+7. Cuando todas las subtareas están `Done`, OpenCode abre una PR hacia la rama base predeterminada del repositorio. La rama ya debe estar subida con los commits de las subtareas. Enlaza la PR a la issue raíz y la deja lista para revisión.
 8. Codex verifica la PR frente a los criterios del PO. Solo entonces cierra la issue raíz. Nunca fusiona la PR.
 
 No marques como completa una issue porque el código «parece terminado». La evidencia debe incluir los criterios cubiertos, el commit o PR relevante y los comandos de verificación con sus resultados.
@@ -56,7 +56,7 @@ No marques como completa una issue porque el código «parece terminado». La ev
 - Usa como base la rama predeterminada real del remoto, detectada mediante GitHub/`gh`; no supongas que se llama `main`.
 - Antes de cambiar de rama, inspecciona `git status` y el historial. Nunca descartes, sobrescribas, resetees ni incluyas cambios preexistentes que no pertenezcan al ticket. Si el checkout contiene trabajo ajeno, usa un worktree aislado o detente con un informe claro.
 - Commits pequeños y revisables, idealmente uno por subtarea verificada localmente. Usa mensajes concisos estilo Conventional Commits e incluye el identificador Linear cuando esté disponible: `feat(player): add movement bounds CA-123`.
-- No subas la rama ni abras una PR hasta que todas las subtareas del padre estén en el estado verificado/cerrado.
+- Sube y verifica en GitHub el commit de cada subtarea antes de marcarla `Done`, para que el PO pueda revisar la rama durante el trabajo. No abras la PR hasta que todas las subtareas del padre estén `Done`.
 - La PR debe apuntar al remoto correcto y a su rama base predeterminada. Incluye objetivo, resumen por subtarea, verificaciones ejecutadas, limitaciones y el identificador/enlace de la issue raíz.
 - Publica la URL de la PR en la issue raíz de Linear y deja allí el estado final de la implementación.
 - Ningún agente fusiona la PR. La revisión humana y el merge quedan fuera de este flujo.
@@ -65,10 +65,11 @@ No marques como completa una issue porque el código «parece terminado». La ev
 ## Validación técnica
 
 - Revisa el `pom.xml`, código relacionado y convenciones existentes antes de diseñar cambios.
+- Keep every command's generated files, classpaths, logs, screenshots, and other temporary artifacts inside this repository (prefer `target/`, which Maven recreates and Git ignores). Never write to `/tmp`, `/private/tmp`, a home directory, or another external directory, and never request `external_directory` permission for a build, smoke test, or inspection. For example, use `-Dmdep.outputFile=target/cosmic_cp.txt` and `target/cosmic_smoke.log` if such files are needed. If a tool or sandbox blocks a repository-local operation, stop and report the exact blocker; do not retry by moving artifacts outside the repository.
 - Usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, salvo que el PO apruebe un cambio explícito.
 - Para cambios Java, ejecuta como mínimo `mvn compile`; añade pruebas existentes o verificaciones específicas que correspondan a los criterios de aceptación.
-- No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación es `mvn compile` más comprobaciones manuales/visuales del cambio. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
-- Para cambios gráficos o de interacción, valida el comportamiento visible cuando el entorno permita abrir la ventana; explica cuando una validación visual no pueda ejecutarse.
+- No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación técnica es `mvn compile`, las pruebas existentes que sí correspondan al cambio y confirmar que la aplicación arranca sin excepciones. La QA visual manual corresponde al PO. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
+- Para cambios gráficos o de interacción, OpenCode debe confirmar el arranque de la aplicación y registrar que la revisión visual queda pendiente del PO humano. La falta de inspección visual del agente no bloquea `Done` si compilación, pruebas aplicables y arranque pasan. El PO hará la comprobación visual manual.
 - No declares tests exitosos si no se ejecutaron. Si una validación no puede ejecutarse, indica el comando y el motivo.
 - Todo recurso LibGDX nativo que se cree debe liberarse; respeta el ciclo de vida `create/render/resize/dispose`.
 

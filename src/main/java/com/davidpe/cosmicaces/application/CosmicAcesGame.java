@@ -24,25 +24,43 @@ public class CosmicAcesGame extends ApplicationAdapter {
   public static final float WORLD_WIDTH = 800f;
   public static final float WORLD_HEIGHT = 600f;
 
-  private static final String LOGO =
-      ".CCC.  OOOOO  SSSSS  M...M  IIIII  .CCC.\n"
-          + "C....  O...O  S....  MM.MM  ..I..  C....\n"
-          + "C....  O...O  .SSS.  M.M.M  ..I..  C....\n"
-          + "C....  O...O  ....S  M...M  ..I..  C....\n"
-          + ".CCC.  OOOOO  SSSSS  M...M  IIIII  .CCC.\n"
-          + ".AAA.  .CCC.  EEEEE  SSSSS\n"
-          + "A...A  C....  E....  S....\n"
-          + "AAAAA  C....  EEE..  .SSS.\n"
-          + "A...A  C....  E....  ....S\n"
-          + "A...A  .CCC.  EEEEE  SSSSS";
+  private static final String[] SHIP = {
+    "            ^            ",
+    "           /A\\           ",
+    "     _____/###\\_____     ",
+    "  __/____/#####\\____\\__  ",
+    " <_______|##O##|_______> ",
+    "      /__|#####|__\\      ",
+    "         V     V         "
+  };
+  private static final String[] TITLE = {
+    " XXX   XXX   XXXX  X   X  XXXXX   XXX ",
+    "X     X   X X      XX XX    X    X    ",
+    "X     X   X  XXX   X X X    X    X    ",
+    "X     X   X     X  X   X    X    X    ",
+    " XXX   XXX  XXXX   X   X  XXXXX   XXX ",
+    "",
+    " XXX   XXX  XXXXX  XXXX ",
+    "X   X X     X      X    ",
+    "XXXXX X     XXXX    XXX ",
+    "X   X X     X          X",
+    "X   X  XXX  XXXXX  XXXX "
+  };
   private static final String COIN_PROMPT = "INSERT COIN (pulsa Y)";
 
   private static final int STAR_COUNT = 140;
   private static final float STAR_MIN_SPEED = 50f;
   private static final float STAR_MAX_SPEED = 140f;
   private static final float BLINK_PERIOD = 0.45f;
-  private static final float LOGO_MAX_WIDTH = WORLD_WIDTH * 0.86f;
-  private static final float LOGO_MAX_HEIGHT = WORLD_HEIGHT * 0.45f;
+  private static final float LOGO_CELL_WIDTH = 12f;
+  private static final float LOGO_LINE_HEIGHT = 21f;
+  private static final String[] ASCII_GLYPHS = new String[128];
+
+  static {
+    for (int i = 32; i < ASCII_GLYPHS.length; i++) {
+      ASCII_GLYPHS[i] = Character.toString((char) i);
+    }
+  }
 
   private enum ScreenState {
     WELCOME,
@@ -55,7 +73,6 @@ public class CosmicAcesGame extends ApplicationAdapter {
   private ShapeRenderer shapes;
   private BitmapFont logoFont;
   private BitmapFont promptFont;
-  private GlyphLayout logoLayout;
   private GlyphLayout promptLayout;
 
   private final float[] starX = new float[STAR_COUNT];
@@ -122,17 +139,11 @@ public class CosmicAcesGame extends ApplicationAdapter {
     }
   }
 
-  /** Owns and sizes the two default bitmap fonts; the logo is scaled once to fit the viewport. */
+  /** Owns and sizes the two default bitmap fonts. Logo cells use a fixed grid. */
   private void createFonts() {
     logoFont = new BitmapFont();
     logoFont.setColor(Color.WHITE);
-    GlyphLayout measure = new GlyphLayout();
-    measure.setText(logoFont, LOGO);
-    float scale =
-        Math.min(2f, Math.min(LOGO_MAX_WIDTH / measure.width, LOGO_MAX_HEIGHT / measure.height));
-    scale = Math.max(1f, scale);
-    logoFont.getData().setScale(scale);
-    logoLayout = new GlyphLayout(logoFont, LOGO);
+    logoFont.getData().setScale(1.2f);
 
     promptFont = new BitmapFont();
     promptFont.setColor(Color.WHITE);
@@ -174,23 +185,47 @@ public class CosmicAcesGame extends ApplicationAdapter {
 
   /** Draws the centered ASCII logo and the blinking coin prompt below it. */
   private void drawWelcome(float delta) {
-    float logoWidth = logoLayout.width;
-    float logoHeight = logoLayout.height;
-    float logoCenterY = WORLD_HEIGHT * 0.52f;
-    float logoX = (WORLD_WIDTH - logoWidth) / 2f;
-    float logoY = logoCenterY + logoHeight / 2f;
+    float logoTop = WORLD_HEIGHT * 0.84f;
+    float titleTop = logoTop - (SHIP.length + 1) * LOGO_LINE_HEIGHT;
+    float logoBottom = titleTop - (TITLE.length - 1) * LOGO_LINE_HEIGHT;
+
+    // Keep moving stars from breaking the ship silhouette and lettering.
+    shapes.begin(ShapeRenderer.ShapeType.Filled);
+    shapes.setColor(Color.BLACK);
+    shapes.rect(105f, logoBottom - 22f, WORLD_WIDTH - 210f, logoTop - logoBottom + 48f);
+    shapes.end();
 
     batch.begin();
-    logoFont.draw(batch, logoLayout, logoX, logoY);
+    logoFont.setColor(Color.CYAN);
+    drawAsciiLines(SHIP, logoTop, -1);
+    logoFont.setColor(Color.WHITE);
+    drawAsciiLines(TITLE, titleTop, 6);
 
     blinkTimer += delta;
     boolean promptVisible = ((int) (blinkTimer / BLINK_PERIOD)) % 2 == 0;
     if (promptVisible) {
       float promptX = (WORLD_WIDTH - promptLayout.width) / 2f;
-      float promptY = logoCenterY - logoHeight / 2f - 40f;
+      float promptY = logoBottom - 56f;
       promptFont.draw(batch, promptLayout, promptX, promptY);
     }
     batch.end();
+  }
+
+  private void drawAsciiLines(String[] lines, float top, int accentRow) {
+    for (int row = 0; row < lines.length; row++) {
+      if (row == accentRow) {
+        logoFont.setColor(Color.GOLD);
+      }
+      String line = lines[row];
+      float left = (WORLD_WIDTH - line.length() * LOGO_CELL_WIDTH) / 2f;
+      float y = top - row * LOGO_LINE_HEIGHT;
+      for (int column = 0; column < line.length(); column++) {
+        char glyph = line.charAt(column);
+        if (glyph != ' ') {
+          logoFont.draw(batch, ASCII_GLYPHS[glyph], left + column * LOGO_CELL_WIDTH, y);
+        }
+      }
+    }
   }
 
   /** Empty game placeholder: only the cleared black background, no gameplay elements. */
