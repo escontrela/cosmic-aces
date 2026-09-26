@@ -1,57 +1,89 @@
-# Cosmic Aces — Guía para agentes
+# Cosmic Aces — instrucciones para agentes
 
-Lee estas instrucciones antes de implementar o modificar funcionalidades. El repositorio está en fase inicial: debe conservar una base pequeña y ejecutable mientras se construye el juego por entregas.
+Estas reglas se aplican a Codex y OpenCode cuando trabajan en este repositorio. **Linear es la fuente de verdad del backlog, el análisis técnico, las subtareas, los estados y los enlaces a PR.** No se usa Tasker.
 
-## Visión del juego
+Lee la skill correspondiente al rol antes de operar sobre tickets:
 
-Juego arcade de disparos con desplazamiento vertical continuo, inspirado en la sensación de *1945 Air Force* y ambientado en el espacio. La nave del jugador podrá moverse dentro del viewport, avanzar y retroceder, virar a izquierda y derecha y disparar. Los enemigos aparecerán desde la parte superior. El objetivo es capturar una presentación arcade clara y legible, con movimiento y combate como prioridades.
+- Codex, responsable de análisis técnico y verificación: [cosmic-aces-tech-lead](.agents/skills/cosmic-aces-tech-lead/SKILL.md).
+- OpenCode, responsable de implementación: [cosmic-aces-developer](.agents/skills/cosmic-aces-developer/SKILL.md).
+- Contrato compartido de estados, subtareas, ramas y revisiones: [flujo Linear](docs/agent-workflow/linear-workflow.md).
 
-No implementar todavía características de juego sin una solicitud o tarea concreta. La pantalla actual es intencionalmente vacía.
+Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode no marca tickets como verificados ni cierra el ticket padre.
 
-## Stack
+## Producto
 
-| Área | Tecnología |
+Cosmic Aces es un arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá moverse dentro del viewport, avanzar y retroceder, virar y disparar; los enemigos llegarán desde la parte superior. La base técnica es Java 22, LibGDX 1.12.1, LWJGL3 y Maven. La resolución virtual actual es 800 × 600.
+
+La dirección futura contempla WebSockets para funciones en línea. Spring Boot, si se adopta, será un servicio independiente. No añadir Spring Boot, red, entidades de juego, assets, dependencias ni funcionalidades fuera del alcance aprobado por el ticket.
+
+Conserva un estilo arcade espacial claro y legible. La referencia de género informa el tono, no autoriza copiar recursos protegidos.
+
+## Fuentes y permisos de trabajo
+
+- **Workspace Linear obligatorio:** `cosmic-aces` (`https://linear.app/cosmic-aces`). En Codex MCP selecciona la conexión llamada `cosmic-aces-linear`; no uses la conexión genérica `Linear` ni el workspace `LastMoveChess`.
+- **Equipo Linear:** `Cosmic-aces`. Resuelve sus estados en vivo antes de cualquier transición. A fecha de configuración no hay un proyecto de Linear `cosmic-aces` disponible; asigna issues al equipo y deja el proyecto sin asignar salvo que el PO confirme/cree uno. No crees ni cambies proyectos como parte del flujo normal.
+- Lee la issue de Linear y su contexto antes de modificar código o estados.
+- Usa el proyecto y equipo asociados a la issue; no adivines IDs, equipos, estados, labels ni ciclos.
+- Inspecciona los estados disponibles del equipo al iniciar una operación. Mapea los estados por su significado, porque los nombres pueden variar entre equipos.
+- El usuario ha autorizado al Developer a crear ramas, hacer commits, subir la rama y crear una PR cuando el conjunto de subtareas esté verificado. Esa autorización **no** incluye fusionar la PR, desplegar ni cambiar la configuración del equipo de Linear.
+- El Tech Lead está autorizado a comentar, actualizar y transicionar issues de Linear, y a revisar PRs. No puede escribir código, crear commits, hacer push ni fusionar.
+- No almacenes tokens ni credenciales en archivos del repositorio, prompts, comentarios o logs.
+
+## Linear y ciclo de trabajo
+
+Sigue el contrato detallado en `docs/agent-workflow/linear-workflow.md`. Sus invariantes principales son:
+
+1. Una issue creada por el PO es una issue raíz de Linear, sin `parentId`, inicialmente en el estado de backlog del equipo.
+2. Codex analiza su alcance y criterios. Si falta información, comenta preguntas concretas y espera; no inventa decisiones de producto.
+3. Tras el análisis, Codex crea subtareas hijas en Linear con criterios de aceptación verificables y dependencias explícitas. Comprueba las subtareas existentes antes de crear otras para evitar duplicados.
+4. OpenCode toma únicamente subtareas hijas preparadas y desbloqueadas. Trabaja en orden, una subtarea cada vez, sobre una rama común asociada a la issue raíz.
+5. OpenCode implementa, ejecuta la verificación pertinente, hace un commit por cada unidad revisable y deja la subtarea en el estado semántico de revisión con evidencia. No la marca como verificada.
+6. Codex revisa la implementación y cierra cada subtarea verificada en Linear. Si falla, devuelve la subtarea a trabajo con hallazgos accionables.
+7. Cuando todas las subtareas están verificadas, OpenCode publica la rama y abre una PR hacia la rama base predeterminada del repositorio. Enlaza la PR a la issue raíz y la deja lista para revisión.
+8. Codex verifica la PR frente a los criterios del PO. Solo entonces cierra la issue raíz. Nunca fusiona la PR.
+
+No marques como completa una issue porque el código «parece terminado». La evidencia debe incluir los criterios cubiertos, el commit o PR relevante y los comandos de verificación con sus resultados.
+
+## Git y pull requests
+
+- Usa una rama por issue raíz, no una rama por subtarea. Convención: `codex/<IDENTIFICADOR-LINEAR>-<slug-corto>`; usa el identificador real de Linear y no inventes uno. Se deben usar Conventional Commits.
+- Usa como base la rama predeterminada real del remoto, detectada mediante GitHub/`gh`; no supongas que se llama `main`.
+- Antes de cambiar de rama, inspecciona `git status` y el historial. Nunca descartes, sobrescribas, resetees ni incluyas cambios preexistentes que no pertenezcan al ticket. Si el checkout contiene trabajo ajeno, usa un worktree aislado o detente con un informe claro.
+- Commits pequeños y revisables, idealmente uno por subtarea verificada localmente. Usa mensajes concisos estilo Conventional Commits e incluye el identificador Linear cuando esté disponible: `feat(player): add movement bounds CA-123`.
+- No subas la rama ni abras una PR hasta que todas las subtareas del padre estén en el estado verificado/cerrado.
+- La PR debe apuntar al remoto correcto y a su rama base predeterminada. Incluye objetivo, resumen por subtarea, verificaciones ejecutadas, limitaciones y el identificador/enlace de la issue raíz.
+- Publica la URL de la PR en la issue raíz de Linear y deja allí el estado final de la implementación.
+- Ningún agente fusiona la PR. La revisión humana y el merge quedan fuera de este flujo.
+- Si no hay remoto, permisos, `gh` autenticado o capacidad para crear la PR, no afirmes que está publicada; deja los commits locales y reporta exactamente el bloqueo.
+
+## Validación técnica
+
+- Revisa el `pom.xml`, código relacionado y convenciones existentes antes de diseñar cambios.
+- Usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, salvo que el PO apruebe un cambio explícito.
+- Para cambios Java, ejecuta como mínimo `mvn compile`; añade pruebas existentes o verificaciones específicas que correspondan a los criterios de aceptación.
+- Para cambios gráficos o de interacción, valida el comportamiento visible cuando el entorno permita abrir la ventana; explica cuando una validación visual no pueda ejecutarse.
+- No declares tests exitosos si no se ejecutaron. Si una validación no puede ejecutarse, indica el comando y el motivo.
+- Todo recurso LibGDX nativo que se cree debe liberarse; respeta el ciclo de vida `create/render/resize/dispose`.
+
+## Automatizaciones
+
+- Codex: el prompt sugerido para una automatización horaria está en [codex-tech-lead.md](docs/agent-workflow/codex-tech-lead.md). Cada ejecución debe ser idempotente y limitarse a trabajo accionable.
+- OpenCode: el prompt sugerido para una invocación no interactiva está en [opencode-developer.md](docs/agent-workflow/opencode-developer.md). La programación periódica y el bloqueo de ejecuciones simultáneas se configuran en el entorno local; no se simulan con bucles infinitos del agente.
+- Si no hay tickets accionables, termina sin modificar Linear o Git. Si Linear, GitHub o el repositorio no están disponibles, no intentes eludir la restricción: informa el bloqueo y conserva el estado actual.
+
+## Stack y comandos
+
+| Área | Valor |
 |---|---|
-| Lenguaje | Java 22 (igual que el proyecto `lastmove`) |
-| Motor 2D | LibGDX 1.12.1 |
-| Escritorio | LWJGL3 (`gdx-backend-lwjgl3`) |
+| Java | 22 |
+| Framework de juego | LibGDX 1.12.1 |
+| Backend de escritorio | LWJGL3 |
 | Build | Maven 3.x |
-| Ventana/viewport virtual | 800 × 600; `FitViewport` y `OrthographicCamera` |
-| macOS | `-XstartOnFirstThread`, configurado en `exec-maven-plugin` |
-
-Las tres dependencias LibGDX del `pom.xml` siguen a `ghosts-game`: `gdx`, `gdx-backend-lwjgl3` y `gdx-platform` con classifier `natives-desktop`. Los plugins Maven también mantienen las mismas versiones y propósito que la referencia.
-
-## Estructura inicial
-
-```text
-com.davidpe.cosmicaces
-├── DesktopLauncher                 # Configura e inicia la ventana LWJGL3
-└── application/
-    └── CosmicAcesGame              # Ciclo LibGDX y shell inicial
-```
-
-La estructura sigue el patrón simple de `com.davidpe.ghosts` del repositorio de referencia. Añade subpaquetes por responsabilidad a medida que exista código que los necesite; evita capas vacías o abstracciones prematuras.
-
-## Responsabilidades y convenciones
-
-- `DesktopLauncher` se limita a configurar título, tamaño, FPS y backend de escritorio.
-- `CosmicAcesGame` gestiona el ciclo LibGDX y los recursos compartidos de escena. El estado del juego y entidades deben vivir en sus propias clases cuando se incorporen.
-- Mantén la resolución virtual en 800 × 600 y actualiza el `FitViewport` al cambiar el tamaño de ventana.
-- Libera con `dispose()` todo recurso nativo que el juego cree (`Texture`, `SpriteBatch`, audio, etc.).
-- No guardes un `SpriteBatch` compartido dentro de entidades; pásalo al método de dibujo.
-- Usa nombres y comentarios claros en inglés para el código y conserva este documento en español.
-- Prefiere pixel art legible y una composición arcade, con contraste suficiente entre nave, proyectiles, enemigos y fondo espacial. Las referencias de género orientan el tono; no copies assets protegidos.
-- Mantén las dependencias en Maven y evita añadir librerías sin una necesidad concreta.
-
-## Build y ejecución
+| Resolución virtual | 800 × 600, `FitViewport` y `OrthographicCamera` |
 
 ```bash
 mvn compile
 mvn compile exec:exec
 ```
 
-Para crear el JAR ejecutable con dependencias:
-
-```bash
-mvn package
-```
+En macOS, el lanzador usa `-XstartOnFirstThread` mediante `exec-maven-plugin`.
