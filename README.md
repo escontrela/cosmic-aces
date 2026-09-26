@@ -32,3 +32,5 @@ Linear es la fuente de verdad de los tickets. Codex actúa como Tech Lead: anali
 El workspace Linear es [`cosmic-aces`](https://linear.app/cosmic-aces), con el equipo `Cosmic-aces`. En Codex selecciona la conexión `cosmic-aces-linear`; no uses la conexión genérica `Linear` ni `LastMoveChess`. Actualmente no hay un proyecto Linear configurado, así que las issues se crean en el equipo sin proyecto hasta que el PO confirme uno.
 
 Las instrucciones compartidas están en [AGENTS.md](AGENTS.md); las skills de ambos roles están en [`.agents/skills/`](.agents/skills/), y los perfiles y la conexión MCP de OpenCode están en [`.opencode/`](.opencode/). Los prompts para programar las ejecuciones están en [`docs/agent-workflow/`](docs/agent-workflow/). La autenticación de OpenCode y la programación local todavía deben configurarse en el entorno de desarrollo.
+
+All agents must follow the hard prohibition in `AGENTS.md`: they may not make purchases, increase token or usage limits, change plans, or create accounts under any circumstances.
