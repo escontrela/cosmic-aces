@@ -31,11 +31,20 @@ Check the issue contains a clear player problem, intended outcome and acceptance
 
 For accepted scope:
 
-1. Write a short technical analysis in a Linear comment: interpretation, relevant architecture, approach, acceptance/verification notes, and genuine risks or dependencies.
-2. Create only the child issues needed to deliver the outcome. Each child has a bounded result, implementation notes where useful, observable acceptance criteria and verification guidance. One child is valid for a small change; do not split work artificially.
-3. Set `parentId` to the PO issue and preserve its project/team. Connect sequential children with Linear `blocks`/`blockedBy` dependencies.
-4. Re-read the root and children to confirm the hierarchy and links. Avoid duplicates if a previous run partially completed.
-5. Move the root to the team's semantic ready/planned status. Do not close it.
+1. Inspect the implementation entry points and related code before proposing tasks. Cite concrete paths, classes, methods, lifecycle behavior, and existing abstractions that the plan depends on. Distinguish facts verified in the repository from design recommendations; do not invent filenames or claim uninspected behavior.
+2. Write an actionable implementation proposal in a Linear analysis comment. Explain the product interpretation, current architecture, recommended approach, important decisions and alternatives considered, shared boundaries, acceptance-to-implementation mapping, validation strategy, risks, and the ordered child-issue plan. Keep the comment readable; put task-specific steps in each child description.
+3. Create the minimum set of child issues needed to deliver the outcome. Each child description must be useful to an implementing Developer without requiring Codex to be present. Include:
+   - **Outcome and scope:** the concrete change and what it intentionally excludes.
+   - **Repository findings:** relevant existing files/classes/methods and their current responsibility, based on inspection.
+   - **Proposed implementation:** ordered steps, suggested files/components, relevant interfaces or ownership boundaries, state/input/render/lifecycle/resource considerations when applicable. Mark implementation details as proposals where alternatives remain.
+   - **Acceptance mapping:** observable result for this child and which parent acceptance criteria it satisfies; do not weaken or silently reinterpret PO criteria.
+   - **Dependencies/order:** prerequisite child issues or external decisions, expressed with Linear relations when real.
+   - **Verification:** exact build/test commands and any manual/visual checks, plus the evidence expected in the review comment.
+   - **Risks/open points:** only concrete risks. Separate technical choices the Developer may resolve from product decisions that must go back to the PO.
+4. Set `parentId` to the PO issue and preserve its project/team. Connect sequential children with Linear `blocks`/`blockedBy` dependencies. Put the specific proposed plan in each child, not only in the root comment.
+5. The plan is a reviewed technical proposal, not permission to violate the codebase. OpenCode must inspect the real checkout and may adjust an incoherent or stale technical approach while preserving the PO's scope and acceptance criteria. Ask for Tech Lead/PO input if a change would alter product behavior or acceptance criteria.
+6. Re-read the root and children to confirm the hierarchy, detailed plans, acceptance mapping and links. Avoid duplicates if a previous run partially completed.
+7. Move the root to the team's semantic ready/planned status. Do not close it.
 
 ### Verify a completed child
 

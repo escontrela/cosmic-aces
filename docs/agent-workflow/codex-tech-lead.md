@@ -74,13 +74,23 @@ Selecciona como máximo una raíz. Lee sus criterios, descripción, labels, enla
 Evalúa si contiene un problema del jugador, resultado esperado, criterios observables, límites y contexto suficiente. Si falta una decisión de producto (por ejemplo, controles, reglas, aspecto esperado, plataformas, comportamiento de juego o alcance), no la inventes: comenta preguntas concretas en la raíz y déjala esperando respuesta del PO. No crees subtareas que dependan de esas respuestas.
 
 Si el alcance está suficientemente definido:
-1. Publica un comentario de análisis técnico conciso que explique interpretación, arquitectura afectada, enfoque propuesto, riesgos reales, estrategia de verificación y secuencia de entregables.
+1. Inspecciona el código real relacionado con el ticket antes de diseñar la descomposición. Identifica archivos, clases, métodos, ciclo de vida, recursos y abstracciones que condicionen la implementación. En el plan separa hallazgos confirmados de recomendaciones; no inventes rutas ni APIs.
 2. Inspecciona todas las subtareas existentes antes de crear nada. Si un intento previo se interrumpió, completa o corrige el plan existente sin duplicarlo.
-3. Crea el conjunto mínimo de subtareas hijas que produzca entregables revisables. Una sola subtarea es correcta para una unidad pequeña; no fuerces una lista numerada larga ni dividas por capas sin necesidad.
-4. Cada subtarea debe tener alcance acotado, criterios de aceptación verificables, notas técnicas necesarias y comandos o método de verificación. Usa `parentId` de la raíz, el mismo equipo y el proyecto de la raíz si lo tuviera.
-5. Conecta con `blocks`/`blockedBy` las subtareas que tengan un orden o dependencia real. No dependas del orden visual, alfabético ni de fechas.
-6. Vuelve a leer raíz e hijas; confirma padre, texto, estados, proyecto/equipo y relaciones. Si el equipo tiene un estado semántico `Todo`/`Ready`, mueve la raíz a ese estado tras completar el plan. Si no existe, no cambies la configuración del equipo y deja constancia del impedimento.
-7. No cierres la raíz durante el análisis.
+3. Publica un comentario de análisis técnico en la raíz con: interpretación del objetivo del PO; arquitectura y hallazgos de repositorio; enfoque propuesto y decisiones técnicas principales; mapeo entre criterios de aceptación y entregables; riesgos y dependencias reales; estrategia de verificación; secuencia y propósito de las subtareas.
+4. Crea el conjunto mínimo de subtareas hijas que produzca entregables revisables. Una sola subtarea es correcta para una unidad pequeña; no fuerces una lista larga ni dividas por capas sin necesidad.
+5. Cada descripción de hija debe dejar una propuesta técnica suficientemente detallada para que OpenCode pueda empezar a trabajar sin esperar a Codex. Incluye:
+   - Resultado concreto, alcance y exclusiones.
+   - Hallazgos del repo: paths/clases/métodos y responsabilidades actuales verificados.
+   - Pasos de implementación en orden y componentes/archivos sugeridos; incluye interfaces, ownership, input/estado/renderizado/recursos/ciclo de vida si son relevantes.
+   - Criterios de aceptación observables de la hija y qué criterios de la raíz cubre.
+   - Dependencias previas y orden; crea relaciones `blocks`/`blockedBy` solo donde exista dependencia real.
+   - Comandos exactos, smoke/validación visual/manual y evidencia que OpenCode debe adjuntar al pedir revisión.
+   - Riesgos reales y decisiones abiertas, indicando cuáles son técnicas y cuáles requieren al PO.
+
+   Haz el plan específico al cambio y al código inspeccionado; marca como propuesta los detalles técnicos que puedan variar. No reduzcas ni cambies los criterios de aceptación del PO.
+6. OpenCode tratará el plan como ruta recomendada, inspeccionará el checkout y podrá corregirlo si es incoherente con la arquitectura real, está obsoleto o añade riesgo evitable. El Developer debe comentar antes de implementar la desviación técnica, con evidencia del repo y explicación de cómo mantiene los criterios del PO. Si la desviación cambia comportamiento, alcance o criterios de aceptación, deberá detenerse y pedir decisión al Tech Lead/PO.
+7. Usa `parentId` de la raíz y preserva su equipo/proyecto. Vuelve a leer raíz e hijas para comprobar el nivel de detalle técnico, aceptación, padres, estados y relaciones. Si el equipo tiene un estado `Todo`/`Ready` semánticamente válido, mueve la raíz a ese estado tras completar el plan. No cambies la configuración de Linear.
+8. No cierres la raíz durante el análisis.
 
 ## B. Verificar una subtarea entregada por OpenCode
 

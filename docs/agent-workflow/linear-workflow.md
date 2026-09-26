@@ -30,6 +30,24 @@ No hace falta que el PO conozca el diseño técnico. Codex traduce el resultado 
 - **Proyecto y equipo:** todas las subtareas heredan el proyecto y equipo de su issue raíz. No muevas issues a otro equipo ni cambies el proyecto sin una razón aprobada.
 - **Labels:** conserva las labels que puso el PO. No crees taxonomías nuevas como parte de una ejecución normal.
 
+## Contrato del plan técnico por subtarea
+
+El Tech Lead no se limita a repartir títulos: después de inspeccionar el código debe dejar una propuesta técnica ejecutable para OpenCode en cada issue hija. La propuesta orienta el trabajo y reduce la exploración repetida, pero no prevalece sobre la realidad del checkout ni autoriza cambiar el resultado de producto pedido por el PO.
+
+Cada descripción de subtarea debe incluir, cuando aplique:
+
+1. **Resultado y límites:** entregable concreto y exclusiones.
+2. **Hallazgos del repositorio:** archivos, clases, métodos, ciclo de vida o abstracciones existentes relevantes, verificados en el código. No inventar rutas ni afirmar inspecciones que no ocurrieron.
+3. **Propuesta de implementación:** pasos ordenados, componentes/archivos sugeridos, límites entre responsabilidades y consideraciones de entrada, estado, renderizado, recursos y ciclo de vida que afecten al cambio. Diferenciar hechos actuales de decisiones recomendadas.
+4. **Trazabilidad de aceptación:** qué criterios de la raíz cubre la subtarea y cómo se observará su cumplimiento. No reinterpretar ni reducir criterios del PO.
+5. **Dependencias y orden:** prerequisitos técnicos/producto y relaciones Linear `blocks`/`blockedBy` cuando exista una dependencia real.
+6. **Verificación:** comandos exactos y comprobaciones manuales/visuales necesarias; indicar qué evidencia se espera en el comentario de revisión.
+7. **Riesgos y decisiones pendientes:** riesgos concretos y distinguir elecciones técnicas de decisiones de producto.
+
+El comentario de análisis en la raíz debe resumir la interpretación, arquitectura, enfoque, criterios cubiertos, riesgos y secuencia de subtareas; cada hija contiene el plan específico de su entregable. Evita copiar un diseño genérico o prescribir detalles sin haber inspeccionado el código.
+
+OpenCode debe comprobar el plan contra el checkout real. Puede ajustar la solución técnica si el plan está obsoleto, no encaja con la arquitectura existente o introduce riesgo evitable. Antes de implementar, debe explicar en un comentario de la hija qué cambia, la evidencia del repositorio y cómo conserva los criterios de aceptación. Si el ajuste cambia comportamiento visible, alcance o criterios del PO, debe detenerse y pedir una decisión al Tech Lead/PO. Codex revisará también la justificación cuando verifique la subtarea.
+
 Antes de crear subtareas, enumera las hijas existentes. Si ya existe la descomposición, actualízala con cuidado en vez de duplicarla. No modifiques relaciones existentes de forma destructiva salvo que el plan aprobado lo requiera; deja la razón como comentario.
 
 ## Máquina de estados recomendada
