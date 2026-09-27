@@ -217,13 +217,17 @@ public final class PlayableScreen extends ScreenAdapter {
     return regions;
   }
 
-  /** Builds one region per raider pose from the roll sheet and its texture. */
+  /**
+   * Builds one region per raider pose from the roll sheet and its texture, oriented for the
+   * raider's descent so the nose points in the direction of flight.
+   */
   private static TextureRegion[] createRaiderRegions(Texture texture) {
     TextureRegion[] regions = new TextureRegion[VesperRaiderSheet.Pose.values().length];
     for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
       VesperRaiderSheet.Slice slice = VesperRaiderSheet.slice(pose);
       regions[pose.ordinal()] =
-          new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height());
+          VesperRaiderSheet.orientedForDescent(
+              new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height()));
     }
     return regions;
   }

@@ -1,11 +1,15 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -78,5 +82,49 @@ class VesperRaiderSheetTest {
     VesperRaiderSheet.Slice last = VesperRaiderSheet.slice(VesperRaiderSheet.Pose.RIGHT);
     assertEquals(VesperRaiderSheet.WIDTH, last.x() + last.width(),
         "the rightmost cell must end exactly at the sheet width");
+  }
+
+  @Test
+  void orientedForDescentMirrorsVerticallyOnceAndKeepsBankAxis() throws Exception {
+    TextureRegion region = regionWith(0.25f, 0.75f, 0.5f, 1.0f);
+    assertFalse(region.isFlipY(), "the fresh region must not be flipped yet");
+
+    TextureRegion oriented = VesperRaiderSheet.orientedForDescent(region);
+
+    assertSame(region, oriented, "orientation must reuse the given region");
+    assertEquals(1.0f, region.getV(), 0f, "vertical mirror must swap v and v2");
+    assertEquals(0.75f, region.getV2(), 0f, "vertical mirror must swap v and v2");
+    assertEquals(0.25f, region.getU(), 0f, "horizontal axis must stay unchanged");
+    assertEquals(0.5f, region.getU2(), 0f, "horizontal axis must stay unchanged");
+    assertTrue(region.isFlipY(), "region must be reported as vertically flipped");
+    assertFalse(region.isFlipX(), "region must not be horizontally flipped");
+  }
+
+  @Test
+  void orientedForDescentNeverFlipsTwice() throws Exception {
+    TextureRegion region = regionWith(0.1f, 0.2f, 0.9f, 0.8f);
+
+    VesperRaiderSheet.orientedForDescent(region);
+    VesperRaiderSheet.orientedForDescent(region);
+
+    assertEquals(0.8f, region.getV(), 0f, "v must keep the flipped value after a second call");
+    assertEquals(0.2f, region.getV2(), 0f, "v2 must keep the flipped value after a second call");
+    assertTrue(region.isFlipY(), "region must stay vertically flipped");
+  }
+
+  /** Builds a texture-less region with the given UVs, so the flip logic is testable without GL. */
+  private static TextureRegion regionWith(float u, float v, float u2, float v2) throws Exception {
+    TextureRegion region = new TextureRegion();
+    setUv(region, "u", u);
+    setUv(region, "v", v);
+    setUv(region, "u2", u2);
+    setUv(region, "v2", v2);
+    return region;
+  }
+
+  private static void setUv(TextureRegion region, String field, float value) throws Exception {
+    Field f = TextureRegion.class.getDeclaredField(field);
+    f.setAccessible(true);
+    f.setFloat(region, value);
   }
 }

@@ -1,5 +1,6 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import java.util.List;
 
 /**
@@ -60,6 +61,19 @@ public final class VesperRaiderSheet {
   /** Returns the pose slices in {@link Pose} order. */
   public static List<Slice> slices() {
     return SLICES;
+  }
+
+  /**
+   * Orients a pose region for the raider's descent. The source sheet faces up (nose at the top,
+   * engines at the bottom) while the encounter model descends downward, so the region is mirrored
+   * across the horizontal axis; the horizontal axis is left unchanged so the bank poses keep their
+   * left/right sense. The flip is applied at most once, so calling this again is a no-op.
+   */
+  public static TextureRegion orientedForDescent(TextureRegion region) {
+    if (!region.isFlipY()) {
+      region.flip(false, true);
+    }
+    return region;
   }
 
   private VesperRaiderSheet() {}
