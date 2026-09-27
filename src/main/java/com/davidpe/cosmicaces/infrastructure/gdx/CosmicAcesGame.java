@@ -4,7 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Screen;
 import com.davidpe.cosmicaces.application.GameFlow;
 import com.davidpe.cosmicaces.domain.game.GameSession;
-import com.davidpe.cosmicaces.infrastructure.gdx.screen.EmptyGameScreen;
+import com.davidpe.cosmicaces.infrastructure.gdx.screen.PlayableScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
 
 /** LibGDX composition root that coordinates screens and delegates game rules to the application. */
@@ -20,7 +20,7 @@ public final class CosmicAcesGame extends Game {
 
   private void startGame() {
     if (gameFlow.startGame()) {
-      showScreen(new EmptyGameScreen());
+      showScreen(new PlayableScreen(gameFlow));
     }
   }
 
