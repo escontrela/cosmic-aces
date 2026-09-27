@@ -52,6 +52,13 @@ class VesperRaiderSheetTest {
   }
 
   @Test
+  void mapsTurnDirectionToTheMatchingDescentOrientedBankPose() {
+    assertEquals(VesperRaiderSheet.Pose.RIGHT, VesperRaiderSheet.poseForBank(-1));
+    assertEquals(VesperRaiderSheet.Pose.NEUTRAL, VesperRaiderSheet.poseForBank(0));
+    assertEquals(VesperRaiderSheet.Pose.LEFT, VesperRaiderSheet.poseForBank(1));
+  }
+
+  @Test
   void bundledSheetHasTheExpectedTransparentThreeCellLayout() throws IOException {
     var resource = getClass().getResource("/" + VesperRaiderSheet.internalPath());
     assertNotNull(resource, "sheet must be bundled with the game: " + VesperRaiderSheet.internalPath());

@@ -63,6 +63,11 @@ public final class VesperRaiderSheet {
     return SLICES;
   }
 
+  /** Maps the model's turn direction to the matching bank frame in the descent-oriented sheet. */
+  public static Pose poseForBank(int bank) {
+    return bank < 0 ? Pose.RIGHT : bank > 0 ? Pose.LEFT : Pose.NEUTRAL;
+  }
+
   /**
    * Orients a pose region for the raider's descent. The source sheet faces up (nose at the top,
    * engines at the bottom) while the encounter model descends downward, so the region is mirrored

@@ -198,8 +198,7 @@ public final class PlayableScreen extends ScreenAdapter {
       return;
     }
     int bank = gameFlow.raiderBank();
-    VesperRaiderSheet.Pose pose = bank < 0 ? VesperRaiderSheet.Pose.LEFT
-        : bank > 0 ? VesperRaiderSheet.Pose.RIGHT : VesperRaiderSheet.Pose.NEUTRAL;
+    VesperRaiderSheet.Pose pose = VesperRaiderSheet.poseForBank(bank);
     TextureRegion region = raiderRegions[pose.ordinal()];
     batch.begin();
     batch.draw(region, gameFlow.raiderX(), gameFlow.raiderY(), raiderDrawWidth, raiderDrawHeight);
