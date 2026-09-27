@@ -28,8 +28,7 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
  */
 public final class PlayableScreen extends ScreenAdapter {
 
-  private static final float SHIP_SCALE = 0.16f;
-  private static final float POSE_SWITCH_SECONDS = 0.15f;
+  private static final float SHIP_SCALE = 0.11f;
   private static final int STAR_COUNT = 197;
   private static final float STAR_MIN_SPEED = 77f;
   private static final float STAR_MAX_SPEED = 256f;
@@ -45,7 +44,9 @@ public final class PlayableScreen extends ScreenAdapter {
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
   private final Texture shipTexture;
+  private final Texture accelerateTexture;
   private final TextureRegion[] shipRegions;
+  private final TextureRegion[] accelerateRegions;
   private final BitmapFont font;
   private final GlyphLayout endLayout;
   private final float[] starX = new float[STAR_COUNT];
@@ -57,8 +58,7 @@ public final class PlayableScreen extends ScreenAdapter {
   private final float shipDrawHeight;
 
   private HeroShipSheet.Pose bankPose = HeroShipSheet.Pose.NEUTRAL;
-  private boolean poseFlip;
-  private float poseTimer;
+  private boolean accelerating;
   private boolean runFinished;
 
   public PlayableScreen(GameFlow gameFlow, Runnable onReturnToWelcome) {
@@ -71,23 +71,27 @@ public final class PlayableScreen extends ScreenAdapter {
 
     batch = new SpriteBatch();
     shapes = new ShapeRenderer();
-    shipTexture = new Texture(Gdx.files.internal(HeroShipSheet.INTERNAL_PATH));
-    shipRegions = new TextureRegion[HeroShipSheet.Pose.values().length];
-    for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
-      HeroShipSheet.Slice slice = HeroShipSheet.slice(pose);
-      shipRegions[pose.ordinal()] =
-          new TextureRegion(shipTexture, slice.x(), slice.y(), slice.width(), slice.height());
-    }
+    shipTexture = new Texture(Gdx.files.internal(HeroShipSheet.NORMAL.internalPath()));
+    accelerateTexture = new Texture(Gdx.files.internal(HeroShipSheet.ACCELERATE.internalPath()));
+    shipRegions = createRegions(HeroShipSheet.NORMAL, shipTexture);
+    accelerateRegions = createRegions(HeroShipSheet.ACCELERATE, accelerateTexture);
     font = new BitmapFont();
     font.getData().setScale(1.4f);
     endLayout = new GlyphLayout(font, END_MESSAGE);
 
-    // The visible ship must never cross the viewport bounds: the domain moves the ship inside a
-    // play area already reduced by the reference (neutral) sprite size. Every pose is drawn
-    // centered on that reference box so changing pose never makes the ship jump.
-    HeroShipSheet.Slice neutral = HeroShipSheet.slice(HeroShipSheet.Pose.NEUTRAL);
-    shipDrawWidth = neutral.width() * SHIP_SCALE;
-    shipDrawHeight = neutral.height() * SHIP_SCALE;
+    // Both sheets share a box large enough for the widest and tallest sprite. Centering each
+    // region within it keeps bank changes stable and switching normal/accelerate never makes the
+    // ship jump, while the whole ship stays inside the viewport.
+    int maxWidth = 0;
+    int maxHeight = 0;
+    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+      for (HeroShipSheet.Slice slice : sheet.slices()) {
+        maxWidth = Math.max(maxWidth, slice.width());
+        maxHeight = Math.max(maxHeight, slice.height());
+      }
+    }
+    shipDrawWidth = maxWidth * SHIP_SCALE;
+    shipDrawHeight = maxHeight * SHIP_SCALE;
     playArea = new PlayArea(
         VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
 
@@ -136,6 +140,7 @@ public final class PlayableScreen extends ScreenAdapter {
     batch.dispose();
     shapes.dispose();
     shipTexture.dispose();
+    accelerateTexture.dispose();
     font.dispose();
   }
 
@@ -146,28 +151,19 @@ public final class PlayableScreen extends ScreenAdapter {
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
     MovementIntent intent = new MovementIntent(left, right, up, down);
     gameFlow.applyMovementIntent(intent, delta, playArea);
-    updateBankPose(intent, delta);
+    accelerating = up;
+    updateBankPose(intent);
   }
 
-  private void updateBankPose(MovementIntent intent, float delta) {
+  private void updateBankPose(MovementIntent intent) {
     float horizontal = intent.horizontal();
-    if (horizontal == 0f) {
-      bankPose = HeroShipSheet.Pose.NEUTRAL;
-      poseTimer = 0f;
-      return;
-    }
-    poseTimer += delta;
-    if (poseTimer >= POSE_SWITCH_SECONDS) {
-      poseTimer = 0f;
-      poseFlip = !poseFlip;
-    }
-    bankPose = horizontal < 0f
-        ? (poseFlip ? HeroShipSheet.Pose.LEFT_A : HeroShipSheet.Pose.LEFT_B)
-        : (poseFlip ? HeroShipSheet.Pose.RIGHT_A : HeroShipSheet.Pose.RIGHT_B);
+    bankPose = horizontal < 0f ? HeroShipSheet.Pose.LEFT
+        : horizontal > 0f ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.NEUTRAL;
   }
 
   private void drawShip() {
-    TextureRegion region = shipRegions[bankPose.ordinal()];
+    TextureRegion[] regions = accelerating ? accelerateRegions : shipRegions;
+    TextureRegion region = regions[bankPose.ordinal()];
     float drawWidth = region.getRegionWidth() * SHIP_SCALE;
     float drawHeight = region.getRegionHeight() * SHIP_SCALE;
     float drawX = gameFlow.shipX() + (shipDrawWidth - drawWidth) / 2f;
@@ -175,6 +171,17 @@ public final class PlayableScreen extends ScreenAdapter {
     batch.begin();
     batch.draw(region, drawX, drawY, drawWidth, drawHeight);
     batch.end();
+  }
+
+  /** Builds one region per pose from the given sheet and its texture. */
+  private static TextureRegion[] createRegions(HeroShipSheet.Sheet sheet, Texture texture) {
+    TextureRegion[] regions = new TextureRegion[HeroShipSheet.Pose.values().length];
+    for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
+      HeroShipSheet.Slice slice = sheet.slice(pose);
+      regions[pose.ordinal()] =
+          new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height());
+    }
+    return regions;
   }
 
   private void createStars() {
