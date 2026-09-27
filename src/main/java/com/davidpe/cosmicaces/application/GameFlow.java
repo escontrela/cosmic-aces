@@ -24,6 +24,11 @@ public final class GameFlow {
     session.advanceRun(deltaSeconds);
   }
 
+  /** Advances the raider encounters by the given delta while the playable run is active. */
+  public void advanceEncounter(float deltaSeconds, PlayArea playArea) {
+    session.advanceEncounter(deltaSeconds, playArea);
+  }
+
   /** Applies the movement intent to the ship for the given delta, bounded by the play area. */
   public void applyMovementIntent(MovementIntent intent, float deltaSeconds, PlayArea playArea) {
     session.applyMovementIntent(intent, deltaSeconds, playArea);
@@ -48,5 +53,21 @@ public final class GameFlow {
 
   public float shipY() {
     return session.shipY();
+  }
+
+  public boolean isRaiderActive() {
+    return session.isRaiderActive();
+  }
+
+  public float raiderX() {
+    return session.raiderX();
+  }
+
+  public float raiderY() {
+    return session.raiderY();
+  }
+
+  public int raiderBank() {
+    return session.raiderBank();
   }
 }
