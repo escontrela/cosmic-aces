@@ -1,8 +1,8 @@
-package com.davidpe.cosmicaces.application;
+package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
-import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -13,16 +13,10 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
-/**
- * Arcade welcome flow: a star field with a centered ASCII "Cosmic Aces" logo and a blinking
- * "INSERT COIN (pulsa Y)" prompt. Pressing Y/y (physical key) transitions once to an empty
- * game placeholder. No gameplay, assets or new dependencies.
- */
-public class CosmicAcesGame extends ApplicationAdapter {
-
-  public static final float WORLD_WIDTH = 800f;
-  public static final float WORLD_HEIGHT = 600f;
+/** Welcome screen, including its artwork, star field, input and all owned LibGDX resources. */
+public final class WelcomeScreen extends ScreenAdapter {
 
   private static final String[] SHIP = {
     "            ^            ",
@@ -47,13 +41,12 @@ public class CosmicAcesGame extends ApplicationAdapter {
     "X   X  XXX  XXXXX  XXXX "
   };
   private static final String COIN_PROMPT = "INSERT COIN (pulsa Y)";
-
   private static final int STAR_COUNT = 140;
   private static final float STAR_MIN_SPEED = 50f;
   private static final float STAR_MAX_SPEED = 140f;
   private static final float BLINK_PERIOD = 0.45f;
-  private static final float LOGO_CELL_WIDTH = 12f;
-  private static final float LOGO_LINE_HEIGHT = 21f;
+  private static final float CELL_WIDTH = 12f;
+  private static final float LINE_HEIGHT = 21f;
   private static final String[] ASCII_GLYPHS = new String[128];
 
   static {
@@ -62,112 +55,83 @@ public class CosmicAcesGame extends ApplicationAdapter {
     }
   }
 
-  private enum ScreenState {
-    WELCOME,
-    PLACEHOLDER
-  }
-
-  private OrthographicCamera camera;
-  private Viewport viewport;
-  private SpriteBatch batch;
-  private ShapeRenderer shapes;
-  private BitmapFont logoFont;
-  private BitmapFont promptFont;
-  private GlyphLayout promptLayout;
-
+  private final Runnable onStart;
+  private final OrthographicCamera camera;
+  private final Viewport viewport;
+  private final SpriteBatch batch;
+  private final ShapeRenderer shapes;
+  private final BitmapFont logoFont;
+  private final BitmapFont promptFont;
+  private final GlyphLayout promptLayout;
   private final float[] starX = new float[STAR_COUNT];
   private final float[] starY = new float[STAR_COUNT];
   private final float[] starSpeed = new float[STAR_COUNT];
   private final float[] starRadius = new float[STAR_COUNT];
-
-  private ScreenState state = ScreenState.WELCOME;
   private float blinkTimer;
+  private boolean startRequested;
 
-  @Override
-  public void create() {
+  public WelcomeScreen(Runnable onStart) {
+    this.onStart = onStart;
     camera = new OrthographicCamera();
-    viewport = new FitViewport(WORLD_WIDTH, WORLD_HEIGHT, camera);
-    camera.position.set(WORLD_WIDTH / 2f, WORLD_HEIGHT / 2f, 0f);
+    viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
+    camera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
     camera.update();
 
     batch = new SpriteBatch();
     shapes = new ShapeRenderer();
-    createFonts();
+    logoFont = new BitmapFont();
+    logoFont.getData().setScale(1.2f);
+    promptFont = new BitmapFont();
+    promptFont.getData().setScale(1.2f);
+    promptLayout = new GlyphLayout(promptFont, COIN_PROMPT);
     createStars();
   }
 
   @Override
-  public void render() {
-    float delta = Gdx.graphics.getDeltaTime();
-    ScreenUtils.clear(0f, 0f, 0f, 1f);
-
-    if (state == ScreenState.WELCOME && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
-      state = ScreenState.PLACEHOLDER;
+  public void render(float delta) {
+    ScreenUtils.clear(Color.BLACK);
+    if (!startRequested && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+      startRequested = true;
+      onStart.run();
+      return;
     }
 
     camera.update();
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
-
-    if (state == ScreenState.WELCOME) {
-      updateStars(delta);
-      drawStars();
-      drawWelcome(delta);
-    } else {
-      drawPlaceholder();
-    }
+    updateStars(delta);
+    drawStars();
+    drawWelcome(delta);
   }
 
   @Override
   public void resize(int width, int height) {
-    viewport.update(width, height);
+    viewport.update(width, height, true);
   }
 
   @Override
   public void dispose() {
-    if (logoFont != null) {
-      logoFont.dispose();
-    }
-    if (promptFont != null) {
-      promptFont.dispose();
-    }
-    if (batch != null) {
-      batch.dispose();
-    }
-    if (shapes != null) {
-      shapes.dispose();
-    }
+    batch.dispose();
+    shapes.dispose();
+    logoFont.dispose();
+    promptFont.dispose();
   }
 
-  /** Owns and sizes the two default bitmap fonts. Logo cells use a fixed grid. */
-  private void createFonts() {
-    logoFont = new BitmapFont();
-    logoFont.setColor(Color.WHITE);
-    logoFont.getData().setScale(1.2f);
-
-    promptFont = new BitmapFont();
-    promptFont.setColor(Color.WHITE);
-    promptFont.getData().setScale(1.2f);
-    promptLayout = new GlyphLayout(promptFont, COIN_PROMPT);
-  }
-
-  /** Scatters stars across the virtual world; positions, speeds and sizes are technical params. */
   private void createStars() {
     for (int i = 0; i < STAR_COUNT; i++) {
-      starX[i] = MathUtils.random(0f, WORLD_WIDTH);
-      starY[i] = MathUtils.random(0f, WORLD_HEIGHT);
+      starX[i] = MathUtils.random(0f, VirtualScreenSize.WIDTH);
+      starY[i] = MathUtils.random(0f, VirtualScreenSize.HEIGHT);
       starSpeed[i] = MathUtils.random(STAR_MIN_SPEED, STAR_MAX_SPEED);
       starRadius[i] = MathUtils.random(1f, 2.2f);
     }
   }
 
-  /** Moves stars downward using delta time and recycles them when they leave the visible area. */
   private void updateStars(float delta) {
     for (int i = 0; i < STAR_COUNT; i++) {
       starY[i] -= starSpeed[i] * delta;
       if (starY[i] < -3f) {
-        starY[i] = WORLD_HEIGHT + 3f;
-        starX[i] = MathUtils.random(0f, WORLD_WIDTH);
+        starY[i] = VirtualScreenSize.HEIGHT + 3f;
+        starX[i] = MathUtils.random(0f, VirtualScreenSize.WIDTH);
         starSpeed[i] = MathUtils.random(STAR_MIN_SPEED, STAR_MAX_SPEED);
         starRadius[i] = MathUtils.random(1f, 2.2f);
       }
@@ -183,30 +147,28 @@ public class CosmicAcesGame extends ApplicationAdapter {
     shapes.end();
   }
 
-  /** Draws the centered ASCII logo and the blinking coin prompt below it. */
   private void drawWelcome(float delta) {
-    float logoTop = WORLD_HEIGHT * 0.84f;
-    float titleTop = logoTop - (SHIP.length + 1) * LOGO_LINE_HEIGHT;
-    float logoBottom = titleTop - (TITLE.length - 1) * LOGO_LINE_HEIGHT;
+    float shipTop = VirtualScreenSize.HEIGHT * 0.84f;
+    float titleTop = shipTop - (SHIP.length + 1) * LINE_HEIGHT;
+    float titleBottom = titleTop - (TITLE.length - 1) * LINE_HEIGHT;
 
-    // Keep moving stars from breaking the ship silhouette and lettering.
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     shapes.setColor(Color.BLACK);
-    shapes.rect(105f, logoBottom - 22f, WORLD_WIDTH - 210f, logoTop - logoBottom + 48f);
+    shapes.rect(105f, titleBottom - 22f, VirtualScreenSize.WIDTH - 210f,
+        shipTop - titleBottom + 48f);
     shapes.end();
 
     batch.begin();
     logoFont.setColor(Color.CYAN);
-    drawAsciiLines(SHIP, logoTop, -1);
+    drawAsciiLines(SHIP, shipTop, -1);
     logoFont.setColor(Color.WHITE);
     drawAsciiLines(TITLE, titleTop, 6);
 
     blinkTimer += delta;
     boolean promptVisible = ((int) (blinkTimer / BLINK_PERIOD)) % 2 == 0;
     if (promptVisible) {
-      float promptX = (WORLD_WIDTH - promptLayout.width) / 2f;
-      float promptY = logoBottom - 56f;
-      promptFont.draw(batch, promptLayout, promptX, promptY);
+      float promptX = (VirtualScreenSize.WIDTH - promptLayout.width) / 2f;
+      promptFont.draw(batch, promptLayout, promptX, titleBottom - 56f);
     }
     batch.end();
   }
@@ -217,19 +179,14 @@ public class CosmicAcesGame extends ApplicationAdapter {
         logoFont.setColor(Color.GOLD);
       }
       String line = lines[row];
-      float left = (WORLD_WIDTH - line.length() * LOGO_CELL_WIDTH) / 2f;
-      float y = top - row * LOGO_LINE_HEIGHT;
+      float left = (VirtualScreenSize.WIDTH - line.length() * CELL_WIDTH) / 2f;
+      float y = top - row * LINE_HEIGHT;
       for (int column = 0; column < line.length(); column++) {
         char glyph = line.charAt(column);
         if (glyph != ' ') {
-          logoFont.draw(batch, ASCII_GLYPHS[glyph], left + column * LOGO_CELL_WIDTH, y);
+          logoFont.draw(batch, ASCII_GLYPHS[glyph], left + column * CELL_WIDTH, y);
         }
       }
     }
-  }
-
-  /** Empty game placeholder: only the cleared black background, no gameplay elements. */
-  private void drawPlaceholder() {
-    // The screen is already cleared; the placeholder intentionally adds nothing.
   }
 }

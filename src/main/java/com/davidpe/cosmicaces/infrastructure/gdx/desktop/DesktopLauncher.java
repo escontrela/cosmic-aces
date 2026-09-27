@@ -1,17 +1,19 @@
-package com.davidpe.cosmicaces;
+package com.davidpe.cosmicaces.infrastructure.gdx.desktop;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
-import com.davidpe.cosmicaces.application.CosmicAcesGame;
+import com.davidpe.cosmicaces.infrastructure.gdx.CosmicAcesGame;
+import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
 /** Starts the desktop (LWJGL3) version of Cosmic Aces. */
-public class DesktopLauncher {
+public final class DesktopLauncher {
+
+  private DesktopLauncher() {}
 
   public static void main(String[] args) {
     Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
     config.setTitle("Cosmic Aces");
-    config.setWindowedMode(
-        (int) CosmicAcesGame.WORLD_WIDTH, (int) CosmicAcesGame.WORLD_HEIGHT);
+    config.setWindowedMode((int) VirtualScreenSize.WIDTH, (int) VirtualScreenSize.HEIGHT);
     config.setResizable(true);
     config.useVsync(true);
     config.setForegroundFPS(60);

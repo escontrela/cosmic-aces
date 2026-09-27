@@ -64,7 +64,7 @@
                         <argument>-XstartOnFirstThread</argument>
                         <argument>-classpath</argument>
                         <classpath/>
-                        <argument>com.davidpe.cosmicaces.DesktopLauncher</argument>
+                        <argument>com.davidpe.cosmicaces.infrastructure.gdx.desktop.DesktopLauncher</argument>
                     </arguments>
                 </configuration>
             </plugin>
@@ -83,7 +83,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.davidpe.cosmicaces.DesktopLauncher</mainClass>
+                                    <mainClass>com.davidpe.cosmicaces.infrastructure.gdx.desktop.DesktopLauncher</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

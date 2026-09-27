@@ -18,11 +18,40 @@ AI agents must never, under any circumstances, make or authorize purchases; ente
 
 Cosmic Aces es un arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá moverse dentro del viewport, avanzar y retroceder, virar y disparar; los enemigos llegarán desde la parte superior. La base técnica es Java 22, LibGDX 1.12.1, LWJGL3 y Maven. La resolución virtual actual es 800 × 600.
 
-El código actual es un shell mínimo: solo existen `DesktopLauncher` (arranque LWJGL3) y `application.CosmicAcesGame` (`ApplicationAdapter` con `FitViewport`/`OrthographicCamera` que solo limpia la pantalla). No asumas una arquitectura más amplia; el juego real se construirá por subtareas.
+La arquitectura del código se organiza siempre en `domain`, `application` e `infrastructure`, según las reglas obligatorias de la sección **Arquitectura del código**. La implementación debe crecer por subtareas sin saltarse estas fronteras.
 
 La dirección futura contempla WebSockets para funciones en línea. Spring Boot, si se adopta, será un servicio independiente. No añadir Spring Boot, red, entidades de juego, assets, dependencias ni funcionalidades fuera del alcance aprobado por el ticket.
 
 Conserva un estilo arcade espacial claro y legible. La referencia de género informa el tono, no autoriza copiar recursos protegidos.
+
+## Arquitectura del código — obligatoria
+
+Organiza siempre el código Java bajo `com.davidpe.cosmicaces` en estas capas, respetando la dirección de dependencias indicada:
+
+```text
+domain/          reglas y modelo del juego, Java puro
+application/     casos de uso que coordinan el dominio
+infrastructure/  LibGDX, LWJGL3, renderizado, input, archivos y adaptadores externos
+```
+
+- **Domain:** contiene reglas y conceptos propios del juego, por ejemplo sesión, fase, nave, armas, enemigos, puntuación y value objects cuando cada uno entre en alcance. No importa LibGDX, JavaFX, LWJGL, Maven, UI ni clases de infraestructura. No conviertas detalles visuales como estrellas decorativas, fuentes, ASCII art o animaciones en entidades de dominio.
+- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`, pero no de LibGDX ni de clases de `infrastructure`. Los controles de pantalla se traducen en llamadas a casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
+- **Infrastructure:** contiene el launcher LWJGL3, la composición de dependencias LibGDX, `CosmicAcesGame`, pantallas, renderizadores, input y ownership de recursos gráficos. Puede depender de `application` y `domain`; las capas internas nunca dependen de ella.
+- **CosmicAcesGame** es el coordinador/composition root de LibGDX: construye los casos de uso y pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
+- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su propio estado de presentación, input, layout, renderizado y recursos. La pantalla crea y libera los recursos que posee en el ciclo de vida LibGDX (`show`, `render`, `resize`, `hide`, `dispose`). Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- Comparte solo configuración transversal de presentación —por ejemplo la resolución virtual— desde infraestructura. No hagas que una pantalla importe el coordinador para obtener constantes.
+- `DesktopLauncher` vive en `infrastructure.gdx.desktop`; solo configura LWJGL3 y crea `CosmicAcesGame`.
+- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; si una conducta solo dibuja o anima, déjala en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+
+Estructura actual de referencia para el flujo inicial:
+
+```text
+domain/game/                 GameSession, GamePhase
+application/                 GameFlow y futuros casos de uso
+infrastructure/gdx/           CosmicAcesGame, VirtualScreenSize
+infrastructure/gdx/screen/    WelcomeScreen, EmptyGameScreen
+infrastructure/gdx/desktop/   DesktopLauncher (entrada LWJGL3)
+```
 
 ## Fuentes y permisos de trabajo
 
