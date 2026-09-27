@@ -27,7 +27,7 @@ Consulta [AGENTS.md](AGENTS.md) para la visión y las convenciones de desarrollo
 
 ## Flujo de trabajo con agentes
 
-Linear es la fuente de verdad de los tickets. Codex actúa como Tech Lead: analiza tickets del PO, crea subtareas ordenadas y verifica/cierra el trabajo. OpenCode actúa como Developer: implementa cada subtarea en una rama compartida, crea commits y abre una PR cuando todas han sido verificadas. Ningún agente fusiona la PR.
+Linear es la fuente de verdad de los tickets. Codex actúa como Tech Lead: analiza tickets del PO y crea subtareas ordenadas; después revisa la PR final y cierra la raíz. OpenCode implementa cada subtarea en una rama compartida, ejecuta las verificaciones técnicas, sube cada commit a GitHub y la marca `Done` cuando compile, pasen las pruebas aplicables, la app arranque y el push se confirme. Abre una PR cuando todas están completas. El PO humano hace la revisión visual. Ningún agente fusiona la PR.
 
 El workspace Linear es [`cosmic-aces`](https://linear.app/cosmic-aces), con el equipo `Cosmic-aces`. En Codex selecciona la conexión `cosmic-aces-linear`; no uses la conexión genérica `Linear` ni `LastMoveChess`. Actualmente no hay un proyecto Linear configurado, así que las issues se crean en el equipo sin proyecto hasta que el PO confirme uno.
 

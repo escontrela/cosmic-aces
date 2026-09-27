@@ -8,7 +8,7 @@ Lee la skill correspondiente al rol antes de operar sobre tickets:
 - OpenCode, responsable de implementación: [cosmic-aces-developer](.agents/skills/cosmic-aces-developer/SKILL.md).
 - Contrato compartido de estados, subtareas, ramas y revisiones: [flujo Linear](docs/agent-workflow/linear-workflow.md).
 
-Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode no marca tickets como verificados ni cierra el ticket padre.
+Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode cierra cada subtarea hija como `Done` tras superar las verificaciones técnicas definidas abajo. Codex revisa la PR final y cierra la issue raíz; la comprobación visual final de pantallas corresponde al PO humano.
 
 ## Hard prohibition: purchases, accounts, plans, and usage limits
 
@@ -18,11 +18,40 @@ AI agents must never, under any circumstances, make or authorize purchases; ente
 
 Cosmic Aces es un arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá moverse dentro del viewport, avanzar y retroceder, virar y disparar; los enemigos llegarán desde la parte superior. La base técnica es Java 22, LibGDX 1.12.1, LWJGL3 y Maven. La resolución virtual actual es 800 × 600.
 
-El código actual es un shell mínimo: solo existen `DesktopLauncher` (arranque LWJGL3) y `application.CosmicAcesGame` (`ApplicationAdapter` con `FitViewport`/`OrthographicCamera` que solo limpia la pantalla). No asumas una arquitectura más amplia; el juego real se construirá por subtareas.
+La arquitectura del código se organiza siempre en `domain`, `application` e `infrastructure`, según las reglas obligatorias de la sección **Arquitectura del código**. La implementación debe crecer por subtareas sin saltarse estas fronteras.
 
 La dirección futura contempla WebSockets para funciones en línea. Spring Boot, si se adopta, será un servicio independiente. No añadir Spring Boot, red, entidades de juego, assets, dependencias ni funcionalidades fuera del alcance aprobado por el ticket.
 
 Conserva un estilo arcade espacial claro y legible. La referencia de género informa el tono, no autoriza copiar recursos protegidos.
+
+## Arquitectura del código — obligatoria
+
+Organiza siempre el código Java bajo `com.davidpe.cosmicaces` en estas capas, respetando la dirección de dependencias indicada:
+
+```text
+domain/          reglas y modelo del juego, Java puro
+application/     casos de uso que coordinan el dominio
+infrastructure/  LibGDX, LWJGL3, renderizado, input, archivos y adaptadores externos
+```
+
+- **Domain:** contiene reglas y conceptos propios del juego, por ejemplo sesión, fase, nave, armas, enemigos, puntuación y value objects cuando cada uno entre en alcance. No importa LibGDX, JavaFX, LWJGL, Maven, UI ni clases de infraestructura. No conviertas detalles visuales como estrellas decorativas, fuentes, ASCII art o animaciones en entidades de dominio.
+- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`, pero no de LibGDX ni de clases de `infrastructure`. Los controles de pantalla se traducen en llamadas a casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
+- **Infrastructure:** contiene el launcher LWJGL3, la composición de dependencias LibGDX, `CosmicAcesGame`, pantallas, renderizadores, input y ownership de recursos gráficos. Puede depender de `application` y `domain`; las capas internas nunca dependen de ella.
+- **CosmicAcesGame** es el coordinador/composition root de LibGDX: construye los casos de uso y pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
+- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su propio estado de presentación, input, layout, renderizado y recursos. La pantalla crea y libera los recursos que posee en el ciclo de vida LibGDX (`show`, `render`, `resize`, `hide`, `dispose`). Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- Comparte solo configuración transversal de presentación —por ejemplo la resolución virtual— desde infraestructura. No hagas que una pantalla importe el coordinador para obtener constantes.
+- `DesktopLauncher` vive en `infrastructure.gdx.desktop`; solo configura LWJGL3 y crea `CosmicAcesGame`.
+- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; si una conducta solo dibuja o anima, déjala en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+
+Estructura actual de referencia para el flujo inicial:
+
+```text
+domain/game/                 GameSession, GamePhase
+application/                 GameFlow y futuros casos de uso
+infrastructure/gdx/           CosmicAcesGame, VirtualScreenSize
+infrastructure/gdx/screen/    WelcomeScreen, EmptyGameScreen
+infrastructure/gdx/desktop/   DesktopLauncher (entrada LWJGL3)
+```
 
 ## Fuentes y permisos de trabajo
 
@@ -31,7 +60,7 @@ Conserva un estilo arcade espacial claro y legible. La referencia de género inf
 - Lee la issue de Linear y su contexto antes de modificar código o estados.
 - Usa el proyecto y equipo asociados a la issue; no adivines IDs, equipos, estados, labels ni ciclos.
 - Inspecciona los estados disponibles del equipo al iniciar una operación. Mapea los estados por su significado, porque los nombres pueden variar entre equipos.
-- El usuario ha autorizado al Developer a crear ramas, hacer commits, subir la rama y crear una PR cuando el conjunto de subtareas esté verificado. Esa autorización **no** incluye fusionar la PR, desplegar ni cambiar la configuración del equipo de Linear.
+- El usuario ha autorizado al Developer a crear la rama raíz, hacer commits, subir cada commit a GitHub durante la implementación y abrir una PR cuando todas las subtareas estén `Done`. Esa autorización **no** incluye fusionar la PR, desplegar ni cambiar la configuración del equipo de Linear.
 - El Tech Lead está autorizado a comentar, actualizar y transicionar issues de Linear, y a revisar PRs. No puede escribir código, crear commits, hacer push ni fusionar.
 - No almacenes tokens ni credenciales en archivos del repositorio, prompts, comentarios o logs.
 
@@ -43,9 +72,9 @@ Sigue el contrato detallado en `docs/agent-workflow/linear-workflow.md`. Sus inv
 2. Codex analiza su alcance y criterios. Si falta información, comenta preguntas concretas y espera; no inventa decisiones de producto.
 3. Tras el análisis, Codex crea subtareas hijas en Linear con criterios de aceptación verificables y dependencias explícitas. Comprueba las subtareas existentes antes de crear otras para evitar duplicados.
 4. OpenCode toma únicamente subtareas hijas preparadas y desbloqueadas. Trabaja en orden, una subtarea cada vez, sobre una rama común asociada a la issue raíz.
-5. OpenCode implementa, ejecuta la verificación pertinente, hace un commit por cada unidad revisable y deja la subtarea en el estado semántico de revisión con evidencia. No la marca como verificada.
-6. Codex revisa la implementación y cierra cada subtarea verificada en Linear. Si falla, devuelve la subtarea a trabajo con hallazgos accionables.
-7. Cuando todas las subtareas están verificadas, OpenCode publica la rama y abre una PR hacia la rama base predeterminada del repositorio. Enlaza la PR a la issue raíz y la deja lista para revisión.
+5. OpenCode implementa, ejecuta las verificaciones técnicas, hace un commit por cada unidad revisable y sube cada commit a GitHub en la rama compartida para revisión humana. Marca la subtarea `Done` con evidencia cuando compila, pasan las pruebas aplicables, la aplicación arranca sin errores y el commit está confirmado en el remoto. No necesita verificar visualmente la pantalla; esa comprobación la hará el PO humano.
+6. Si falla una verificación técnica o el push, OpenCode deja la subtarea en `In Progress` y registra el fallo. Codex no hace una revisión intermedia ni cierra hijas: verifica el conjunto en la PR final.
+7. Cuando todas las subtareas están `Done`, OpenCode abre una PR hacia la rama base predeterminada del repositorio. La rama ya debe estar subida con los commits de las subtareas. Enlaza la PR a la issue raíz y la deja lista para revisión.
 8. Codex verifica la PR frente a los criterios del PO. Solo entonces cierra la issue raíz. Nunca fusiona la PR.
 
 No marques como completa una issue porque el código «parece terminado». La evidencia debe incluir los criterios cubiertos, el commit o PR relevante y los comandos de verificación con sus resultados.
@@ -56,7 +85,7 @@ No marques como completa una issue porque el código «parece terminado». La ev
 - Usa como base la rama predeterminada real del remoto, detectada mediante GitHub/`gh`; no supongas que se llama `main`.
 - Antes de cambiar de rama, inspecciona `git status` y el historial. Nunca descartes, sobrescribas, resetees ni incluyas cambios preexistentes que no pertenezcan al ticket. Si el checkout contiene trabajo ajeno, usa un worktree aislado o detente con un informe claro.
 - Commits pequeños y revisables, idealmente uno por subtarea verificada localmente. Usa mensajes concisos estilo Conventional Commits e incluye el identificador Linear cuando esté disponible: `feat(player): add movement bounds CA-123`.
-- No subas la rama ni abras una PR hasta que todas las subtareas del padre estén en el estado verificado/cerrado.
+- Sube y verifica en GitHub el commit de cada subtarea antes de marcarla `Done`, para que el PO pueda revisar la rama durante el trabajo. No abras la PR hasta que todas las subtareas del padre estén `Done`.
 - La PR debe apuntar al remoto correcto y a su rama base predeterminada. Incluye objetivo, resumen por subtarea, verificaciones ejecutadas, limitaciones y el identificador/enlace de la issue raíz.
 - Publica la URL de la PR en la issue raíz de Linear y deja allí el estado final de la implementación.
 - Ningún agente fusiona la PR. La revisión humana y el merge quedan fuera de este flujo.
@@ -65,10 +94,11 @@ No marques como completa una issue porque el código «parece terminado». La ev
 ## Validación técnica
 
 - Revisa el `pom.xml`, código relacionado y convenciones existentes antes de diseñar cambios.
+- Keep every command's generated files, classpaths, logs, screenshots, and other temporary artifacts inside this repository (prefer `target/`, which Maven recreates and Git ignores). Never write to `/tmp`, `/private/tmp`, a home directory, or another external directory, and never request `external_directory` permission for a build, smoke test, or inspection. For example, use `-Dmdep.outputFile=target/cosmic_cp.txt` and `target/cosmic_smoke.log` if such files are needed. If a tool or sandbox blocks a repository-local operation, stop and report the exact blocker; do not retry by moving artifacts outside the repository.
 - Usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, salvo que el PO apruebe un cambio explícito.
 - Para cambios Java, ejecuta como mínimo `mvn compile`; añade pruebas existentes o verificaciones específicas que correspondan a los criterios de aceptación.
-- No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación es `mvn compile` más comprobaciones manuales/visuales del cambio. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
-- Para cambios gráficos o de interacción, valida el comportamiento visible cuando el entorno permita abrir la ventana; explica cuando una validación visual no pueda ejecutarse.
+- No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación técnica es `mvn compile`, las pruebas existentes que sí correspondan al cambio y confirmar que la aplicación arranca sin excepciones. La QA visual manual corresponde al PO. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
+- Para cambios gráficos o de interacción, OpenCode debe confirmar el arranque de la aplicación y registrar que la revisión visual queda pendiente del PO humano. La falta de inspección visual del agente no bloquea `Done` si compilación, pruebas aplicables y arranque pasan. El PO hará la comprobación visual manual.
 - No declares tests exitosos si no se ejecutaron. Si una validación no puede ejecutarse, indica el comando y el motivo.
 - Todo recurso LibGDX nativo que se cree debe liberarse; respeta el ciclo de vida `create/render/resize/dispose`.
 
