@@ -20,8 +20,13 @@ public final class CosmicAcesGame extends Game {
 
   private void startGame() {
     if (gameFlow.startGame()) {
-      showScreen(new PlayableScreen(gameFlow));
+      showScreen(new PlayableScreen(gameFlow, this::returnToWelcome));
     }
+  }
+
+  private void returnToWelcome() {
+    gameFlow = new GameFlow(new GameSession());
+    showScreen(new WelcomeScreen(this::startGame));
   }
 
   private void showScreen(Screen nextScreen) {

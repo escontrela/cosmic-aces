@@ -41,12 +41,12 @@ public final class WelcomeScreen extends ScreenAdapter {
     "X   X  XXX  XXXXX  XXXX "
   };
   private static final String COIN_PROMPT = "INSERT COIN (pulsa Y)";
-  private static final int STAR_COUNT = 140;
-  private static final float STAR_MIN_SPEED = 50f;
-  private static final float STAR_MAX_SPEED = 140f;
+  private static final int STAR_COUNT = 230;
+  private static final float STAR_MIN_SPEED = 64f;
+  private static final float STAR_MAX_SPEED = 179f;
   private static final float BLINK_PERIOD = 0.45f;
-  private static final float CELL_WIDTH = 12f;
-  private static final float LINE_HEIGHT = 21f;
+  private static final float CELL_WIDTH = 15.36f;
+  private static final float LINE_HEIGHT = 26.88f;
   private static final String[] ASCII_GLYPHS = new String[128];
 
   static {
@@ -80,9 +80,9 @@ public final class WelcomeScreen extends ScreenAdapter {
     batch = new SpriteBatch();
     shapes = new ShapeRenderer();
     logoFont = new BitmapFont();
-    logoFont.getData().setScale(1.2f);
+    logoFont.getData().setScale(1.536f);
     promptFont = new BitmapFont();
-    promptFont.getData().setScale(1.2f);
+    promptFont.getData().setScale(1.536f);
     promptLayout = new GlyphLayout(promptFont, COIN_PROMPT);
     createStars();
   }
@@ -122,18 +122,18 @@ public final class WelcomeScreen extends ScreenAdapter {
       starX[i] = MathUtils.random(0f, VirtualScreenSize.WIDTH);
       starY[i] = MathUtils.random(0f, VirtualScreenSize.HEIGHT);
       starSpeed[i] = MathUtils.random(STAR_MIN_SPEED, STAR_MAX_SPEED);
-      starRadius[i] = MathUtils.random(1f, 2.2f);
+      starRadius[i] = MathUtils.random(0.78f, 2.32f);
     }
   }
 
   private void updateStars(float delta) {
     for (int i = 0; i < STAR_COUNT; i++) {
       starY[i] -= starSpeed[i] * delta;
-      if (starY[i] < -3f) {
-        starY[i] = VirtualScreenSize.HEIGHT + 3f;
+      if (starY[i] < -3.84f) {
+        starY[i] = VirtualScreenSize.HEIGHT + 3.84f;
         starX[i] = MathUtils.random(0f, VirtualScreenSize.WIDTH);
         starSpeed[i] = MathUtils.random(STAR_MIN_SPEED, STAR_MAX_SPEED);
-        starRadius[i] = MathUtils.random(1f, 2.2f);
+        starRadius[i] = MathUtils.random(0.78f, 2.32f);
       }
     }
   }
@@ -154,8 +154,8 @@ public final class WelcomeScreen extends ScreenAdapter {
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     shapes.setColor(Color.BLACK);
-    shapes.rect(105f, titleBottom - 22f, VirtualScreenSize.WIDTH - 210f,
-        shipTop - titleBottom + 48f);
+    shapes.rect(134.4f, titleBottom - 28.16f, VirtualScreenSize.WIDTH - 268.8f,
+        shipTop - titleBottom + 61.44f);
     shapes.end();
 
     batch.begin();

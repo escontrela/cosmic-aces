@@ -28,17 +28,18 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
  */
 public final class PlayableScreen extends ScreenAdapter {
 
-  private static final float SHIP_SCALE = 0.25f;
+  private static final float SHIP_SCALE = 0.16f;
   private static final float POSE_SWITCH_SECONDS = 0.15f;
-  private static final int STAR_COUNT = 120;
-  private static final float STAR_MIN_SPEED = 60f;
-  private static final float STAR_MAX_SPEED = 200f;
-  private static final float STAR_MIN_RADIUS = 1f;
-  private static final float STAR_MAX_RADIUS = 2.2f;
-  private static final String END_MESSAGE = "FIN DEL RECORRIDO";
-  private static final float INITIAL_MARGIN_Y = 60f;
+  private static final int STAR_COUNT = 197;
+  private static final float STAR_MIN_SPEED = 77f;
+  private static final float STAR_MAX_SPEED = 256f;
+  private static final float STAR_MIN_RADIUS = 0.14f;
+  private static final float STAR_MAX_RADIUS = 1.68f;
+  private static final String END_MESSAGE = "FIN DEL RECORRIDO - PULSA ESPACIO";
+  private static final float INITIAL_MARGIN_Y = 77f;
 
   private final GameFlow gameFlow;
+  private final Runnable onReturnToWelcome;
   private final OrthographicCamera camera;
   private final Viewport viewport;
   private final SpriteBatch batch;
@@ -60,8 +61,9 @@ public final class PlayableScreen extends ScreenAdapter {
   private float poseTimer;
   private boolean runFinished;
 
-  public PlayableScreen(GameFlow gameFlow) {
+  public PlayableScreen(GameFlow gameFlow, Runnable onReturnToWelcome) {
     this.gameFlow = gameFlow;
+    this.onReturnToWelcome = onReturnToWelcome;
     camera = new OrthographicCamera();
     viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
     camera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
@@ -98,6 +100,10 @@ public final class PlayableScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
+    if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+      onReturnToWelcome.run();
+      return;
+    }
     camera.update();
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
@@ -108,6 +114,9 @@ public final class PlayableScreen extends ScreenAdapter {
     }
     if (!runFinished) {
       applyMovementInput(delta);
+    } else if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+      onReturnToWelcome.run();
+      return;
     }
     updateStars(delta);
     drawStars();
