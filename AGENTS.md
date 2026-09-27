@@ -99,6 +99,7 @@ No marques como completa una issue porque el código «parece terminado». La ev
 - Para cambios Java, ejecuta como mínimo `mvn compile`; añade pruebas existentes o verificaciones específicas que correspondan a los criterios de aceptación.
 - No hay suite de tests ni CI configurados: `mvn test` no valida nada por sí solo. La verificación técnica es `mvn compile`, las pruebas existentes que sí correspondan al cambio y confirmar que la aplicación arranca sin excepciones. La QA visual manual corresponde al PO. `mvn package` produce el fat JAR vía shade y regenera `dependency-reduced-pom.xml` (ignorado por git).
 - Para cambios gráficos o de interacción, OpenCode debe confirmar el arranque de la aplicación y registrar que la revisión visual queda pendiente del PO humano. La falta de inspección visual del agente no bloquea `Done` si compilación, pruebas aplicables y arranque pasan. El PO hará la comprobación visual manual.
+- El smoke de arranque debe guardar el PID exacto de la instancia que inicia OpenCode y detenerla al terminar con `kill "$APP_PID"`, seguido de `wait`. Debe instalar limpieza también ante interrupciones/errores. Nunca usar `pkill`, `killall` ni terminar procesos preexistentes o con PID no capturado por esa ejecución.
 - No declares tests exitosos si no se ejecutaron. Si una validación no puede ejecutarse, indica el comando y el motivo.
 - Todo recurso LibGDX nativo que se cree debe liberarse; respeta el ciclo de vida `create/render/resize/dispose`.
 

@@ -1,0 +1,97 @@
+package com.davidpe.cosmicaces.infrastructure.gdx;
+
+import java.util.List;
+
+/**
+ * Metadata of the hero ship sprite sheets. Each sheet is described by its classpath location, its
+ * dimensions and the pose slices measured from the alpha channel. The normal sheet shows the ship
+ * cruising; the accelerate sheet is the same ship with the engine flame lit. Both lay their three
+ * images left to right: right bank, neutral and left bank, matching the layout confirmed by the PO.
+ */
+public final class HeroShipSheet {
+
+  /** The three ship poses in sheet order. */
+  public enum Pose {
+    RIGHT,
+    NEUTRAL,
+    LEFT
+  }
+
+  /** A rectangular region of a sheet, measured from the alpha channel. */
+  public record Slice(int x, int y, int width, int height) {}
+
+  /** One hero ship sprite sheet: its classpath location, size and measured pose slices. */
+  public static final class Sheet {
+
+    private final String internalPath;
+    private final int width;
+    private final int height;
+    private final List<Slice> slices;
+
+    Sheet(String internalPath, int width, int height, List<Slice> slices) {
+      if (slices.size() != Pose.values().length) {
+        throw new IllegalArgumentException(
+            "A sheet must define one slice per pose, got " + slices.size());
+      }
+      for (Slice slice : slices) {
+        if (slice.x() < 0 || slice.y() < 0 || slice.width() <= 0 || slice.height() <= 0
+            || slice.x() + slice.width() > width || slice.y() + slice.height() > height) {
+          throw new IllegalArgumentException(
+              "Slice must lie inside the " + width + "x" + height + " sheet: "
+                  + "x=" + slice.x() + " y=" + slice.y()
+                  + " w=" + slice.width() + " h=" + slice.height());
+        }
+      }
+      this.internalPath = internalPath;
+      this.width = width;
+      this.height = height;
+      this.slices = List.copyOf(slices);
+    }
+
+    /** Classpath path of the sprite sheet PNG, loadable as an internal LibGDX file. */
+    public String internalPath() {
+      return internalPath;
+    }
+
+    public int width() {
+      return width;
+    }
+
+    public int height() {
+      return height;
+    }
+
+    /** Returns the slice of the given pose. */
+    public Slice slice(Pose pose) {
+      return slices.get(pose.ordinal());
+    }
+
+    /** Returns the pose slices in {@link Pose} order. */
+    public List<Slice> slices() {
+      return slices;
+    }
+  }
+
+  /** The normal hero sheet, with the engine flame off. */
+  public static final Sheet NORMAL = new Sheet(
+      "assets/images/player/hero_ship_v2.png", 1679, 937,
+      List.of(
+          new Slice(53, 95, 452, 774),
+          new Slice(551, 138, 577, 709),
+          new Slice(1174, 95, 453, 774)));
+
+  /** The accelerate hero sheet, with the engine flame lit. */
+  public static final Sheet ACCELERATE = new Sheet(
+      "assets/images/player/hero_ship_v2_accelerate.png", 1678, 937,
+      List.of(
+          new Slice(49, 94, 460, 779),
+          new Slice(549, 135, 579, 718),
+          new Slice(1170, 94, 460, 779)));
+
+  /** Both bundled hero sheets in visual order. */
+  public static List<Sheet> sheets() {
+    return List.of(NORMAL, ACCELERATE);
+  }
+
+  private HeroShipSheet() {}
+}
