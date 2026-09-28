@@ -16,9 +16,11 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.GameFlow;
+import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.MovementIntent;
 import com.davidpe.cosmicaces.infrastructure.gdx.HeroShipSheet;
+import com.davidpe.cosmicaces.infrastructure.gdx.VesperRaiderSheet;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
 /**
@@ -47,6 +49,8 @@ public final class PlayableScreen extends ScreenAdapter {
   private final Texture accelerateTexture;
   private final TextureRegion[] shipRegions;
   private final TextureRegion[] accelerateRegions;
+  private final Texture raiderTexture;
+  private final TextureRegion[] raiderRegions;
   private final BitmapFont font;
   private final GlyphLayout endLayout;
   private final float[] starX = new float[STAR_COUNT];
@@ -54,8 +58,11 @@ public final class PlayableScreen extends ScreenAdapter {
   private final float[] starSpeed = new float[STAR_COUNT];
   private final float[] starRadius = new float[STAR_COUNT];
   private final PlayArea playArea;
+  private final PlayArea raiderArea;
   private final float shipDrawWidth;
   private final float shipDrawHeight;
+  private final float raiderDrawWidth;
+  private final float raiderDrawHeight;
 
   private HeroShipSheet.Pose bankPose = HeroShipSheet.Pose.NEUTRAL;
   private boolean accelerating;
@@ -75,6 +82,8 @@ public final class PlayableScreen extends ScreenAdapter {
     accelerateTexture = new Texture(Gdx.files.internal(HeroShipSheet.ACCELERATE.internalPath()));
     shipRegions = createRegions(HeroShipSheet.NORMAL, shipTexture);
     accelerateRegions = createRegions(HeroShipSheet.ACCELERATE, accelerateTexture);
+    raiderTexture = new Texture(Gdx.files.internal(VesperRaiderSheet.internalPath()));
+    raiderRegions = createRaiderRegions(raiderTexture);
     font = new BitmapFont();
     font.getData().setScale(1.4f);
     endLayout = new GlyphLayout(font, END_MESSAGE);
@@ -95,6 +104,13 @@ public final class PlayableScreen extends ScreenAdapter {
     playArea = new PlayArea(
         VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
 
+    // The raider encounter spans the whole viewport so its spawn sits at the top edge and its
+    // retirement matches the drawn box leaving the screen. The draw box matches the domain box
+    // exactly (RaiderEncounter.RAIDER_WIDTH/HEIGHT) so the visual exit coincides with the model.
+    raiderArea = new PlayArea(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+    raiderDrawWidth = RaiderEncounter.RAIDER_WIDTH;
+    raiderDrawHeight = RaiderEncounter.RAIDER_HEIGHT;
+
     float startX = (VirtualScreenSize.WIDTH - shipDrawWidth) / 2f;
     gameFlow.placeShip(startX, INITIAL_MARGIN_Y, playArea);
 
@@ -114,6 +130,7 @@ public final class PlayableScreen extends ScreenAdapter {
 
     if (!runFinished) {
       gameFlow.advanceRun(delta);
+      gameFlow.advanceEncounter(delta, raiderArea);
       runFinished = gameFlow.isRunFinished();
     }
     if (!runFinished) {
@@ -125,6 +142,7 @@ public final class PlayableScreen extends ScreenAdapter {
     updateStars(delta);
     drawStars();
     drawShip();
+    drawRaider();
     if (runFinished) {
       drawEndMessage();
     }
@@ -141,6 +159,7 @@ public final class PlayableScreen extends ScreenAdapter {
     shapes.dispose();
     shipTexture.dispose();
     accelerateTexture.dispose();
+    raiderTexture.dispose();
     font.dispose();
   }
 
@@ -173,6 +192,19 @@ public final class PlayableScreen extends ScreenAdapter {
     batch.end();
   }
 
+  /** Draws the active Vesper Raider during the run; the pose follows the model bank. */
+  private void drawRaider() {
+    if (runFinished || !gameFlow.isRaiderActive()) {
+      return;
+    }
+    int bank = gameFlow.raiderBank();
+    VesperRaiderSheet.Pose pose = VesperRaiderSheet.poseForBank(bank);
+    TextureRegion region = raiderRegions[pose.ordinal()];
+    batch.begin();
+    batch.draw(region, gameFlow.raiderX(), gameFlow.raiderY(), raiderDrawWidth, raiderDrawHeight);
+    batch.end();
+  }
+
   /** Builds one region per pose from the given sheet and its texture. */
   private static TextureRegion[] createRegions(HeroShipSheet.Sheet sheet, Texture texture) {
     TextureRegion[] regions = new TextureRegion[HeroShipSheet.Pose.values().length];
@@ -180,6 +212,21 @@ public final class PlayableScreen extends ScreenAdapter {
       HeroShipSheet.Slice slice = sheet.slice(pose);
       regions[pose.ordinal()] =
           new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height());
+    }
+    return regions;
+  }
+
+  /**
+   * Builds one region per raider pose from the roll sheet and its texture, oriented for the
+   * raider's descent so the nose points in the direction of flight.
+   */
+  private static TextureRegion[] createRaiderRegions(Texture texture) {
+    TextureRegion[] regions = new TextureRegion[VesperRaiderSheet.Pose.values().length];
+    for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
+      VesperRaiderSheet.Slice slice = VesperRaiderSheet.slice(pose);
+      regions[pose.ordinal()] =
+          VesperRaiderSheet.orientedForDescent(
+              new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height()));
     }
     return regions;
   }

@@ -54,4 +54,36 @@ class GameFlowTest {
     assertEquals(0f, flow.shipX(), EPSILON);
     assertEquals(0f, flow.shipY(), EPSILON);
   }
+
+  @Test
+  void encounterDoesNotSpawnBeforeTheRunStarts() {
+    GameFlow flow = new GameFlow(new GameSession(() -> 0f));
+    flow.advanceEncounter(100f, AREA);
+    assertFalse(flow.isRaiderActive());
+  }
+
+  @Test
+  void encounterAdvancesAndIsExposedThroughTheUseCase() {
+    GameFlow flow = new GameFlow(new GameSession(() -> 0f)); // wait = 3s
+    flow.startGame();
+    flow.advanceEncounter(3f, AREA);
+    assertTrue(flow.isRaiderActive());
+    assertEquals(0f, flow.raiderX(), EPSILON);
+    assertEquals(AREA.height(), flow.raiderY(), EPSILON);
+    assertEquals(0, flow.raiderBank());
+
+    flow.advanceEncounter(1f, AREA); // first turn with the 0f source: heading -20
+    assertEquals(-1, flow.raiderBank());
+    assertEquals(AREA.height() - 140f, flow.raiderY(), EPSILON);
+  }
+
+  @Test
+  void encounterStopsAfterTheRunFinishes() {
+    GameFlow flow = new GameFlow(new GameSession(() -> 0f));
+    flow.startGame();
+    flow.advanceRun(60f);
+    assertTrue(flow.isRunFinished());
+    flow.advanceEncounter(100f, AREA);
+    assertFalse(flow.isRaiderActive());
+  }
 }
