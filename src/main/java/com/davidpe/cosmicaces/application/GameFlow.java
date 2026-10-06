@@ -16,7 +16,7 @@ public final class GameFlow {
 
   public boolean startGame() {
     session.start();
-    return session.phase() == GamePhase.PLAYING;
+    return session.phase() == GamePhase.PLAYING_PHASE_ONE;
   }
 
   /** Advances the playable run by the given delta in seconds. */

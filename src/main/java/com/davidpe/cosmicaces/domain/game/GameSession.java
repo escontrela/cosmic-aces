@@ -16,7 +16,7 @@ public final class GameSession {
 
   /** Starts the session and its playable run. Repeated start requests leave it in the playing phase. */
   public void start() {
-    phase = GamePhase.PLAYING;
+    phase = GamePhase.PLAYING_PHASE_ONE;
     run.start();
   }
 
