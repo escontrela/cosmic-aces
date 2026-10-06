@@ -57,13 +57,18 @@ public final class GameCoordinator {
   }
 
   /**
-   * Applies one event. {@link StartRequested} begins a new game with a fresh identity and state;
-   * stale events that do not belong to the current game and phase are ignored.
+   * Applies one event. {@link StartRequested} begins a new game with a fresh identity and state only
+   * when it comes from the welcome screen currently shown; events that do not belong to the current
+   * game and phase (for example a late start or abandon from a previous screen) are ignored.
    */
   public void onEvent(GameEvent event) {
     Objects.requireNonNull(event, "event");
     switch (event) {
-      case StartRequested ignored -> startNewGame();
+      case StartRequested requested -> {
+        if (acceptsStart(requested)) {
+          startNewGame();
+        }
+      }
       case PointsEarned points -> {
         if (accepts(points)) {
           state.addPoints(points.points());
@@ -81,7 +86,7 @@ public final class GameCoordinator {
         }
       }
       case GameAbandoned abandoned -> {
-        if (state.gameId().equals(abandoned.gameId())) {
+        if (acceptsAbandon(abandoned)) {
           state = newInstanceState(GamePhase.WELCOME);
           pendingTransition = GamePhase.WELCOME;
         }
@@ -108,6 +113,30 @@ public final class GameCoordinator {
     GameState created = new GameState(new GameId(nextGameId), phase, 0, startingLives);
     nextGameId++;
     return created;
+  }
+
+  /**
+   * A start is valid only from the welcome state currently shown: the coordinator must still be in
+   * {@link GamePhase#WELCOME} and the event must carry that same identity and phase. Duplicate or
+   * late starts from a previous lobby are therefore discarded before any new state is created.
+   */
+  private boolean acceptsStart(StartRequested event) {
+    return state.phase() == GamePhase.WELCOME
+        && state.gameId().equals(event.gameId())
+        && event.phase() == GamePhase.WELCOME;
+  }
+
+  /**
+   * An abandon is accepted only from the playable screen of the current game. Its run may already
+   * have completed ({@link GamePhase#GAME_OVER}) while the screen stays alive until the player
+   * leaves, so both the playing phase and game over are accepted; any other phase (for example a
+   * stale abandon that still says {@code WELCOME}) is rejected.
+   */
+  private boolean acceptsAbandon(GameAbandoned event) {
+    if (event.phase() != GamePhase.PLAYING_PHASE_ONE || !state.gameId().equals(event.gameId())) {
+      return false;
+    }
+    return state.phase() == GamePhase.PLAYING_PHASE_ONE || state.phase() == GamePhase.GAME_OVER;
   }
 
   private boolean accepts(GameEvent event) {
