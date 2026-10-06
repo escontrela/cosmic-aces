@@ -13,9 +13,18 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.davidpe.cosmicaces.domain.game.GameId;
+import com.davidpe.cosmicaces.domain.game.GamePhase;
+import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
+import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 
-/** Welcome screen, including its artwork, star field, input and all owned LibGDX resources. */
+/**
+ * Welcome screen, including its artwork, star field, input and all owned LibGDX resources.
+ *
+ * <p>It publishes a {@link StartRequested} event through the injected publisher instead of calling
+ * the game coordinator directly, so the composition root decides the next screen.
+ */
 public final class WelcomeScreen extends ScreenAdapter {
 
   private static final String[] SHIP = {
@@ -55,7 +64,9 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
-  private final Runnable onStart;
+  private final GameEventPublisher publisher;
+  private final GameId gameId;
+  private final GamePhase phase;
   private final OrthographicCamera camera;
   private final Viewport viewport;
   private final SpriteBatch batch;
@@ -70,8 +81,10 @@ public final class WelcomeScreen extends ScreenAdapter {
   private float blinkTimer;
   private boolean startRequested;
 
-  public WelcomeScreen(Runnable onStart) {
-    this.onStart = onStart;
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase) {
+    this.publisher = publisher;
+    this.gameId = gameId;
+    this.phase = phase;
     camera = new OrthographicCamera();
     viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
     camera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
@@ -92,7 +105,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     ScreenUtils.clear(Color.BLACK);
     if (!startRequested && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
       startRequested = true;
-      onStart.run();
+      publisher.publish(new StartRequested(gameId, phase));
       return;
     }
 

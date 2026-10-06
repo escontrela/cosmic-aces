@@ -6,13 +6,12 @@ import com.davidpe.cosmicaces.domain.player.MovementIntent;
 import com.davidpe.cosmicaces.domain.player.Ship;
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Domain state and rules for a game session: progression, the playable run, the ship and encounters. */
+/** Domain state and rules for a game session: the playable run, the ship and encounters; global phase lives in GameState. */
 public final class GameSession {
 
   private final PlayableRun run = new PlayableRun();
   private final Ship ship = new Ship(Ship.DEFAULT_SPEED);
   private final RaiderEncounter raiderEncounter;
-  private GamePhase phase = GamePhase.WELCOME;
 
   public GameSession() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -23,13 +22,8 @@ public final class GameSession {
     raiderEncounter = new RaiderEncounter(raiderRandom);
   }
 
-  public GamePhase phase() {
-    return phase;
-  }
-
-  /** Starts the session and its playable run. Repeated start requests leave it in the playing phase. */
+  /** Starts the playable run; global navigation belongs to the coordinator. */
   public void start() {
-    phase = GamePhase.PLAYING;
     run.start();
   }
 
