@@ -11,6 +11,7 @@ public final class DesktopLauncher {
   private DesktopLauncher() {}
 
   public static void main(String[] args) {
+
     Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
     config.setTitle("Cosmic Aces");
     config.setWindowedMode((int) VirtualScreenSize.WIDTH, (int) VirtualScreenSize.HEIGHT);
