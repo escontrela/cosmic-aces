@@ -2,26 +2,23 @@ package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Screen;
-import com.davidpe.cosmicaces.application.GameFlow;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
-import com.davidpe.cosmicaces.domain.game.GameSession;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventBus;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.Subscription;
-import com.davidpe.cosmicaces.infrastructure.gdx.screen.PlayableScreen;
-import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * LibGDX composition root that coordinates screens and delegates game rules to the application. It
- * keeps the event bus and the {@link GameCoordinator} that owns the persistent player state, and it
- * applies screen transitions only after the current frame finished rendering, so a screen that
- * requests a change during its own {@code render} is never disposed mid-frame.
+ * keeps the event bus and the {@link GameCoordinator} that owns the persistent player state, uses
+ * the {@link ScreenFactory} to build screens wired to the same bus, and applies screen transitions
+ * only after the current frame finished rendering, so a screen that requests a change during its own
+ * {@code render} is never disposed mid-frame.
  */
 public final class CosmicAcesGame extends Game {
 
@@ -34,14 +31,13 @@ public final class CosmicAcesGame extends Game {
 
   private final GameEventBus bus = new GameEventBus();
   private final GameCoordinator coordinator = new GameCoordinator(PLACEHOLDER_STARTING_LIVES);
+  private final ScreenFactory screenFactory = new ScreenFactory(coordinator, bus);
   private final List<Subscription> subscriptions = new ArrayList<>();
-
-  private GameFlow gameFlow;
 
   @Override
   public void create() {
     subscribeCoordinator();
-    showScreen(new WelcomeScreen(this::requestStart));
+    showScreen(screenFactory.createWelcomeScreen());
   }
 
   @Override
@@ -69,34 +65,18 @@ public final class CosmicAcesGame extends Game {
     subscriptions.add(bus.subscribe(GameAbandoned.class, coordinator::onEvent));
   }
 
-  /** Published by the welcome screen while it renders; the transition is deferred to frame end. */
-  private void requestStart() {
-    bus.publish(new StartRequested(coordinator.state().gameId(), GamePhase.WELCOME));
-  }
-
-  /** Published by the playing screen while it renders; the transition is deferred to frame end. */
-  private void requestReturnToWelcome() {
-    bus.publish(new GameAbandoned(coordinator.state().gameId(), coordinator.state().phase()));
-  }
-
   private void applyPendingTransition() {
     GamePhase next = coordinator.consumePendingTransition();
     if (next == null) {
       return;
     }
     switch (next) {
-      case WELCOME -> showScreen(new WelcomeScreen(this::requestStart));
-      case PLAYING_PHASE_ONE -> showPlayingScreen();
+      case WELCOME -> showScreen(screenFactory.createWelcomeScreen());
+      case PLAYING_PHASE_ONE -> showScreen(screenFactory.createPlayableScreen());
       case GAME_OVER -> {
         // No game-over screen is part of this ticket.
       }
     }
-  }
-
-  private void showPlayingScreen() {
-    gameFlow = new GameFlow(new GameSession());
-    gameFlow.startGame();
-    showScreen(new PlayableScreen(gameFlow, this::requestReturnToWelcome));
   }
 
   private void showScreen(Screen nextScreen) {

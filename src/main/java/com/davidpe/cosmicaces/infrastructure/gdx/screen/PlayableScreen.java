@@ -15,16 +15,29 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
-import com.davidpe.cosmicaces.application.GameFlow;
+import com.davidpe.cosmicaces.domain.game.GameAbandoned;
+import com.davidpe.cosmicaces.domain.game.GameId;
+import com.davidpe.cosmicaces.domain.game.GamePhase;
+import com.davidpe.cosmicaces.domain.game.GameSession;
+import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.MovementIntent;
 import com.davidpe.cosmicaces.infrastructure.gdx.HeroShipSheet;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
+import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import java.util.function.Supplier;
 
 /**
  * First playable screen: the hero ship piloted with the arrow keys inside the viewport, a
  * continuously scrolling star field and the fixed 60-second run. The screen owns and releases
- * every LibGDX resource it creates and translates presentation input into application use cases.
+ * every LibGDX resource it creates and translates presentation input into calls on its own
+ * {@link GameSession}.
+ *
+ * <p>It never navigates by itself: it publishes game events through the injected
+ * {@link GameEventPublisher} and the composition root decides the next screen. The run's own state
+ * (time and ship) stays in the injected session, while global points and lives stay in the
+ * coordinator, which supplies the authoritative {@link PhaseResult} when the run completes.
  */
 public final class PlayableScreen extends ScreenAdapter {
 
@@ -37,8 +50,11 @@ public final class PlayableScreen extends ScreenAdapter {
   private static final String END_MESSAGE = "FIN DEL RECORRIDO - PULSA ESPACIO";
   private static final float INITIAL_MARGIN_Y = 77f;
 
-  private final GameFlow gameFlow;
-  private final Runnable onReturnToWelcome;
+  private final GameEventPublisher publisher;
+  private final GameSession session;
+  private final GameId gameId;
+  private final GamePhase phase;
+  private final Supplier<PhaseResult> phaseSnapshot;
   private final OrthographicCamera camera;
   private final Viewport viewport;
   private final SpriteBatch batch;
@@ -61,9 +77,17 @@ public final class PlayableScreen extends ScreenAdapter {
   private boolean accelerating;
   private boolean runFinished;
 
-  public PlayableScreen(GameFlow gameFlow, Runnable onReturnToWelcome) {
-    this.gameFlow = gameFlow;
-    this.onReturnToWelcome = onReturnToWelcome;
+  public PlayableScreen(
+      GameEventPublisher publisher,
+      GameSession session,
+      GameId gameId,
+      GamePhase phase,
+      Supplier<PhaseResult> phaseSnapshot) {
+    this.publisher = publisher;
+    this.session = session;
+    this.gameId = gameId;
+    this.phase = phase;
+    this.phaseSnapshot = phaseSnapshot;
     camera = new OrthographicCamera();
     viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
     camera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
@@ -96,7 +120,7 @@ public final class PlayableScreen extends ScreenAdapter {
         VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
 
     float startX = (VirtualScreenSize.WIDTH - shipDrawWidth) / 2f;
-    gameFlow.placeShip(startX, INITIAL_MARGIN_Y, playArea);
+    session.placeShip(startX, INITIAL_MARGIN_Y, playArea);
 
     createStars();
   }
@@ -105,7 +129,7 @@ public final class PlayableScreen extends ScreenAdapter {
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-      onReturnToWelcome.run();
+      publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
     camera.update();
@@ -113,13 +137,19 @@ public final class PlayableScreen extends ScreenAdapter {
     shapes.setProjectionMatrix(camera.combined);
 
     if (!runFinished) {
-      gameFlow.advanceRun(delta);
-      runFinished = gameFlow.isRunFinished();
+      session.advanceRun(delta);
+      if (session.isRunFinished()) {
+        runFinished = true;
+        // The run completed: report it once with the authoritative persistent snapshot. There is no
+        // game-over screen in this ticket, so the coordinator's GAME_OVER transition is a no-op and
+        // the end message stays until the player leaves.
+        publisher.publish(new PhaseCompleted(phaseSnapshot.get()));
+      }
     }
     if (!runFinished) {
       applyMovementInput(delta);
     } else if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
-      onReturnToWelcome.run();
+      publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
     updateStars(delta);
@@ -150,7 +180,7 @@ public final class PlayableScreen extends ScreenAdapter {
     boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
     MovementIntent intent = new MovementIntent(left, right, up, down);
-    gameFlow.applyMovementIntent(intent, delta, playArea);
+    session.applyMovementIntent(intent, delta, playArea);
     accelerating = up;
     updateBankPose(intent);
   }
@@ -166,8 +196,8 @@ public final class PlayableScreen extends ScreenAdapter {
     TextureRegion region = regions[bankPose.ordinal()];
     float drawWidth = region.getRegionWidth() * SHIP_SCALE;
     float drawHeight = region.getRegionHeight() * SHIP_SCALE;
-    float drawX = gameFlow.shipX() + (shipDrawWidth - drawWidth) / 2f;
-    float drawY = gameFlow.shipY() + (shipDrawHeight - drawHeight) / 2f;
+    float drawX = session.shipX() + (shipDrawWidth - drawWidth) / 2f;
+    float drawY = session.shipY() + (shipDrawHeight - drawHeight) / 2f;
     batch.begin();
     batch.draw(region, drawX, drawY, drawWidth, drawHeight);
     batch.end();

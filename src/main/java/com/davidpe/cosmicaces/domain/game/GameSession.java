@@ -3,20 +3,18 @@ package com.davidpe.cosmicaces.domain.game;
 import com.davidpe.cosmicaces.domain.player.MovementIntent;
 import com.davidpe.cosmicaces.domain.player.Ship;
 
-/** Domain state and rules for a game session: progression, the playable run and the ship. */
+/**
+ * Domain state and rules for one playable run (recorrido): its progression and the ship. It owns
+ * only per-run state and deliberately knows nothing about the global phase, points or lives, which
+ * live in the persistent game state and travel as events.
+ */
 public final class GameSession {
 
   private final PlayableRun run = new PlayableRun();
   private final Ship ship = new Ship(Ship.DEFAULT_SPEED);
-  private GamePhase phase = GamePhase.WELCOME;
 
-  public GamePhase phase() {
-    return phase;
-  }
-
-  /** Starts the session and its playable run. Repeated start requests leave it in the playing phase. */
+  /** Starts the run. Repeated calls are ignored once the run has started. */
   public void start() {
-    phase = GamePhase.PLAYING_PHASE_ONE;
     run.start();
   }
 

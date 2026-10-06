@@ -7,6 +7,7 @@ import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import java.util.Objects;
@@ -44,6 +45,15 @@ public final class GameCoordinator {
   /** Returns the single state of the game currently in progress. */
   public GameState state() {
     return state;
+  }
+
+  /**
+   * Returns an immutable snapshot of the persistent state. Callers that must report a phase result
+   * (for example a screen whose run completed) use it so points and lives always come from the
+   * coordinator rather than from a renderer.
+   */
+  public PhaseResult snapshot() {
+    return state.snapshot();
   }
 
   /**
