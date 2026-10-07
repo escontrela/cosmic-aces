@@ -2,12 +2,10 @@ package com.davidpe.cosmicaces.application;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import org.junit.jupiter.api.Test;
 
 class PhaseOneGameControllerTest {
-  private static final PlayArea RAIDER_AREA = new PlayArea(800f, 600f);
 
   @Test void flightAndRunStopAtSixtySeconds() {
     PhaseOneGameController controller = new PhaseOneGameController();
@@ -27,16 +25,23 @@ class PhaseOneGameControllerTest {
   }
 
   @Test void encounterOnlyAdvancesDuringTheRun() {
-    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
-    controller.advanceEncounter(100f, RAIDER_AREA);
-    assertFalse(controller.isRaiderActive());
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f); // spawn wait = 3s
+    controller.placeAstra(2000f, 600f, 0f);
+    controller.advanceEncounter(100f);
+    assertFalse(controller.isRaiderActive()); // the run has not started yet
+
     controller.start();
-    controller.advanceEncounter(3f, RAIDER_AREA);
+    controller.advanceEncounter(3f);
     assertTrue(controller.isRaiderActive());
-    controller.advanceEncounter(1f, RAIDER_AREA);
-    assertEquals(RAIDER_AREA.height() - 140f, controller.activeRaider().y(), 0.001f);
+    float spawnY = controller.activeRaider().y();
+
+    controller.advanceEncounter(1f);
+    assertTrue(controller.activeRaider().y() < spawnY,
+        "the single raider must move in world coordinates toward Astra");
+
     controller.advanceRun(60f);
-    controller.advanceEncounter(100f, RAIDER_AREA);
-    assertEquals(RAIDER_AREA.height() - 140f, controller.activeRaider().y(), 0.001f);
+    float frozenY = controller.activeRaider().y();
+    controller.advanceEncounter(100f);
+    assertEquals(frozenY, controller.activeRaider().y(), 0.001f);
   }
 }

@@ -19,7 +19,6 @@ import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
-import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
@@ -29,8 +28,9 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 /**
- * First playable screen: world scenery, flight camera, fixed HUD and input. The Raider's legacy
- * encounter remains pending COS-24. This screen owns and releases every LibGDX resource it creates.
+ * First playable screen: world scenery, flight camera, fixed HUD and input. The single Vesper
+ * Raider is kept alive in the world by the controller and drawn only while it intersects the camera
+ * view. This screen owns and releases every LibGDX resource it creates.
  *
  * <p>It never navigates by itself: it publishes game events through the injected {@link
  * GameEventPublisher} and the composition root decides the next screen. The run's own state (time
@@ -61,7 +61,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final BitmapFont font;
   private final BitmapFont hudFont;
   private final GlyphLayout endLayout;
-  private final PlayArea raiderArea;
   private boolean runFinished;
 
   public PhaseOneScreen(
@@ -83,8 +82,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudCamera.update();
     scenery = new WorldScenery(PhaseOneGameController.WORLD,
         ThreadLocalRandom.current().nextLong());
-    // COS-24 will replace the Raider encounter's viewport-sized movement area.
-    raiderArea = new PlayArea(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
     float startX = (PhaseOneGameController.WORLD.width() - controller.astra().drawWidth()) / 2f;
     controller.placeAstra(startX, INITIAL_Y, 0f);
     flightCamera = new FlightCamera(camera, controller.astra());
@@ -147,7 +144,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     if (!runFinished) {
       applyMovementInput(delta);
-      controller.advanceEncounter(delta, raiderArea);
+      controller.advanceEncounter(delta);
       if (controller.isRunFinished()) {
         runFinished = true;
         // The run completed: report it once with the authoritative persistent snapshot. There is no
@@ -170,8 +167,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
         camera.position.y + visibleRadius);
     batch.begin();
     controller.astra().draw(batch, -controller.astra().yawDegrees());
-    if (!runFinished && controller.isRaiderActive()) {
-      controller.activeRaider().draw(batch);
+    if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
+      VesperRaider raider = controller.activeRaider();
+      raider.draw(batch, raider.headingDegrees());
     }
     batch.end();
     batch.setProjectionMatrix(hudCamera.combined);
@@ -206,6 +204,20 @@ public final class PhaseOneScreen extends ScreenAdapter {
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
     controller.advanceFlight(new FlightControls(left, right, up, down,
         Gdx.input.isKeyJustPressed(Input.Keys.P)), delta);
+  }
+
+  /**
+   * Conservative circular test of the raider against the rotated world camera view. The raider
+   * keeps moving in the world while off camera; this only decides whether to draw it.
+   */
+  private boolean raiderVisible() {
+    VesperRaider raider = controller.activeRaider();
+    float margin = Math.max(raider.drawWidth(), raider.drawHeight());
+    float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
+        VirtualScreenSize.HEIGHT / 2f) * camera.zoom + margin;
+    float dx = raider.x() - camera.position.x;
+    float dy = raider.y() - camera.position.y;
+    return dx * dx + dy * dy <= visibleRadius * visibleRadius;
   }
 
   private void drawEndMessage() {

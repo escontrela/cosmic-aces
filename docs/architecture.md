@@ -68,16 +68,26 @@ Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja esta
 Las láminas v3 de Astra y Vesper Raider tienen cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
-rotación de rumbo en coordenadas de mundo. Las poses de guiñada de Vesper Raider
-siguen pendientes de COS-24. Starfield.draw(shapes) y WorldScenery.draw(shapes,...)
+rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
+instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
+ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
+salga de cámara. `VesperRaider.steerTowards` gira el rumbo con un límite de
+velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
+girar o la de alabeo al derivar; el empuje acotado combina la aproximación al
+jugador con una deriva reproducible de `UnitRandom` y una respuesta suave en los
+bordes. La posición se recorta al mundo solo como salvaguarda. `PhaseOneScreen`
+dibuja al raider cuando su círculo envolvente intersecta la vista real de la
+cámara, sin destruirlo al salir de cámara, y no pasa ninguna `PlayArea` al
+controlador. `Starfield.draw(shapes)` y `WorldScenery.draw(shapes,...)`
 abren y cierran el dibujo con el ShapeRenderer recibido, que pertenece a la
 pantalla. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
 
 Consulta posición y pose en la nave: `controller.astra().x()`,
-`controller.activeRaider().y()` y `encounter.raider().bank()`. No añadas métodos
-intermedios que solo reenvíen estos getters. El enemigo puede ser null mientras
-espera su aparición; consulta su presencia antes de usarlo.
+`controller.activeRaider().y()`, `encounter.raider().headingDegrees()` y
+`encounter.raider().turnDirection()`. No añadas métodos intermedios que solo
+reenvíen estos getters. El enemigo puede ser null mientras espera su aparición;
+consulta su presencia antes de usarlo.
 
 ## Clases actuales y métodos principales
 
@@ -116,8 +126,6 @@ com.davidpe.cosmicaces
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
 |   |   +-- PlayableRun: recorrido actual de 60 segundos.
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
-|   |   +-- PlayArea: limites de movimiento.
-|   |   |   1. clampX()  2. clampY()
 |   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
 |   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
@@ -146,14 +154,15 @@ com.davidpe.cosmicaces
 |   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
 |   |       1. sheets()
 |   +-- enemy
-|   |   +-- VesperRaider extends Ship: enemigo descendente con rumbo.
-|   |   |   1. advance()  2. setHeadingDegrees()  3. bank()  4. setVisuals()
+|   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
+|   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
+|   |   |   4. setDriftDirection()  5. clampToWorld()  6. pose()  7. setVisuals()
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
-|   |   +-- RaiderEncounter: aparicion, movimiento y retirada del enemigo.
+|   |   +-- RaiderEncounter: única aparición persistente del enemigo en el mundo.
 |   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
 |   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
-|   |   |   1. slice()  2. poseForBank()  3. orientedForDescent()
-|   |   |   4. maxSliceWidth()  5. maxSliceHeight()
+|   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
+|   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- scenery

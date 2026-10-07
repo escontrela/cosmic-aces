@@ -3,7 +3,6 @@ package com.davidpe.cosmicaces.application;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
-import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import java.util.concurrent.ThreadLocalRandom;
@@ -42,11 +41,12 @@ public final class PhaseOneGameController extends GameController {
     advanceRun(activeSeconds);
   }
 
-  public void advanceEncounter(float deltaSeconds, PlayArea area) {
+  /** Advances the single raider toward Astra in world coordinates. */
+  public void advanceEncounter(float deltaSeconds) {
     if (!isRunStarted() || isRunFinished()) {
       return;
     }
-    raiderEncounter.advance(deltaSeconds, area);
+    raiderEncounter.advance(deltaSeconds, WORLD, astra().x(), astra().y());
   }
 
   public boolean isRaiderActive() {

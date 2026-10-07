@@ -5,8 +5,8 @@ import java.util.List;
 
 /**
  * Metadata of the Vesper Raider v3 sprite sheet. Its five measured regions lie left to right:
- * left bank, neutral, right bank, right yaw and left yaw. The yaw poses are reserved for the
- * directional-flight behavior; the current encounter continues to select the three bank poses.
+ * left bank, neutral, right bank, right yaw and left yaw. The yaw poses accompany bounded heading
+ * changes and the bank poses cover drift or straight flight.
  */
 public final class VesperRaiderSheet {
 
@@ -77,6 +77,14 @@ public final class VesperRaiderSheet {
   /** Maps the model's turn direction to the matching bank frame in the descent-oriented sheet. */
   public static Pose poseForBank(int bank) {
     return bank < 0 ? Pose.RIGHT : bank > 0 ? Pose.LEFT : Pose.NEUTRAL;
+  }
+
+  /**
+   * Maps the direction of the last bounded heading change to the matching yaw frame: {@code -1}
+   * turning left, {@code +1} turning right, {@code 0} straight.
+   */
+  public static Pose poseForTurn(int turnDirection) {
+    return turnDirection < 0 ? Pose.YAW_LEFT : turnDirection > 0 ? Pose.YAW_RIGHT : Pose.NEUTRAL;
   }
 
   /**
