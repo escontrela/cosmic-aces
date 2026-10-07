@@ -39,7 +39,8 @@ En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 `MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
 rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
-del recorrido y fija el mundo en 3200×12000. `FlightTuning` reúne las cifras
+del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
+unidades. `FlightTuning` reúne las cifras
 de velocidad, aceleración, frenado y giro aprobadas; el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
@@ -48,10 +49,12 @@ coordenadas al regresar. El dibujo filtra los elementos fuera de la región
 visible. `Starfield` conserva el scroll de la pantalla de bienvenida.
 `FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
-La cámara queda detrás de Astra, rota con su yaw y usa zoom 1,00/1,08/1,15.
+La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
+0,10 s de retardo, para mantener la nave más abajo en pantalla; suaviza el yaw
+durante 0,25 s y usa zoom 1,00/1,08/1,15.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
-`FlightHud` presenta brújula de ocho direcciones y velocidad instantánea
-con espaciado monoespaciado. `Ship.draw(batch, rotationDegrees)` rota el
+`FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
+el mundo, sin panel ni títulos. `Ship.draw(batch, rotationDegrees)` rota el
 sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador

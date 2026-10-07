@@ -11,7 +11,7 @@ import java.util.concurrent.ThreadLocalRandom;
 /** Rules specific to phase one: timed run and autonomous Raider encounters. */
 public final class PhaseOneGameController extends GameController {
 
-  public static final WorldBounds WORLD = new WorldBounds(3200f, 12000f);
+  public static final WorldBounds WORLD = new WorldBounds(8192f, 12000f);
   private final RaiderEncounter raiderEncounter;
 
   public PhaseOneGameController() {

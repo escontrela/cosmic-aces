@@ -176,7 +176,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
-    hud.draw(shapes, batch, hudFont, controller.astra().yawDegrees(),
+    hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed());
     if (runFinished) {
       drawEndMessage();

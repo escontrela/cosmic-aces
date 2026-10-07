@@ -42,11 +42,13 @@ public final class WorldScenery {
     generatedIslands.add(new Island(world.width() / 2f - 300f, 900f, 0, 21f));
     generatedIslands.add(new Island(world.width() / 2f + 210f, 1080f, 2, 19f));
     int bands = (int) (world.height() / ISLAND_BAND);
+    int lanes = (int) Math.ceil((world.width() - 2f * ISLAND_MARGIN) / 640f);
+    int islandsPerBand = Math.max(3, (lanes * 3 + 4) / 5);
     for (int band = 2; band < bands - 1; band++) {
-      int firstLane = random.nextInt(5);
-      for (int offset = 0; offset < 3; offset++) {
-        int lane = (firstLane + offset * 2) % 5;
-        float laneWidth = (world.width() - 2f * ISLAND_MARGIN) / 5f;
+      int firstLane = random.nextInt(lanes);
+      for (int offset = 0; offset < islandsPerBand; offset++) {
+        int lane = (firstLane + offset * 2) % lanes;
+        float laneWidth = (world.width() - 2f * ISLAND_MARGIN) / lanes;
         float x = ISLAND_MARGIN + lane * laneWidth
             + random.nextFloat() * (laneWidth - 150f);
         float y = band * ISLAND_BAND + random.nextFloat() * 55f;

@@ -5,8 +5,9 @@ import com.davidpe.cosmicaces.domain.player.FlightTuning;
 
 /** Pure presentation state for the lagged world camera. */
 final class FlightCameraState {
-  private static final float FOLLOW_SECONDS = 0.25f;
-  private static final float BEHIND_DISTANCE = 80f;
+  private static final float YAW_FOLLOW_SECONDS = 0.25f;
+  private static final float POSITION_FOLLOW_SECONDS = 0.1f;
+  private static final float CAMERA_AHEAD_DISTANCE = 100f;
 
   private float x;
   private float y;
@@ -27,22 +28,23 @@ final class FlightCameraState {
 
   void update(Astra astra, float deltaSeconds) {
     if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) return;
-    float blend = (float) (1d - Math.exp(-deltaSeconds / FOLLOW_SECONDS));
+    float yawBlend = (float) (1d - Math.exp(-deltaSeconds / YAW_FOLLOW_SECONDS));
+    float positionBlend = (float) (1d - Math.exp(-deltaSeconds / POSITION_FOLLOW_SECONDS));
     yawDegrees = normalize(yawDegrees
-        + normalize(astra.yawDegrees() - yawDegrees) * blend);
-    x += (desiredX(astra, yawDegrees) - x) * blend;
-    y += (desiredY(astra, yawDegrees) - y) * blend;
-    zoom += (desiredZoom(astra) - zoom) * blend;
+        + normalize(astra.yawDegrees() - yawDegrees) * yawBlend);
+    x += (desiredX(astra, yawDegrees) - x) * positionBlend;
+    y += (desiredY(astra, yawDegrees) - y) * positionBlend;
+    zoom += (desiredZoom(astra) - zoom) * yawBlend;
   }
 
   private static float desiredX(Astra astra, float yaw) {
     return astra.x() + astra.drawWidth() / 2f
-        - (float) Math.sin(Math.toRadians(yaw)) * BEHIND_DISTANCE;
+        + (float) Math.sin(Math.toRadians(yaw)) * CAMERA_AHEAD_DISTANCE;
   }
 
   private static float desiredY(Astra astra, float yaw) {
     return astra.y() + astra.drawHeight() / 2f
-        - (float) Math.cos(Math.toRadians(yaw)) * BEHIND_DISTANCE;
+        + (float) Math.cos(Math.toRadians(yaw)) * CAMERA_AHEAD_DISTANCE;
   }
 
   private static float desiredZoom(Astra astra) {
