@@ -9,9 +9,9 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 |---|---|---|
 | `boot` | Arranque y configuración de escritorio | Launcher, configuración LWJGL3 y futura lectura de configuración de arranque. |
 | `application` | Coordinación global y de cada fase | Transiciones, manejo de eventos y controladores que combinan reglas del dominio. |
-| `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. |
+| `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. `WorldBounds` representa las dimensiones finitas y el rango útil para cajas de naves. |
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
-| `domain.player` | Elementos propios del protagonista | Astra, sus poses y sus láminas de sprites. |
+| `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield y futuros fondos u objetos del escenario con estado, actualización y dibujo propios. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
@@ -35,6 +35,16 @@ aplicar esas transiciones. Infraestructura puede depender de application y domai
 boot ensambla y arranca la aplicación.
 
 Las pantallas traducen el input en llamadas al controlador y publican eventos.
+En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
+`MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
+rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
+`PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
+del recorrido y fija el mundo en 3200×12000. `FlightTuning` reúne las cifras
+de velocidad, aceleración, frenado y giro aprobadas; el borde anticipa el giro
+según la velocidad y el recorte de posición es la última salvaguarda.
+La cámara de seguimiento completa, el escenario persistente y el HUD siguen
+planificados para COS-23; la pantalla actual solo traslada provisionalmente
+su cámara para conservar a Astra en vista mientras se integra el mundo.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -80,10 +90,10 @@ com.davidpe.cosmicaces
 |   |   4. consumePendingTransition()
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
-|   |   4. applyMovementIntent()  5. placeShip()  6. astra()
+|   |   4. astra()
 |   +-- PhaseOneGameController extends GameController: encuentros de fase uno.
-|       1. advanceEncounter()  2. isRaiderActive()
-|       3. activeRaider()  4. setRaiderVisuals()
+|       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
+|       4. isRaiderActive()  5. activeRaider()  6. setRaiderVisuals()
 |
 +-- domain
 |   +-- game
@@ -95,6 +105,8 @@ com.davidpe.cosmicaces
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
 |   |   +-- PlayArea: limites de movimiento.
 |   |   |   1. clampX()  2. clampY()
+|   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
+|   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
 |   |   +-- PhaseResult: resultado inmutable con fase, puntos y vidas.
 |   |   +-- GameEvent: contrato de mensajes del juego.
@@ -110,9 +122,13 @@ com.davidpe.cosmicaces
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
-|   |   +-- Astra extends Ship: protagonista, giro y aceleracion.
-|   |   |   1. placeAt()  2. move()  3. setVisuals()  4. currentRegion()
+|   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
+|   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()
+|   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. currentRegion()
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
+|   |   +-- FlightControls: teclas de pilotaje y activación puntual de Ultra.
+|   |   |   1. neutral()  2. lateral()  3. turning()
+|   |   +-- FlightTuning: parámetros de vuelo aprobados de PhaseOne.
 |   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
 |   |       1. sheets()
 |   +-- enemy

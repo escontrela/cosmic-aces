@@ -1,82 +1,125 @@
 package com.davidpe.cosmicaces.domain.player;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
-import com.davidpe.cosmicaces.domain.game.PlayArea;
-import com.davidpe.cosmicaces.domain.ship.MovementIntent;
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import org.junit.jupiter.api.Test;
 
 class AstraTest {
+  private static final WorldBounds WORLD = new WorldBounds(3200f, 12000f);
+  private static final float EPS = 0.2f;
 
-  private static final PlayArea AREA = new PlayArea(800f, 600f);
-  private static final float EPSILON = 0.001f;
-
-  @Test
-  void movesInEveryDirectionAndOppositeKeysCancel() {
-    Astra astra = new Astra(100f, 400f, 300f);
-    astra.move(MovementIntent.fromDirections(false, true, false, false), 1f, AREA);
-    astra.move(MovementIntent.fromDirections(true, false, false, false), 1f, AREA);
-    astra.move(MovementIntent.fromDirections(false, false, true, false), 1f, AREA);
-    astra.move(MovementIntent.fromDirections(false, false, false, true), 1f, AREA);
-    astra.move(MovementIntent.fromDirections(true, true, true, true), 1f, AREA);
-    assertEquals(400f, astra.x(), EPSILON);
-    assertEquals(300f, astra.y(), EPSILON);
+  @Test void fliesForwardAndBackAtFixedAltitude() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(FlightControls.neutral(), 1f, WORLD);
+    assertEquals(6300f, ship.y(), EPS);
+    ship.placeAt(1600f, 6000f, 180f, WORLD);
+    ship.fly(FlightControls.neutral(), 1f, WORLD);
+    assertEquals(5700f, ship.y(), EPS);
+    assertEquals(0f, ship.height());
+    assertEquals(0f, ship.pitchDegrees());
   }
 
-  @Test
-  void diagonalMovementHasTheSameSpeedAsStraightMovement() {
-    Astra astra = new Astra(100f);
-    astra.move(MovementIntent.fromDirections(false, true, true, false), 1f, AREA);
-    assertEquals(70.71068f, astra.x(), EPSILON);
-    assertEquals(70.71068f, astra.y(), EPSILON);
+  @Test void fourDiagonalsYawAndLateralAloneStrafes() {
+    for (boolean up : new boolean[] {true, false}) {
+      for (boolean right : new boolean[] {true, false}) {
+        Astra ship = new Astra();
+        ship.placeAt(1600f, 6000f, 0f, WORLD);
+        ship.fly(new FlightControls(!right, right, up, !up, false), 0.5f, WORLD);
+        assertEquals(right ? 45f : -45f, ship.yawDegrees(), 0.01f);
+        assertEquals(right ? HeroShipSheet.Pose.YAW_RIGHT : HeroShipSheet.Pose.YAW_LEFT,
+            ship.pose());
+      }
+    }
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false, true, false, false, false), 1f, WORLD);
+    assertEquals(0f, ship.yawDegrees(), 0.01f);
+    assertEquals(1900f, ship.x(), EPS);
+    assertEquals(6300f, ship.y(), EPS);
+    assertEquals(HeroShipSheet.Pose.RIGHT, ship.pose());
   }
 
-  @Test
-  void movementAndPlacementStayInsideThePlayArea() {
-    Astra astra = new Astra(100f);
-    astra.placeAt(-100f, 900f, AREA);
-    assertEquals(0f, astra.x(), EPSILON);
-    assertEquals(AREA.height(), astra.y(), EPSILON);
-    astra.move(MovementIntent.fromDirections(false, true, true, false), 100f, AREA);
-    assertEquals(AREA.width(), astra.x(), EPSILON);
-    assertEquals(AREA.height(), astra.y(), EPSILON);
+  @Test void sustainedTurnCompletesFullHeadingRotation() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    FlightControls turn = new FlightControls(false, true, true, false, false);
+    ship.fly(turn, 4f, WORLD);
+    assertEquals(0f, ship.yawDegrees(), 0.02f);
+    assertTrue(ship.x() > 1000f && ship.x() < 2200f);
+    assertTrue(ship.y() > 5400f && ship.y() < 6600f);
   }
 
-  @Test
-  void invalidDeltaAndEmptyIntentDoNotMove() {
-    Astra astra = new Astra(100f, 50f, 50f);
-    MovementIntent right = MovementIntent.fromDirections(false, true, false, false);
-    astra.move(right, 0f, AREA);
-    astra.move(right, -1f, AREA);
-    astra.move(right, Float.NaN, AREA);
-    astra.move(right, Float.POSITIVE_INFINITY, AREA);
-    astra.move(MovementIntent.none(), 1f, AREA);
-    assertEquals(50f, astra.x(), EPSILON);
-    assertEquals(50f, astra.y(), EPSILON);
+  @Test void oppositeLateralKeysCancelAndTurboAccelerates() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(true,true,true,false,false), 1f, WORLD);
+    assertEquals(0f, ship.yawDegrees(), 0.01f);
+    assertEquals(1600f, ship.x(), EPS);
+    assertEquals(550f, ship.flightSpeed(), EPS);
   }
 
-  @Test
-  void drawingBoxCoversEveryPoseOfBothSheets() {
-    Astra astra = new Astra(Astra.DEFAULT_SPEED);
-    assertEquals(579f * 0.11f, astra.drawWidth(), EPSILON);
-    assertEquals(779f * 0.11f, astra.drawHeight(), EPSILON);
+  @Test void allEdgesAndCornersSteerInward() {
+    Astra sample = new Astra();
+    float maxX = WORLD.maxX(sample.drawWidth());
+    float maxY = WORLD.maxY(sample.drawHeight());
+    float[][] cases = {{0f,6000f,-90f},{maxX,6000f,90f},
+        {1600f,0f,180f},{1600f,maxY,0f},{0f,0f,-135f},{maxX,maxY,45f}};
+    for (float[] edge : cases) {
+      Astra ship = new Astra();
+      ship.placeAt(edge[0], edge[1], edge[2], WORLD);
+      ship.fly(FlightControls.neutral(), 3f, WORLD);
+      assertTrue(ship.x() > 0f && ship.x() < maxX, "x for edge " + edge[2]);
+      assertTrue(ship.y() > 0f && ship.y() < maxY, "y for edge " + edge[2]);
+    }
   }
 
-  @Test
-  void selectsBankAndAccelerationIndependentlyOfMovement() {
-    Astra astra = new Astra(100f);
-    astra.move(MovementIntent.fromDirections(true, false, true, false), 0f, AREA, true);
-    assertEquals(HeroShipSheet.Pose.LEFT, astra.pose());
-    assertEquals(true, astra.accelerating());
-    astra.move(MovementIntent.fromDirections(false, true, false, false), 0f, AREA, false);
-    assertEquals(HeroShipSheet.Pose.RIGHT, astra.pose());
-    assertEquals(false, astra.accelerating());
+  @Test void largeDeltaAtUltraSpeedCannotEscapeOrRemainPinned() {
+    Astra ship = new Astra();
+    float maxX = WORLD.maxX(ship.drawWidth());
+    ship.placeAt(maxX - 40f, 6000f, 90f, WORLD);
+    ship.fly(new FlightControls(false,false,false,false,true), 5f, WORLD);
+    assertTrue(ship.x() >= 0f && ship.x() < maxX);
+    assertTrue(ship.y() > 0f && ship.y() < WORLD.maxY(ship.drawHeight()));
+    float x = ship.x();
+    float y = ship.y();
+    ship.fly(FlightControls.neutral(), 1f, WORLD);
+    assertTrue(Math.hypot(ship.x() - x, ship.y() - y) > 100d);
   }
 
-  @Test
-  void rejectsInvalidSpeed() {
-    assertThrows(IllegalArgumentException.class, () -> new Astra(0f));
-    assertThrows(IllegalArgumentException.class, () -> new Astra(Float.NaN));
+  @Test void ultraIsSingleUseAndBrakeWins() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
+    assertEquals(750f, ship.flightSpeed(), EPS);
+    assertEquals(6f, ship.ultraRemainingSeconds(), 0.02f);
+    ship.fly(new FlightControls(false,false,true,true,true), 2f, WORLD);
+    assertEquals(0f, ship.flightSpeed(), EPS);
+    assertEquals(4f, ship.ultraRemainingSeconds(), 0.02f);
+    ship.fly(FlightControls.neutral(), 1f, WORLD);
+    assertEquals(300f, ship.flightSpeed(), EPS);
+    ship.fly(new FlightControls(false,false,true,false,false), 4f, WORLD);
+    assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
+    assertEquals(550f, ship.flightSpeed(), EPS);
+    ship.fly(new FlightControls(false,false,false,false,true), 1f, WORLD);
+    assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
+    assertEquals(300f, ship.flightSpeed(), EPS);
+  }
+
+  @Test void framePartitionAndInvalidDelta() {
+    Astra one = new Astra();
+    Astra many = new Astra();
+    one.placeAt(1600f, 6000f, 0f, WORLD);
+    many.placeAt(1600f, 6000f, 0f, WORLD);
+    FlightControls turn = new FlightControls(false,true,true,false,false);
+    one.fly(turn, 2f, WORLD);
+    for (int i = 0; i < 120; i++) many.fly(turn, 1f / 60f, WORLD);
+    assertEquals(one.x(), many.x(), 1f);
+    assertEquals(one.y(), many.y(), 1f);
+    float y = one.y();
+    one.fly(new FlightControls(false,false,false,false,true), Float.NaN, WORLD);
+    assertEquals(y, one.y());
+    assertFalse(one.ultraUsed());
   }
 }

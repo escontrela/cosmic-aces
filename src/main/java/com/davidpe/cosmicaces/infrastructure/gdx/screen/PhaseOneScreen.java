@@ -21,15 +21,15 @@ import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
-import com.davidpe.cosmicaces.domain.ship.MovementIntent;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.function.Supplier;
 
 /**
- * First playable screen: the hero ship piloted with the arrow keys inside the viewport, a
- * continuously scrolling star field and the fixed 60-second run. The screen owns and releases every
+ * First playable screen: Astra pilots in a finite world while the star field and Raider still use
+ * their original viewport behavior pending COS-23 and COS-24. The screen owns and releases every
  * LibGDX resource it creates and translates presentation input into calls on its own {@link
  * PhaseOneGameController}.
  *
@@ -62,7 +62,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final VesperRaider.Visuals raiderVisuals;
   private final BitmapFont font;
   private final GlyphLayout endLayout;
-  private final PlayArea playArea;
   private final PlayArea raiderArea;
   private boolean runFinished;
 
@@ -134,17 +133,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
     controller.setRaiderVisuals(raiderVisuals);
 
     float shipDrawWidth = controller.astra().drawWidth();
-    float shipDrawHeight = controller.astra().drawHeight();
-    playArea =
-        new PlayArea(
-            VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
-
     // The raider encounter spans the whole viewport so its spawn sits at the top edge and its
     // retirement matches the drawn box leaving the screen. The draw box matches the domain box
     // exactly (RaiderEncounter.RAIDER_WIDTH/HEIGHT) so the visual exit coincides with the model.
     raiderArea = new PlayArea(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
-    float startX = (VirtualScreenSize.WIDTH - shipDrawWidth) / 2f;
-    controller.placeShip(startX, INITIAL_MARGIN_Y, playArea);
+    float startX = (PhaseOneGameController.WORLD.width() - shipDrawWidth) / 2f;
+    controller.placeAstra(startX, INITIAL_MARGIN_Y, 0f);
 
   }
 
@@ -155,12 +149,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
-    camera.update();
-    batch.setProjectionMatrix(camera.combined);
-    shapes.setProjectionMatrix(camera.combined);
-
     if (!runFinished) {
-      controller.advanceRun(delta);
+      applyMovementInput(delta);
       controller.advanceEncounter(delta, raiderArea);
       if (controller.isRunFinished()) {
         runFinished = true;
@@ -170,12 +160,16 @@ public final class PhaseOneScreen extends ScreenAdapter {
         publisher.publish(new PhaseCompleted(phaseSnapshot.get()));
       }
     }
-    if (!runFinished) {
-      applyMovementInput(delta);
-    } else if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+    if (runFinished && Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
+    // Temporary translation keeps world-space Astra visible until COS-23 adds the flight camera.
+    camera.position.set(controller.astra().x() + controller.astra().drawWidth() / 2f,
+        controller.astra().y() + controller.astra().drawHeight() / 2f, 0f);
+    camera.update();
+    batch.setProjectionMatrix(camera.combined);
+    shapes.setProjectionMatrix(camera.combined);
     starfield.update(delta);
     starfield.draw(shapes);
     batch.begin();
@@ -208,13 +202,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
     boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
-    MovementIntent intent = MovementIntent.fromDirections(left, right, up, down);
-    controller.applyMovementIntent(intent, delta, playArea, up);
+    controller.advanceFlight(new FlightControls(left, right, up, down,
+        Gdx.input.isKeyJustPressed(Input.Keys.P)), delta);
   }
 
   private void drawEndMessage() {
-    float x = (VirtualScreenSize.WIDTH - endLayout.width) / 2f;
-    float y = VirtualScreenSize.HEIGHT * 0.62f;
+    float x = camera.position.x - endLayout.width / 2f;
+    float y = camera.position.y + VirtualScreenSize.HEIGHT * 0.12f;
     batch.begin();
     font.setColor(Color.GOLD);
     font.draw(batch, endLayout, x, y);
