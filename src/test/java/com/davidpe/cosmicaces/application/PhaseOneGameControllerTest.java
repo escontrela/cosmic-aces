@@ -10,17 +10,17 @@ class PhaseOneGameControllerTest {
   @Test void flightAndRunStopAtSixtySeconds() {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.placeAstra(1600f, 100f, 0f);
-    controller.advanceFlight(FlightControls.neutral(), 1f);
+    controller.advanceFlight(FlightControls.neutral(), 1f, false);
     assertEquals(100f, controller.astra().y(), 0.001f);
     controller.start();
     controller.advanceRun(59.5f);
     float before = controller.astra().y();
-    controller.advanceFlight(FlightControls.neutral(), 5f);
+    controller.advanceFlight(FlightControls.neutral(), 5f, false);
     assertTrue(controller.isRunFinished());
     assertEquals(0f, controller.remainingRunSeconds());
     assertEquals(before + 150f, controller.astra().y(), 0.2f);
     before = controller.astra().y();
-    controller.advanceFlight(FlightControls.neutral(), 1f);
+    controller.advanceFlight(FlightControls.neutral(), 1f, false);
     assertEquals(before, controller.astra().y());
   }
 
@@ -43,5 +43,54 @@ class PhaseOneGameControllerTest {
     float frozenY = controller.activeRaider().y();
     controller.advanceEncounter(100f);
     assertEquals(frozenY, controller.activeRaider().y(), 0.001f);
+  }
+
+  @Test void scoringDoesNotStartBeforeTheRun() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+
+    assertEquals(0, controller.advanceFlight(FlightControls.neutral(), 1f, true));
+    assertEquals(0, controller.scorePoints());
+  }
+
+  @Test void baseAndCoincidenceScoreAccumulateThenFreezeAtSixtySeconds() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+    controller.start();
+
+    for (int second = 0; second < 60; second++) {
+      assertEquals(11, controller.advanceFlight(FlightControls.neutral(), 1f, true));
+    }
+
+    assertTrue(controller.isRunFinished());
+    assertEquals(60 + 600, controller.scorePoints());
+    assertEquals(0, controller.advanceFlight(FlightControls.neutral(), 1f, true));
+    assertEquals(660, controller.scorePoints());
+  }
+
+  @Test void oversizedDeltaScoresOnlyTheRemainingRunFraction() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+    controller.start();
+
+    assertEquals(30, controller.advanceFlight(FlightControls.neutral(), 30f, false));
+    assertEquals(30, controller.advanceFlight(FlightControls.neutral(), 100f, false));
+    assertTrue(controller.isRunFinished());
+    assertEquals(60, controller.scorePoints());
+  }
+
+  @Test void coincidenceBonusOnlyAccumulatesWhileVisible() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+    controller.start();
+
+    for (int second = 0; second < 2; second++) {
+      controller.advanceFlight(FlightControls.neutral(), 1f, true);
+    }
+    for (int second = 0; second < 8; second++) {
+      controller.advanceFlight(FlightControls.neutral(), 1f, false);
+    }
+
+    assertEquals(30, controller.scorePoints());
   }
 }

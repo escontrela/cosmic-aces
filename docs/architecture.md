@@ -54,7 +54,17 @@ La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
 durante 0,25 s y usa zoom 1,00/1,08/1,15.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
 `FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
-el mundo, sin panel ni títulos. `Ship.draw(batch, rotationDegrees)` rota el
+el mundo, sin panel ni títulos, y el score acumulado en la esquina superior
+derecha. `PhaseScore` (domain.game) convierte el tiempo válido del recorrido en
+puntos solo al cruzar segundos completos: 1 por segundo de fase y 10 por cada
+segundo completo de coincidencia visible de Astra y el Raider; los segundos ya
+concedidos evitan doble conteo y el resultado no depende de cómo se reparta el
+delta ni de los FPS. `PhaseOneGameController.advanceFlight` usa el mismo delta
+acotado por el reloj para el vuelo y la puntuación y devuelve los puntos del
+frame; la pantalla los publica como `PointsEarned` antes de `PhaseCompleted` y
+dibuja el score desde el snapshot del coordinador. La coincidencia se evalúa con
+la vista real de la cámara (rectángulo rotado por `camera.up` y `camera.zoom`),
+no con un rectángulo fijo. `Ship.draw(batch, rotationDegrees)` rota el
 sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
@@ -117,6 +127,7 @@ com.davidpe.cosmicaces
 |   +-- PhaseOneGameController extends GameController: encuentros de fase uno.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
 |       4. isRaiderActive()  5. activeRaider()  6. setRaiderVisuals()
+|       7. scorePoints()
 |
 +-- domain
 |   +-- game
@@ -126,6 +137,8 @@ com.davidpe.cosmicaces
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
 |   |   +-- PlayableRun: recorrido actual de 60 segundos.
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
+|   |   +-- PhaseScore: puntos por segundos completos y coincidencia visible.
+|   |   |   1. advance()  2. totalPoints()
 |   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
 |   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
@@ -193,8 +206,8 @@ com.davidpe.cosmicaces
             |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
-            +-- FlightHud: brújula y velocidad en coordenadas de pantalla.
-                1. headingLabel()  2. headingDegrees()  3. draw()
+            +-- FlightHud: brújula, velocidad y score en coordenadas de pantalla.
+                1. headingLabel()  2. headingDegrees()  3. draw()  4. drawScore()
 ```
 
 ## Comportamiento provisional actual

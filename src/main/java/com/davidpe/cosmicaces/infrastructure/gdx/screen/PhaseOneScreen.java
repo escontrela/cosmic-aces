@@ -19,6 +19,7 @@ import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
+import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
@@ -143,8 +144,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       return;
     }
     if (!runFinished) {
-      applyMovementInput(delta);
+      int earned = applyMovementInput(delta, shipsCoincidentVisible());
       controller.advanceEncounter(delta);
+      if (earned > 0) {
+        // Report points before the completion snapshot so the last second is never overwritten.
+        publisher.publish(new PointsEarned(gameId, phase, earned));
+      }
       if (controller.isRunFinished()) {
         runFinished = true;
         // The run completed: report it once with the authoritative persistent snapshot. There is no
@@ -176,6 +181,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.setProjectionMatrix(hudCamera.combined);
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed());
+    hud.drawScore(batch, font, phaseSnapshot.get().points());
     if (runFinished) {
       drawEndMessage();
     }
@@ -197,27 +203,54 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudFont.dispose();
   }
 
-  private void applyMovementInput(float delta) {
+  private int applyMovementInput(float delta, boolean coincident) {
     boolean left = Gdx.input.isKeyPressed(Input.Keys.LEFT);
     boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
     boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
-    controller.advanceFlight(new FlightControls(left, right, up, down,
-        Gdx.input.isKeyJustPressed(Input.Keys.P)), delta);
+    return controller.advanceFlight(new FlightControls(left, right, up, down,
+        Gdx.input.isKeyJustPressed(Input.Keys.P)), delta, coincident);
   }
 
   /**
-   * Conservative circular test of the raider against the rotated world camera view. The raider
-   * keeps moving in the world while off camera; this only decides whether to draw it.
+   * True while Astra and the single raider are both inside the rotated camera view during the same
+   * update. Sampling uses the real camera transform (rotation and zoom), not a fixed 800x600 box.
    */
+  private boolean shipsCoincidentVisible() {
+    if (!controller.isRaiderActive()) {
+      return false;
+    }
+    Astra astra = controller.astra();
+    VesperRaider raider = controller.activeRaider();
+    return shipVisible(astra.x() + astra.drawWidth() / 2f, astra.y() + astra.drawHeight() / 2f,
+        Math.max(astra.drawWidth(), astra.drawHeight()) / 2f)
+        && shipVisible(raider.x() + raider.drawWidth() / 2f,
+            raider.y() + raider.drawHeight() / 2f,
+            Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+  }
+
+  /** Exact rotated-rectangle test deciding whether the off-camera raider is drawn. */
   private boolean raiderVisible() {
     VesperRaider raider = controller.activeRaider();
-    float margin = Math.max(raider.drawWidth(), raider.drawHeight());
-    float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
-        VirtualScreenSize.HEIGHT / 2f) * camera.zoom + margin;
-    float dx = raider.x() - camera.position.x;
-    float dy = raider.y() - camera.position.y;
-    return dx * dx + dy * dy <= visibleRadius * visibleRadius;
+    return shipVisible(raider.x() + raider.drawWidth() / 2f,
+        raider.y() + raider.drawHeight() / 2f,
+        Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+  }
+
+  /**
+   * Projects a world point into the camera's rotated view frame and checks it against the visible
+   * half extents, including the ship's half box as margin. {@code camera.up} encodes the yaw.
+   */
+  private boolean shipVisible(float centerX, float centerY, float halfBox) {
+    float dx = centerX - camera.position.x;
+    float dy = centerY - camera.position.y;
+    float upX = camera.up.x;
+    float upY = camera.up.y;
+    float localRight = dx * upY - dy * upX;
+    float localUp = dx * upX + dy * upY;
+    float halfWidth = VirtualScreenSize.WIDTH / 2f * camera.zoom + halfBox;
+    float halfHeight = VirtualScreenSize.HEIGHT / 2f * camera.zoom + halfBox;
+    return Math.abs(localRight) <= halfWidth && Math.abs(localUp) <= halfHeight;
   }
 
   private void drawEndMessage() {
