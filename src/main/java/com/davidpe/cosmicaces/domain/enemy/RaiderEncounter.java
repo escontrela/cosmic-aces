@@ -38,6 +38,7 @@ public final class RaiderEncounter {
   private float waitSeconds;
   private float turnSeconds;
   private VesperRaider raider;
+  private VesperRaider.Visuals visuals;
 
   public RaiderEncounter() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -60,19 +61,12 @@ public final class RaiderEncounter {
     return raider;
   }
 
-  /** Horizontal position of the active raider, or 0 while waiting. */
-  public float raiderX() {
-    return raider == null ? 0f : raider.x();
-  }
-
-  /** Vertical position of the active raider, or 0 while waiting. */
-  public float raiderY() {
-    return raider == null ? 0f : raider.y();
-  }
-
-  /** Bank of the active raider (-1/0/+1), or 0 while waiting. */
-  public int raiderBank() {
-    return raider == null ? 0 : raider.bank();
+  /** Gives each future Raider the phase's shared sprite sheet. */
+  public void setVisuals(VesperRaider.Visuals visuals) {
+    this.visuals = visuals;
+    if (raider != null) {
+      raider.setVisuals(visuals);
+    }
   }
 
   /**
@@ -107,6 +101,7 @@ public final class RaiderEncounter {
     float spawnX = random.nextUnit() * Math.max(0f, area.width() - RAIDER_WIDTH);
     raider = new VesperRaider(
         DESCENT_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, spawnX, spawnX, area.height(), 0f);
+    raider.setVisuals(visuals);
     phase = Phase.ACTIVE;
     turnSeconds = nextTurnSeconds();
   }

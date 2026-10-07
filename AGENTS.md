@@ -29,31 +29,37 @@ Conserva un estilo arcade espacial claro y legible. La referencia de género inf
 Organiza siempre el código Java bajo `com.davidpe.cosmicaces` en estas capas, respetando la dirección de dependencias indicada:
 
 ```text
-domain/          reglas y modelo del juego, Java puro
-application/     casos de uso que coordinan el dominio
-infrastructure/  LibGDX, LWJGL3, renderizado, input, archivos y adaptadores externos
+domain/          reglas y modelo del juego, incluidas las naves y sus recursos gráficos
+application/     coordinación global y controladores de fases
+infrastructure/  pantallas LibGDX, input y adaptadores externos
+boot/            entrada de escritorio y configuración LWJGL3
 ```
 
-- **Domain:** contiene reglas y conceptos propios del juego, por ejemplo sesión, fase, nave, armas, enemigos, puntuación y value objects cuando cada uno entre en alcance. No importa LibGDX, JavaFX, LWJGL, Maven, UI ni clases de infraestructura. No conviertas detalles visuales como estrellas decorativas, fuentes, ASCII art o animaciones en entidades de dominio.
-- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`. Excepción específica de este proyecto: `CosmicAcesGame` y `GameCoordinator` viven en `application`; `CosmicAcesGame` puede depender de LibGDX y de componentes de presentación en `infrastructure` para coordinar pantallas. El resto de la lógica de aplicación no depende de LibGDX ni de infraestructura. Los controles de pantalla se traducen en eventos/casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
-- **Infrastructure:** contiene adaptadores LibGDX, pantallas, renderizadores, input, ownership de recursos gráficos, bus de eventos y fábrica de pantallas. Puede depender de `application` y `domain`; `application.CosmicAcesGame` es la excepción que coordina el ciclo de vida de pantallas.
+- **Domain:** contiene reglas y conceptos del juego, como fase, nave, enemigos y puntuación. Se permite LibGDX en las naves y sus láminas: `Ship` comparte movimiento y dibujo, mientras `Astra` y `VesperRaider` conocen sus sprites y poses. Los elementos reutilizables del escenario viven en `domain.scenery`: `Starfield` encapsula sus estrellas, actualización y dibujo con LibGDX. Se permite LibGDX en los elementos del juego y del escenario; las fuentes y el layout de las pantallas permanecen en infraestructura. No depende de clases de `infrastructure`.
+- **Application:** contiene `CosmicAcesGame`, `GameCoordinator`, la base `GameController` y los controladores concretos de fase como `PhaseOneGameController`. `CosmicAcesGame` puede depender de LibGDX y de `ScreenFactory` para coordinar pantallas; los controladores de fase coordinan las reglas del dominio. Los controles de pantalla se traducen en eventos y llamadas al controlador; no se implementan reglas de juego dentro de listeners.
+- **Infrastructure:** contiene pantallas LibGDX, input, bus de eventos y fábrica de pantallas. Las pantallas crean y liberan los recursos gráficos de las naves que usan. Puede depender de `application` y `domain`; `application.CosmicAcesGame` es la excepción que coordina su ciclo de vida.
 - **Boot:** contiene el punto de entrada de escritorio `DesktopLauncher` y la configuración de arranque, incluido el singleton que construye y devuelve `Lwjgl3ApplicationConfiguration`. Puede depender de LibGDX e infraestructura para ensamblar y arrancar la aplicación; no contiene reglas de juego.
 - **CosmicAcesGame** vive en `application` y es el coordinador/composition root de LibGDX: construye el coordinador de estado y la fábrica de pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
-- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su propio estado de presentación, input, layout, renderizado y recursos. La pantalla crea y libera los recursos que posee en el ciclo de vida LibGDX (`show`, `render`, `resize`, `hide`, `dispose`). Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su estado de presentación, input, layout y recursos. Las naves implementan el dibujo común en `Ship.draw(SpriteBatch)` y reciben sus texturas una vez por pantalla; la pantalla crea y libera esas texturas en su ciclo de vida LibGDX. Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
 - `GameCoordinator` vive en `application` y mantiene el estado persistente global del jugador y las transiciones entre fases; no depende de LibGDX ni de infraestructura.
 - Comparte solo configuración transversal de presentación —por ejemplo la resolución virtual— desde infraestructura. No hagas que una pantalla importe el coordinador para obtener constantes.
 - `DesktopLauncher` vive en `boot`; solo obtiene la configuración de escritorio y crea `CosmicAcesGame`. La configuración de LWJGL3 también pertenece a `boot` y puede evolucionar para leer parámetros de archivos de configuración. `boot` está al mismo nivel que `domain`, `application` e `infrastructure`.
-- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; si una conducta solo dibuja o anima, déjala en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; el dibujo propio de las naves y elementos del escenario puede vivir junto a su modelo; el layout, input y presentación de las pantallas permanecen en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+
+Antes de añadir o mover clases, lee [la guía de arquitectura](docs/architecture.md). Define cómo encajar nuevas clases en los paquetes y documenta las clases actuales, sus responsabilidades y métodos principales. Mantén esta guía actualizada cuando cambie la estructura.
 
 Estructura actual de referencia para el flujo inicial:
 
 ```text
-domain/game/                 GameSession, GamePhase
-application/                 GameFlow y futuros casos de uso
-application/                  CosmicAcesGame, GameCoordinator, GameFlow y futuros casos de uso
+domain/game/                  GamePhase, GameState, PlayableRun y eventos
+domain/ship/                  Ship, MovementIntent
+domain/player/                Astra, HeroShipSheet
+domain/enemy/                 VesperRaider, VesperRaiderSheet, RaiderEncounter
+domain/scenery/               Starfield y futuros elementos del escenario
+application/                  CosmicAcesGame, GameCoordinator, GameController, PhaseOneGameController
 infrastructure/gdx/           VirtualScreenSize, ScreenFactory y bus de eventos
-infrastructure/gdx/screen/    WelcomeScreen, PlayableScreen
-boot/                          DesktopLauncher y configuración de escritorio LWJGL3
+infrastructure/gdx/screen/    WelcomeScreen, PhaseOneScreen
+boot/                         DesktopLauncher y configuración de escritorio LWJGL3
 ```
 
 ## Fuentes y permisos de trabajo

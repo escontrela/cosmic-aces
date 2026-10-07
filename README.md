@@ -1,36 +1,50 @@
 # Cosmic Aces
 
-Juego arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá desplazarse y virar dentro del viewport, disparar y enfrentarse a enemigos que entran desde la parte superior.
+**Un arcade espacial de desplazamiento vertical**, creado con Java y LibGDX. Pilota a Astra, esquiva a los Vesper Raiders y cruza un campo de estrellas en una aventura inspirada en los clásicos *shoot ’em up*.
 
-La base usa Java 22, LibGDX 1.12.1, LWJGL3 y Maven, siguiendo el stack y la estructura sencilla de `escontrela/ghosts-game`. Por ahora solo está implementada la ventana inicial vacía.
+![Captura de Cosmic Aces en la fase jugable, con Astra y un Vesper Raider](docs/screenshots/game-screen-shoot.png)
 
-## Dirección futura
+> El proyecto está en desarrollo. La captura muestra la fase jugable actual; las mecánicas y fases se irán ampliando.
 
-Se contempla añadir funciones en línea mediante WebSockets, por ejemplo para partidas multijugador, salas o rankings. Si se implementan, el servidor podrá desarrollarse como un servicio independiente con Spring Boot; el cliente LibGDX seguirá gestionando el juego y la representación gráfica. Spring Boot todavía no forma parte de este proyecto.
+## Estado actual
 
-LibGDX permite distribuir aplicaciones de escritorio para macOS y Windows, además de otras plataformas. El backend de escritorio actual es LWJGL3.
+- Pantalla de bienvenida; pulsa **Y** para empezar.
+- Primera fase jugable con Astra y movimiento en las cuatro direcciones.
+- Acelera manteniendo **↑**; la nave cambia de pose al virar.
+- Campo de estrellas y Vesper Raiders que aparecen desde la parte superior.
+- Recorrido de 60 segundos. Al terminar, pulsa **Espacio** para volver al inicio.
+- Pulsa **Esc** para abandonar la partida y volver al inicio.
+
+El disparo, nuevas fases, la pantalla de fin de partida y el hall of fame todavía no están implementados.
 
 ## Requisitos
 
 - JDK 22
 - Maven 3.x
 
+El juego usa LibGDX 1.12.1 con LWJGL3 para escritorio. La resolución virtual es de 800 × 600 y la ventana puede redimensionarse.
+
 ## Ejecutar
+
+Desde la raíz del proyecto:
 
 ```bash
 mvn compile exec:exec
 ```
 
-En macOS, el lanzador Maven ya aplica `-XstartOnFirstThread`.
+En macOS, Maven aplica `-XstartOnFirstThread` al iniciar la aplicación.
 
-Consulta [AGENTS.md](AGENTS.md) para la visión y las convenciones de desarrollo.
+## Estructura del proyecto
 
-## Flujo de trabajo con agentes
+El código Java está organizado por responsabilidades:
 
-Linear es la fuente de verdad de los tickets. Codex actúa como Tech Lead: analiza tickets del PO y crea subtareas ordenadas; después revisa la PR final y cierra la raíz. OpenCode implementa cada subtarea en una rama compartida, ejecuta las verificaciones técnicas, sube cada commit a GitHub y la marca `Done` cuando compile, pasen las pruebas aplicables, la app arranque y el push se confirme. Abre una PR cuando todas están completas. El PO humano hace la revisión visual. Ningún agente fusiona la PR.
+- `boot`: punto de entrada y configuración de escritorio.
+- `application`: coordinación de la partida y controladores de fase.
+- `domain`: estado, reglas, naves, enemigos y elementos del escenario.
+- `infrastructure`: pantallas, eventos y composición de recursos LibGDX.
 
-El workspace Linear es [`cosmic-aces`](https://linear.app/cosmic-aces), con el equipo `Cosmic-aces`. En Codex selecciona la conexión `cosmic-aces-linear`; no uses la conexión genérica `Linear` ni `LastMoveChess`. Actualmente no hay un proyecto Linear configurado, así que las issues se crean en el equipo sin proyecto hasta que el PO confirme uno.
+La guía [docs/architecture.md](docs/architecture.md) explica cómo ubicar nuevas clases y describe las clases principales y sus métodos. Las convenciones para agentes están en [AGENTS.md](AGENTS.md).
 
-Las instrucciones compartidas están en [AGENTS.md](AGENTS.md); las skills de ambos roles están en [`.agents/skills/`](.agents/skills/), y los perfiles y la conexión MCP de OpenCode están en [`.opencode/`](.opencode/). Los prompts para programar las ejecuciones están en [`docs/agent-workflow/`](docs/agent-workflow/). La autenticación de OpenCode y la programación local todavía deben configurarse en el entorno de desarrollo.
+## Dirección futura
 
-All agents must follow the hard prohibition in `AGENTS.md`: they may not make purchases, increase token or usage limits, change plans, or create accounts under any circumstances.
+El desarrollo contempla ampliar las fases y las mecánicas del juego. También se considera incorporar funciones en línea mediante WebSockets, como partidas multijugador o rankings. Si se implementa esa parte, el servidor será un servicio independiente; Spring Boot no forma parte del cliente actual.

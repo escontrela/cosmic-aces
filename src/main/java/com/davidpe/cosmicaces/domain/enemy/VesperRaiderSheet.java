@@ -1,4 +1,4 @@
-package com.davidpe.cosmicaces.infrastructure.gdx;
+package com.davidpe.cosmicaces.domain.enemy;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import java.util.List;

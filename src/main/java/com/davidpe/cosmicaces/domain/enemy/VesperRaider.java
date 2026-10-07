@@ -1,65 +1,47 @@
 package com.davidpe.cosmicaces.domain.enemy;
 
-/**
- * An autonomous descending enemy. The position is the bottom-left corner of its box; {@code x}
- * grows to the right and {@code y} grows upward, matching the presentation axis so the screen needs
- * no coordinate conversion. The heading is measured in degrees from straight-down descent, positive
- * toward the right; the encounter keeps it within a bounded range and the raider never steers toward
- * the ship.
- */
-public final class VesperRaider {
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.utils.Disposable;
+import com.davidpe.cosmicaces.domain.ship.MovementIntent;
+import com.davidpe.cosmicaces.domain.ship.Ship;
 
-  private final float speed;
-  private final float width;
-  private final float height;
+/** An autonomous enemy that descends along a heading and may leave the play area. */
+public final class VesperRaider extends Ship {
+
   private final float spawnX;
-  private float x;
-  private float y;
   private float headingDegrees;
+  private Visuals visuals;
 
-  public VesperRaider(
-      float speed, float width, float height, float spawnX, float x, float y, float headingDegrees) {
-    if (speed <= 0f || Float.isNaN(speed)) {
-      throw new IllegalArgumentException("Raider speed must be positive: " + speed);
-    }
-    if (width <= 0f || height <= 0f || Float.isNaN(width) || Float.isNaN(height)) {
+  public VesperRaider(float speed, float width, float height, float spawnX, float x, float y,
+      float headingDegrees) {
+    super(speed, x, y, width, height, VesperRaiderSheet.slice(VesperRaiderSheet.Pose.NEUTRAL).width(),
+        VesperRaiderSheet.slice(VesperRaiderSheet.Pose.NEUTRAL).height());
+    if (width <= 0f || height <= 0f || !Float.isFinite(width) || !Float.isFinite(height)) {
       throw new IllegalArgumentException("Raider box must be positive: " + width + "x" + height);
     }
-    if (Float.isNaN(spawnX) || Float.isNaN(x) || Float.isNaN(y)) {
-      throw new IllegalArgumentException("Raider position must be finite");
+    if (!Float.isFinite(spawnX)) {
+      throw new IllegalArgumentException("Raider spawn position must be finite");
     }
-    this.speed = speed;
-    this.width = width;
-    this.height = height;
     this.spawnX = spawnX;
-    this.x = x;
-    this.y = y;
-    this.headingDegrees = headingDegrees;
+    setHeadingDegrees(headingDegrees);
   }
 
-  public float x() {
-    return x;
-  }
-
-  public float y() {
-    return y;
+  public void setVisuals(Visuals visuals) {
+    this.visuals = visuals;
   }
 
   public float width() {
-    return width;
+    return drawWidth();
   }
 
   public float height() {
-    return height;
+    return drawHeight();
   }
 
-  /** Horizontal lane the raider spawned in. */
   public float spawnX() {
     return spawnX;
-  }
-
-  public float speed() {
-    return speed;
   }
 
   public float headingDegrees() {
@@ -71,21 +53,47 @@ public final class VesperRaider {
     return Float.compare(headingDegrees, 0f);
   }
 
-  /** Replaces the heading; the encounter owns the bounds on its value. */
   public void setHeadingDegrees(float headingDegrees) {
+    if (!Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("Heading must be finite");
+    }
     this.headingDegrees = headingDegrees;
   }
 
-  /**
-   * Moves the raider for {@code deltaSeconds} along its heading, descending predominantly.
-   * Non-positive or non-finite deltas leave the raider unchanged.
-   */
   public void advance(float deltaSeconds) {
-    if (deltaSeconds <= 0f || !Float.isFinite(deltaSeconds)) {
-      return;
+    advance(MovementIntent.fromDownwardHeading(headingDegrees), deltaSeconds);
+  }
+
+  @Override
+  protected TextureRegion currentRegion() {
+    if (visuals == null) {
+      throw new IllegalStateException("Vesper Raider visuals have not been attached");
     }
-    double radians = Math.toRadians(headingDegrees);
-    x += (float) Math.sin(radians) * speed * deltaSeconds;
-    y -= (float) Math.cos(radians) * speed * deltaSeconds;
+    return visuals.region(bank());
+  }
+
+  /** One shared sprite sheet for all Raiders spawned in a phase. */
+  public static final class Visuals implements Disposable {
+    private final Texture texture;
+    private final TextureRegion[] regions;
+
+    public Visuals() {
+      texture = new Texture(Gdx.files.internal(VesperRaiderSheet.internalPath()));
+      regions = new TextureRegion[VesperRaiderSheet.Pose.values().length];
+      for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
+        VesperRaiderSheet.Slice slice = VesperRaiderSheet.slice(pose);
+        regions[pose.ordinal()] = VesperRaiderSheet.orientedForDescent(
+            new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height()));
+      }
+    }
+
+    private TextureRegion region(int bank) {
+      return regions[VesperRaiderSheet.poseForBank(bank).ordinal()];
+    }
+
+    @Override
+    public void dispose() {
+      texture.dispose();
+    }
   }
 }

@@ -26,7 +26,7 @@ class RaiderEncounterTest {
     encounter.advance(0.02f, AREA);
     assertTrue(encounter.isActive());
     assertNotNull(encounter.raider());
-    assertEquals(AREA.height(), encounter.raiderY(), EPSILON);
+    assertEquals(AREA.height(), encounter.raider().y(), EPSILON);
   }
 
   @Test
@@ -61,7 +61,7 @@ class RaiderEncounterTest {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5s, straight down
     encounter.advance(5f, AREA);
     assertTrue(encounter.isActive());
-    assertEquals(768f, encounter.raiderY(), EPSILON);
+    assertEquals(768f, encounter.raider().y(), EPSILON);
 
     // Six full seconds of descent leave the top of the box inside the area...
     encounter.advance(1f, AREA);
@@ -105,10 +105,10 @@ class RaiderEncounterTest {
   void bankReflectsTheCurrentHeadingThroughTheEncounter() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
     encounter.advance(3f, AREA);
-    assertEquals(0, encounter.raiderBank());
+    assertEquals(0, encounter.raider().bank());
 
     encounter.advance(1f, AREA); // first turn: heading = -20 with the 0f source
-    assertEquals(-1, encounter.raiderBank());
+    assertEquals(-1, encounter.raider().bank());
   }
 
   @Test
@@ -142,7 +142,7 @@ class RaiderEncounterTest {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f));
     encounter.advance(60f, AREA); // wait consumed: the raider spawns parked at the top edge
     assertTrue(encounter.isActive());
-    assertEquals(768f, encounter.raiderY(), EPSILON);
+    assertEquals(768f, encounter.raider().y(), EPSILON);
 
     encounter.advance(60f, AREA); // huge active delta: the box is far below the area
     assertFalse(encounter.isActive());
