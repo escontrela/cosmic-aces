@@ -1,4 +1,4 @@
-package com.davidpe.cosmicaces.infrastructure.gdx;
+package com.davidpe.cosmicaces.domain.player;
 
 import java.util.List;
 

@@ -1,0 +1,156 @@
+# Arquitectura de Cosmic Aces
+
+Esta guía describe la estructura actual y los criterios para añadir clases bajo
+`com.davidpe.cosmicaces`. Complementa las instrucciones de `AGENTS.md`.
+
+## Cómo ubicar nuevas clases
+
+| Paquete | Responsabilidad | Ejemplos y criterio de entrada |
+|---|---|---|
+| `boot` | Arranque y configuración de escritorio | Launcher, configuración LWJGL3 y futura lectura de configuración de arranque. |
+| `application` | Coordinación global y de cada fase | Transiciones, manejo de eventos y controladores que combinan reglas del dominio. |
+| `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. |
+| `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
+| `domain.player` | Elementos propios del protagonista | Astra, sus poses y sus láminas de sprites. |
+| `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
+| `domain.scenery` | Elementos reutilizables del escenario | Starfield y futuros fondos u objetos del escenario con estado, actualización y dibujo propios. |
+| `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
+| `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
+| `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
+
+Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
+su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
+concreta. No añadas clases base, interfaces ni paquetes vacíos para anticipar
+funcionalidades todavía sin definir.
+
+LibGDX está permitido en el dominio: las naves y los elementos del escenario
+pueden encapsular su dibujo. El dominio no importa clases de `application`,
+`infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
+al objeto, como hace Starfield con el tamaño del área.
+
+Los controladores de fase en application coordinan el dominio. GameCoordinator
+mantiene el estado global y decide las transiciones. CosmicAcesGame es la excepción
+de composición: depende de LibGDX y de infraestructura para construir pantallas y
+aplicar esas transiciones. Infraestructura puede depender de application y domain;
+boot ensambla y arranca la aplicación.
+
+Las pantallas traducen el input en llamadas al controlador y publican eventos.
+El estado global vive en GameState; el estado de un recorrido vive en el controlador
+de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
+ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
+
+Las pantallas crean y liberan sus recursos gráficos. Astra.Visuals y
+VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pantalla
+es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
+Starfield.draw(shapes) abre y cierra el dibujo con el ShapeRenderer recibido, que
+pertenece a la pantalla. El coordinador cambia de pantalla después del render del
+frame y libera la anterior.
+
+Consulta posición y pose en la nave: `controller.astra().x()`,
+`controller.activeRaider().y()` y `encounter.raider().bank()`. No añadas métodos
+intermedios que solo reenvíen estos getters. El enemigo puede ser null mientras
+espera su aparición; consulta su presencia antes de usarlo.
+
+## Clases actuales y métodos principales
+
+Los métodos están enumerados por clase. Se omiten constructores y getters
+secundarios. La indentación indica paquetes; la herencia se indica explícitamente.
+
+```text
+com.davidpe.cosmicaces
+|
++-- boot
+|   +-- DesktopLauncher: arranca la aplicación LWJGL3.
+|   |   1. main(args)
+|   +-- DesktopConfiguration: singleton de configuración de escritorio.
+|       1. getInstance()  2. createConfiguration()
+|
++-- application
+|   +-- CosmicAcesGame extends Game: conecta bus, coordinador y pantallas.
+|   |   1. create(): muestra WelcomeScreen y registra listeners.
+|   |   2. render(): dibuja la pantalla y aplica la transición pendiente.
+|   |   3. dispose(): libera pantalla y suscripciones.
+|   +-- GameCoordinator: mantiene la partida global y decide transiciones.
+|   |   1. onEvent()  2. state()  3. snapshot()
+|   |   4. consumePendingTransition()
+|   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
+|   |   1. start()  2. advanceRun()  3. isRunFinished()
+|   |   4. applyMovementIntent()  5. placeShip()  6. astra()
+|   +-- PhaseOneGameController extends GameController: encuentros de fase uno.
+|       1. advanceEncounter()  2. isRaiderActive()
+|       3. activeRaider()  4. setRaiderVisuals()
+|
++-- domain
+|   +-- game
+|   |   +-- GameState: identidad, fase, puntos y vidas de la partida.
+|   |   |   1. changePhase()  2. addPoints()  3. loseLife()
+|   |   |   4. completePhase()  5. snapshot()
+|   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
+|   |   +-- PlayableRun: recorrido actual de 60 segundos.
+|   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
+|   |   +-- PlayArea: limites de movimiento.
+|   |   |   1. clampX()  2. clampY()
+|   |   +-- GameId: identidad de partida para descartar eventos antiguos.
+|   |   +-- PhaseResult: resultado inmutable con fase, puntos y vidas.
+|   |   +-- GameEvent: contrato de mensajes del juego.
+|   |       +-- StartRequested: solicita empezar.
+|   |       +-- PointsEarned: comunica puntos obtenidos.
+|   |       +-- LifeLost: comunica una vida perdida.
+|   |       +-- PhaseCompleted: comunica el resultado de la fase.
+|   |       +-- GameAbandoned: solicita abandonar.
+|   +-- ship
+|   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
+|   |   |   1. advance() [protegido]  2. setPosition() [protegido]
+|   |   |   3. draw()  4. currentRegion() [abstracto protegido]
+|   |   +-- MovementIntent: direccion deseada para cualquier nave.
+|   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
+|   +-- player
+|   |   +-- Astra extends Ship: protagonista, giro y aceleracion.
+|   |   |   1. placeAt()  2. move()  3. setVisuals()  4. currentRegion()
+|   |   |   +-- Visuals: carga texturas; dispose() las libera.
+|   |   +-- HeroShipSheet: laminas y recortes de sprites de Astra.
+|   |       1. sheets()
+|   +-- enemy
+|   |   +-- VesperRaider extends Ship: enemigo descendente con rumbo.
+|   |   |   1. advance()  2. setHeadingDegrees()  3. bank()  4. setVisuals()
+|   |   |   +-- Visuals: carga textura; dispose() la libera.
+|   |   +-- RaiderEncounter: aparicion, movimiento y retirada del enemigo.
+|   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
+|   |   +-- VesperRaiderSheet: recortes y poses del enemigo.
+|   |   |   1. slice()  2. poseForBank()  3. orientedForDescent()
+|   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
+|   |       1. nextUnit()
+|   +-- scenery
+|       +-- Starfield: fondo de estrellas configurable y reutilizable.
+|           1. update(): mueve y recicla estrellas.
+|           2. draw(): dibuja con ShapeRenderer.
+|
++-- infrastructure
+    +-- gdx
+        +-- ScreenFactory: construye pantallas y conecta dependencias.
+        |   1. createWelcomeScreen()  2. createPhaseOneScreen()
+        +-- VirtualScreenSize: resolucion virtual compartida, 800 x 600.
+        +-- event
+        |   +-- GameEventBus: bus sincrono por tipo concreto de evento.
+        |   |   1. subscribe()  2. publish()
+        |   +-- GameEventPublisher: contrato de publicacion.
+        |   |   1. publish()
+        |   +-- Subscription: cancelacion de un listener.
+        |       1. cancel()
+        +-- screen
+            +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
+            |   1. render()  2. resize()  3. dispose()
+            +-- PhaseOneScreen: input, actualizacion y dibujo de fase uno.
+                1. render()  2. resize()  3. dispose()
+```
+
+## Comportamiento provisional actual
+
+PlayableRun fija la duración en 60 segundos. Al terminar la fase, GameCoordinator
+cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el mensaje
+final hasta abandonar. Todavía no existe una pantalla de game over ni hall of fame.
+El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
+dependencias; no es un singleton.
+
+Actualiza este árbol y las reglas de ubicación cuando se añadan, muevan o retiren
+clases o cambien sus responsabilidades.

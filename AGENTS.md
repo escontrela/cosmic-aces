@@ -8,7 +8,7 @@ Lee la skill correspondiente al rol antes de operar sobre tickets:
 - OpenCode, responsable de implementación: [cosmic-aces-developer](.agents/skills/cosmic-aces-developer/SKILL.md).
 - Contrato compartido de estados, subtareas, ramas y revisiones: [flujo Linear](docs/agent-workflow/linear-workflow.md).
 
-Los agentes no deben intentar ejecutar el rol del otro. Codex no implementa ni crea commits. OpenCode cierra cada subtarea hija como `Done` tras superar las verificaciones técnicas definidas abajo. Codex revisa la PR final y cierra la issue raíz; la comprobación visual final de pantallas corresponde al PO humano.
+Los agentes no deben intentar ejecutar el rol del otro dentro del flujo formal de Linear. Codex no implementa ni crea commits en ese flujo. **Excepción para ajustes manuales del PO:** cuando el usuario solicite directamente en la conversación un cambio local o una edición manual fuera del ciclo de una subtarea de Linear, Codex puede modificar el código en la rama/checkout actual y ejecutar las verificaciones pertinentes. Esta excepción no autoriza crear o transicionar issues, cambiar de rama, crear commits, hacer push, abrir/fusionar PR ni desplegar; esas acciones requieren autorización propia y siguen sus reglas específicas. Codex debe preservar cambios preexistentes y explicar qué verificó. OpenCode cierra cada subtarea hija como `Done` tras superar las verificaciones técnicas definidas abajo. Codex revisa la PR final y cierra la issue raíz; la comprobación visual final de pantallas corresponde al PO humano.
 
 ## Hard prohibition: purchases, accounts, plans, and usage limits
 
@@ -18,7 +18,7 @@ AI agents must never, under any circumstances, make or authorize purchases; ente
 
 Cosmic Aces es un arcade de disparos espaciales con scroll vertical continuo, inspirado en la jugabilidad de *1945 Air Force*. La nave podrá moverse dentro del viewport, avanzar y retroceder, virar y disparar; los enemigos llegarán desde la parte superior. La base técnica es Java 22, LibGDX 1.12.1, LWJGL3 y Maven. La resolución virtual actual es 800 × 600.
 
-La arquitectura del código se organiza siempre en `domain`, `application` e `infrastructure`, según las reglas obligatorias de la sección **Arquitectura del código**. La implementación debe crecer por subtareas sin saltarse estas fronteras.
+La arquitectura del código se organiza en `domain`, `application`, `infrastructure` y `boot`, según las reglas obligatorias de la sección **Arquitectura del código**. La implementación del flujo formal debe crecer por subtareas sin saltarse estas fronteras.
 
 La dirección futura contempla WebSockets para funciones en línea. Spring Boot, si se adopta, será un servicio independiente. No añadir Spring Boot, red, entidades de juego, assets, dependencias ni funcionalidades fuera del alcance aprobado por el ticket.
 
@@ -29,28 +29,37 @@ Conserva un estilo arcade espacial claro y legible. La referencia de género inf
 Organiza siempre el código Java bajo `com.davidpe.cosmicaces` en estas capas, respetando la dirección de dependencias indicada:
 
 ```text
-domain/          reglas y modelo del juego, Java puro
-application/     casos de uso que coordinan el dominio
-infrastructure/  LibGDX, LWJGL3, renderizado, input, archivos y adaptadores externos
+domain/          reglas y modelo del juego, incluidas las naves y sus recursos gráficos
+application/     coordinación global y controladores de fases
+infrastructure/  pantallas LibGDX, input y adaptadores externos
+boot/            entrada de escritorio y configuración LWJGL3
 ```
 
-- **Domain:** contiene reglas y conceptos propios del juego, por ejemplo sesión, fase, nave, armas, enemigos, puntuación y value objects cuando cada uno entre en alcance. No importa LibGDX, JavaFX, LWJGL, Maven, UI ni clases de infraestructura. No conviertas detalles visuales como estrellas decorativas, fuentes, ASCII art o animaciones en entidades de dominio.
-- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`, pero no de LibGDX ni de clases de `infrastructure`. Los controles de pantalla se traducen en llamadas a casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
-- **Infrastructure:** contiene el launcher LWJGL3, la composición de dependencias LibGDX, `CosmicAcesGame`, pantallas, renderizadores, input y ownership de recursos gráficos. Puede depender de `application` y `domain`; las capas internas nunca dependen de ella.
-- **CosmicAcesGame** es el coordinador/composition root de LibGDX: construye los casos de uso y pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
-- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su propio estado de presentación, input, layout, renderizado y recursos. La pantalla crea y libera los recursos que posee en el ciclo de vida LibGDX (`show`, `render`, `resize`, `hide`, `dispose`). Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- **Domain:** contiene reglas y conceptos del juego, como fase, nave, enemigos y puntuación. Se permite LibGDX en las naves y sus láminas: `Ship` comparte movimiento y dibujo, mientras `Astra` y `VesperRaider` conocen sus sprites y poses. Los elementos reutilizables del escenario viven en `domain.scenery`: `Starfield` encapsula sus estrellas, actualización y dibujo con LibGDX. Se permite LibGDX en los elementos del juego y del escenario; las fuentes y el layout de las pantallas permanecen en infraestructura. No depende de clases de `infrastructure`.
+- **Application:** contiene `CosmicAcesGame`, `GameCoordinator`, la base `GameController` y los controladores concretos de fase como `PhaseOneGameController`. `CosmicAcesGame` puede depender de LibGDX y de `ScreenFactory` para coordinar pantallas; los controladores de fase coordinan las reglas del dominio. Los controles de pantalla se traducen en eventos y llamadas al controlador; no se implementan reglas de juego dentro de listeners.
+- **Infrastructure:** contiene pantallas LibGDX, input, bus de eventos y fábrica de pantallas. Las pantallas crean y liberan los recursos gráficos de las naves que usan. Puede depender de `application` y `domain`; `application.CosmicAcesGame` es la excepción que coordina su ciclo de vida.
+- **Boot:** contiene el punto de entrada de escritorio `DesktopLauncher` y la configuración de arranque, incluido el singleton que construye y devuelve `Lwjgl3ApplicationConfiguration`. Puede depender de LibGDX e infraestructura para ensamblar y arrancar la aplicación; no contiene reglas de juego.
+- **CosmicAcesGame** vive en `application` y es el coordinador/composition root de LibGDX: construye el coordinador de estado y la fábrica de pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
+- Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su estado de presentación, input, layout y recursos. Las naves implementan el dibujo común en `Ship.draw(SpriteBatch)` y reciben sus texturas una vez por pantalla; la pantalla crea y libera esas texturas en su ciclo de vida LibGDX. Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- `GameCoordinator` vive en `application` y mantiene el estado persistente global del jugador y las transiciones entre fases; no depende de LibGDX ni de infraestructura.
 - Comparte solo configuración transversal de presentación —por ejemplo la resolución virtual— desde infraestructura. No hagas que una pantalla importe el coordinador para obtener constantes.
-- `DesktopLauncher` vive en `infrastructure.gdx.desktop`; solo configura LWJGL3 y crea `CosmicAcesGame`.
-- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; si una conducta solo dibuja o anima, déjala en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+- `DesktopLauncher` vive en `boot`; solo obtiene la configuración de escritorio y crea `CosmicAcesGame`. La configuración de LWJGL3 también pertenece a `boot` y puede evolucionar para leer parámetros de archivos de configuración. `boot` está al mismo nivel que `domain`, `application` e `infrastructure`.
+- No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; el dibujo propio de las naves y elementos del escenario puede vivir junto a su modelo; el layout, input y presentación de las pantallas permanecen en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
+
+Antes de añadir o mover clases, lee [la guía de arquitectura](docs/architecture.md). Define cómo encajar nuevas clases en los paquetes y documenta las clases actuales, sus responsabilidades y métodos principales. Mantén esta guía actualizada cuando cambie la estructura.
 
 Estructura actual de referencia para el flujo inicial:
 
 ```text
-domain/game/                 GameSession, GamePhase
-application/                 GameFlow y futuros casos de uso
-infrastructure/gdx/           CosmicAcesGame, VirtualScreenSize
-infrastructure/gdx/screen/    WelcomeScreen, EmptyGameScreen
-infrastructure/gdx/desktop/   DesktopLauncher (entrada LWJGL3)
+domain/game/                  GamePhase, GameState, PlayableRun y eventos
+domain/ship/                  Ship, MovementIntent
+domain/player/                Astra, HeroShipSheet
+domain/enemy/                 VesperRaider, VesperRaiderSheet, RaiderEncounter
+domain/scenery/               Starfield y futuros elementos del escenario
+application/                  CosmicAcesGame, GameCoordinator, GameController, PhaseOneGameController
+infrastructure/gdx/           VirtualScreenSize, ScreenFactory y bus de eventos
+infrastructure/gdx/screen/    WelcomeScreen, PhaseOneScreen
+boot/                         DesktopLauncher y configuración de escritorio LWJGL3
 ```
 
 ## Fuentes y permisos de trabajo
