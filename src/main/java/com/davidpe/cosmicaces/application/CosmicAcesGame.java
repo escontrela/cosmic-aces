@@ -1,4 +1,4 @@
-package com.davidpe.cosmicaces.infrastructure.gdx;
+package com.davidpe.cosmicaces.application;
 
 import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Screen;
@@ -8,6 +8,7 @@ import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
+import com.davidpe.cosmicaces.infrastructure.gdx.ScreenFactory;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventBus;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.Subscription;
 import java.util.ArrayList;
@@ -17,15 +18,15 @@ import java.util.List;
  * LibGDX composition root that coordinates screens and delegates game rules to the application. It
  * keeps the event bus and the {@link GameCoordinator} that owns the persistent player state, uses
  * the {@link ScreenFactory} to build screens wired to the same bus, and applies screen transitions
- * only after the current frame finished rendering, so a screen that requests a change during its own
- * {@code render} is never disposed mid-frame.
+ * only after the current frame finished rendering, so a screen that requests a change during its
+ * own {@code render} is never disposed mid-frame.
  */
 public final class CosmicAcesGame extends Game {
 
   /**
-   * Placeholder number of lives for a new game. COS-16 explicitly defers the lives policy to a later
-   * product ticket, so this value is only what the model needs to create a state. No mechanic reads
-   * or changes lives yet and it has no player-visible effect.
+   * Placeholder number of lives for a new game. COS-16 explicitly defers the lives policy to a
+   * later product ticket, so this value is only what the model needs to create a state. No mechanic
+   * reads or changes lives yet and it has no player-visible effect.
    */
   private static final int PLACEHOLDER_STARTING_LIVES = 1;
 

@@ -32,14 +32,14 @@ import java.util.function.Supplier;
 
 /**
  * First playable screen: the hero ship piloted with the arrow keys inside the viewport, a
- * continuously scrolling star field and the fixed 60-second run. The screen owns and releases
- * every LibGDX resource it creates and translates presentation input into calls on its own
- * {@link GameSession}.
+ * continuously scrolling star field and the fixed 60-second run. The screen owns and releases every
+ * LibGDX resource it creates and translates presentation input into calls on its own {@link
+ * GameSession}.
  *
- * <p>It never navigates by itself: it publishes game events through the injected
- * {@link GameEventPublisher} and the composition root decides the next screen. The run's own state
- * (time and ship) stays in the injected session, while global points and lives stay in the
- * coordinator, which supplies the authoritative {@link PhaseResult} when the run completes.
+ * <p>It never navigates by itself: it publishes game events through the injected {@link
+ * GameEventPublisher} and the composition root decides the next screen. The run's own state (time
+ * and ship) stays in the injected session, while global points and lives stay in the coordinator,
+ * which supplies the authoritative {@link PhaseResult} when the run completes.
  */
 public final class PlayableScreen extends ScreenAdapter {
 
@@ -125,8 +125,9 @@ public final class PlayableScreen extends ScreenAdapter {
     }
     shipDrawWidth = maxWidth * SHIP_SCALE;
     shipDrawHeight = maxHeight * SHIP_SCALE;
-    playArea = new PlayArea(
-        VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
+    playArea =
+        new PlayArea(
+            VirtualScreenSize.WIDTH - shipDrawWidth, VirtualScreenSize.HEIGHT - shipDrawHeight);
 
     // The raider encounter spans the whole viewport so its spawn sits at the top edge and its
     // retirement matches the drawn box leaving the screen. The draw box matches the domain box
@@ -206,8 +207,10 @@ public final class PlayableScreen extends ScreenAdapter {
 
   private void updateBankPose(MovementIntent intent) {
     float horizontal = intent.horizontal();
-    bankPose = horizontal < 0f ? HeroShipSheet.Pose.LEFT
-        : horizontal > 0f ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.NEUTRAL;
+    bankPose =
+        horizontal < 0f
+            ? HeroShipSheet.Pose.LEFT
+            : horizontal > 0f ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.NEUTRAL;
   }
 
   private void drawShip() {

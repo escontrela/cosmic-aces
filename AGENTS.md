@@ -35,11 +35,12 @@ infrastructure/  LibGDX, LWJGL3, renderizado, input, archivos y adaptadores exte
 ```
 
 - **Domain:** contiene reglas y conceptos propios del juego, por ejemplo sesión, fase, nave, armas, enemigos, puntuación y value objects cuando cada uno entre en alcance. No importa LibGDX, JavaFX, LWJGL, Maven, UI ni clases de infraestructura. No conviertas detalles visuales como estrellas decorativas, fuentes, ASCII art o animaciones en entidades de dominio.
-- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`, pero no de LibGDX ni de clases de `infrastructure`. Los controles de pantalla se traducen en llamadas a casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
-- **Infrastructure:** contiene la composición de dependencias LibGDX, `CosmicAcesGame`, pantallas, renderizadores, input y ownership de recursos gráficos. Puede depender de `application` y `domain`; las capas internas nunca dependen de ella.
+- **Application:** contiene casos de uso y coordinación de reglas del dominio. Puede depender de `domain`. Excepción específica de este proyecto: `CosmicAcesGame` y `GameCoordinator` viven en `application`; `CosmicAcesGame` puede depender de LibGDX y de componentes de presentación en `infrastructure` para coordinar pantallas. El resto de la lógica de aplicación no depende de LibGDX ni de infraestructura. Los controles de pantalla se traducen en eventos/casos de uso; no se implementan reglas de juego dentro de listeners ni renderizadores.
+- **Infrastructure:** contiene adaptadores LibGDX, pantallas, renderizadores, input, ownership de recursos gráficos, bus de eventos y fábrica de pantallas. Puede depender de `application` y `domain`; `application.CosmicAcesGame` es la excepción que coordina el ciclo de vida de pantallas.
 - **Boot:** contiene el punto de entrada de escritorio `DesktopLauncher` y la configuración de arranque, incluido el singleton que construye y devuelve `Lwjgl3ApplicationConfiguration`. Puede depender de LibGDX e infraestructura para ensamblar y arrancar la aplicación; no contiene reglas de juego.
-- **CosmicAcesGame** es el coordinador/composition root de LibGDX: construye los casos de uso y pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
+- **CosmicAcesGame** vive en `application` y es el coordinador/composition root de LibGDX: construye el coordinador de estado y la fábrica de pantallas, inicia la pantalla inicial y cambia de pantalla. No contiene lógica de renderizado, estado visual, arrays de estrellas, input concreto ni recursos como `SpriteBatch`, `BitmapFont` o `ShapeRenderer`.
 - Cada pantalla LibGDX vive en `infrastructure.gdx.screen` y encapsula su propio estado de presentación, input, layout, renderizado y recursos. La pantalla crea y libera los recursos que posee en el ciclo de vida LibGDX (`show`, `render`, `resize`, `hide`, `dispose`). Al cambiar de pantalla, el coordinador libera la pantalla anterior; al cerrar el juego se libera la pantalla activa.
+- `GameCoordinator` vive en `application` y mantiene el estado persistente global del jugador y las transiciones entre fases; no depende de LibGDX ni de infraestructura.
 - Comparte solo configuración transversal de presentación —por ejemplo la resolución virtual— desde infraestructura. No hagas que una pantalla importe el coordinador para obtener constantes.
 - `DesktopLauncher` vive en `boot`; solo obtiene la configuración de escritorio y crea `CosmicAcesGame`. La configuración de LWJGL3 también pertenece a `boot` y puede evolucionar para leer parámetros de archivos de configuración. `boot` está al mismo nivel que `domain`, `application` e `infrastructure`.
 - No añadas interfaces, servicios, entidades o paquetes vacíos por seguir una plantilla. Si una regla pertenece claramente al dominio, modela el concepto más pequeño que la expresa; si una conducta solo dibuja o anima, déjala en infraestructura. Las nuevas dependencias entre capas deben justificarse en la revisión de la subtarea.
@@ -49,8 +50,9 @@ Estructura actual de referencia para el flujo inicial:
 ```text
 domain/game/                 GameSession, GamePhase
 application/                 GameFlow y futuros casos de uso
-infrastructure/gdx/           CosmicAcesGame, VirtualScreenSize
-infrastructure/gdx/screen/    WelcomeScreen, EmptyGameScreen
+application/                  CosmicAcesGame, GameCoordinator, GameFlow y futuros casos de uso
+infrastructure/gdx/           VirtualScreenSize, ScreenFactory y bus de eventos
+infrastructure/gdx/screen/    WelcomeScreen, PlayableScreen
 boot/                          DesktopLauncher y configuración de escritorio LWJGL3
 ```
 

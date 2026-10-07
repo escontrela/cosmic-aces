@@ -1,4 +1,4 @@
-package com.davidpe.cosmicaces.infrastructure.gdx;
+package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameEvent;

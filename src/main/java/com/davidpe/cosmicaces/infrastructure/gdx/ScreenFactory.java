@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import com.badlogic.gdx.Screen;
+import com.davidpe.cosmicaces.application.GameCoordinator;
 import com.davidpe.cosmicaces.domain.game.GameSession;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
