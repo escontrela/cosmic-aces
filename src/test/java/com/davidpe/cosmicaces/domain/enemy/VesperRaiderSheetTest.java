@@ -17,14 +17,16 @@ import org.junit.jupiter.api.Test;
 class VesperRaiderSheetTest {
 
   @Test
-  void exposesThreePosesInSheetOrder() {
+  void exposesFivePosesInSheetOrder() {
     List<VesperRaiderSheet.Slice> slices = VesperRaiderSheet.slices();
-    assertEquals(3, slices.size());
+    assertEquals(5, slices.size());
     assertEquals(
         List.of(
             VesperRaiderSheet.Pose.LEFT,
             VesperRaiderSheet.Pose.NEUTRAL,
-            VesperRaiderSheet.Pose.RIGHT),
+            VesperRaiderSheet.Pose.RIGHT,
+            VesperRaiderSheet.Pose.YAW_RIGHT,
+            VesperRaiderSheet.Pose.YAW_LEFT),
         List.of(VesperRaiderSheet.Pose.values()));
     for (int i = 1; i < slices.size(); i++) {
       assertTrue(slices.get(i).x() > slices.get(i - 1).x(),
@@ -59,7 +61,7 @@ class VesperRaiderSheetTest {
   }
 
   @Test
-  void bundledSheetHasTheExpectedTransparentThreeCellLayout() throws IOException {
+  void bundledSheetHasTheExpectedTransparentFivePoseLayout() throws IOException {
     var resource = getClass().getResource("/" + VesperRaiderSheet.internalPath());
     assertNotNull(resource, "sheet must be bundled with the game: " + VesperRaiderSheet.internalPath());
     BufferedImage image = ImageIO.read(resource);
@@ -85,10 +87,10 @@ class VesperRaiderSheetTest {
   }
 
   @Test
-  void lastCellIsInsideTheSheetBounds() {
-    VesperRaiderSheet.Slice last = VesperRaiderSheet.slice(VesperRaiderSheet.Pose.RIGHT);
-    assertEquals(VesperRaiderSheet.WIDTH, last.x() + last.width(),
-        "the rightmost cell must end exactly at the sheet width");
+  void lastPoseLeavesTheTransparentRightMargin() {
+    VesperRaiderSheet.Slice last = VesperRaiderSheet.slice(VesperRaiderSheet.Pose.YAW_LEFT);
+    assertTrue(last.x() + last.width() < VesperRaiderSheet.WIDTH,
+        "the rightmost pose must leave the sheet's transparent margin");
   }
 
   @Test

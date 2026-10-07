@@ -75,11 +75,12 @@ public abstract class Ship {
         y + (float) (dy / magnitude * speed * deltaSeconds));
   }
 
-  /** Draws the current pose in the ship's stable box. The caller owns begin/end on the batch. */
+  /** Draws the current pose in the ship's stable box without stretching the sprite. */
   public final void draw(SpriteBatch batch) {
     TextureRegion region = currentRegion();
-    float width = region.getRegionWidth() * drawWidth / widestRegion;
-    float height = region.getRegionHeight() * drawHeight / tallestRegion;
+    float scale = Math.min(drawWidth / widestRegion, drawHeight / tallestRegion);
+    float width = region.getRegionWidth() * scale;
+    float height = region.getRegionHeight() * scale;
     batch.draw(region, x + (drawWidth - width) / 2f, y + (drawHeight - height) / 2f,
         width, height);
   }

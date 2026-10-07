@@ -16,8 +16,8 @@ public final class VesperRaider extends Ship {
 
   public VesperRaider(float speed, float width, float height, float spawnX, float x, float y,
       float headingDegrees) {
-    super(speed, x, y, width, height, VesperRaiderSheet.slice(VesperRaiderSheet.Pose.NEUTRAL).width(),
-        VesperRaiderSheet.slice(VesperRaiderSheet.Pose.NEUTRAL).height());
+    super(speed, x, y, width, height, VesperRaiderSheet.maxSliceWidth(),
+        VesperRaiderSheet.maxSliceHeight());
     if (width <= 0f || height <= 0f || !Float.isFinite(width) || !Float.isFinite(height)) {
       throw new IllegalArgumentException("Raider box must be positive: " + width + "x" + height);
     }

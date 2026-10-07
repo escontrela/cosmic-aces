@@ -5,16 +5,18 @@ import java.util.List;
 /**
  * Metadata of the hero ship sprite sheets. Each sheet is described by its classpath location, its
  * dimensions and the pose slices measured from the alpha channel. The normal sheet shows the ship
- * cruising; the accelerate sheet is the same ship with the engine flame lit. Both lay their three
- * images left to right: right bank, neutral and left bank, matching the layout confirmed by the PO.
+ * cruising; the accelerate sheet is the same ship with the engine flame lit. Both v3 sheets lay
+ * five images left to right: right bank, neutral, left bank, right yaw and left yaw.
  */
 public final class HeroShipSheet {
 
-  /** The three ship poses in sheet order. */
+  /** The five ship poses in sheet order. Yaw poses are ready for directional flight. */
   public enum Pose {
     RIGHT,
     NEUTRAL,
-    LEFT
+    LEFT,
+    YAW_RIGHT,
+    YAW_LEFT
   }
 
   /** A rectangular region of a sheet, measured from the alpha channel. */
@@ -74,19 +76,23 @@ public final class HeroShipSheet {
 
   /** The normal hero sheet, with the engine flame off. */
   public static final Sheet NORMAL = new Sheet(
-      "assets/images/player/hero_ship_v2.png", 1679, 937,
+      "assets/images/player/hero_ship_v3.png", 2079, 756,
       List.of(
-          new Slice(53, 95, 452, 774),
-          new Slice(551, 138, 577, 709),
-          new Slice(1174, 95, 453, 774)));
+          new Slice(15, 83, 375, 577),
+          new Slice(390, 112, 456, 530),
+          new Slice(846, 83, 380, 577),
+          new Slice(1240, 104, 406, 588),
+          new Slice(1675, 104, 404, 586)));
 
   /** The accelerate hero sheet, with the engine flame lit. */
   public static final Sheet ACCELERATE = new Sheet(
-      "assets/images/player/hero_ship_v2_accelerate.png", 1678, 937,
+      "assets/images/player/hero_ship_v3_accelerate.png", 2052, 766,
       List.of(
-          new Slice(49, 94, 460, 779),
-          new Slice(549, 135, 579, 718),
-          new Slice(1170, 94, 460, 779)));
+          new Slice(47, 89, 354, 579),
+          new Slice(416, 115, 441, 537),
+          new Slice(857, 89, 371, 579),
+          new Slice(1233, 113, 358, 553),
+          new Slice(1684, 113, 338, 557)));
 
   /** Both bundled hero sheets in visual order. */
   public static List<Sheet> sheets() {

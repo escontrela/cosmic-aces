@@ -12,7 +12,8 @@ import com.davidpe.cosmicaces.domain.ship.Ship;
 public final class Astra extends Ship {
 
   public static final float DEFAULT_SPEED = 300f;
-  private static final float SPRITE_SCALE = 0.11f;
+  // The tighter v3 slices need a larger pixel scale to retain the existing on-screen ship size.
+  private static final float SPRITE_SCALE = 0.145f;
   private static final int MAX_REGION_WIDTH = maxRegionWidth();
   private static final int MAX_REGION_HEIGHT = maxRegionHeight();
 

@@ -42,6 +42,11 @@ ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
 Las pantallas crean y liberan sus recursos gráficos. Astra.Visuals y
 VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pantalla
 es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
+Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
+Las láminas v3 de Astra y Vesper Raider tienen cinco recortes: las tres poses de
+alabeo existentes y dos poses de guiñada (derecha, izquierda). Los gráficos v3
+ya se cargan; la selección de las poses de guiñada espera al cambio de rumbo
+de PhaseOne previsto en COS-21.
 Starfield.draw(shapes) abre y cierra el dibujo con el ShapeRenderer recibido, que
 pertenece a la pantalla. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
@@ -108,7 +113,7 @@ com.davidpe.cosmicaces
 |   |   +-- Astra extends Ship: protagonista, giro y aceleracion.
 |   |   |   1. placeAt()  2. move()  3. setVisuals()  4. currentRegion()
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
-|   |   +-- HeroShipSheet: laminas y recortes de sprites de Astra.
+|   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
 |   |       1. sheets()
 |   +-- enemy
 |   |   +-- VesperRaider extends Ship: enemigo descendente con rumbo.
@@ -116,8 +121,9 @@ com.davidpe.cosmicaces
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
 |   |   +-- RaiderEncounter: aparicion, movimiento y retirada del enemigo.
 |   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
-|   |   +-- VesperRaiderSheet: recortes y poses del enemigo.
+|   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. orientedForDescent()
+|   |   |   4. maxSliceWidth()  5. maxSliceHeight()
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- scenery

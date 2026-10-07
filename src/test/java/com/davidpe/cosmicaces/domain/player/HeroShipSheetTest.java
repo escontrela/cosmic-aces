@@ -14,14 +14,16 @@ import org.junit.jupiter.api.Test;
 class HeroShipSheetTest {
 
   @Test
-  void bothSheetsExposeThreePosesInSheetOrder() {
+  void bothSheetsExposeFivePosesInSheetOrder() {
     for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
       List<HeroShipSheet.Slice> slices = sheet.slices();
-      assertEquals(3, slices.size());
+      assertEquals(5, slices.size());
       assertEquals(List.of(
           HeroShipSheet.Pose.RIGHT,
           HeroShipSheet.Pose.NEUTRAL,
-          HeroShipSheet.Pose.LEFT),
+          HeroShipSheet.Pose.LEFT,
+          HeroShipSheet.Pose.YAW_RIGHT,
+          HeroShipSheet.Pose.YAW_LEFT),
           List.of(HeroShipSheet.Pose.values()));
       for (int i = 1; i < slices.size(); i++) {
         assertTrue(slices.get(i).x() > slices.get(i - 1).x(),
@@ -67,7 +69,7 @@ class HeroShipSheetTest {
   }
 
   @Test
-  void bothBundledSheetsHaveTheExpectedTransparentThreePoseLayout() throws IOException {
+  void bothBundledSheetsHaveTheExpectedTransparentFivePoseLayout() throws IOException {
     for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
       var resource = getClass().getResource("/" + sheet.internalPath());
       assertNotNull(resource, "sheet must be bundled with the game: " + sheet.internalPath());
@@ -101,10 +103,14 @@ class HeroShipSheetTest {
         () -> new HeroShipSheet.Sheet("assets/images/player/bad.png", 100, 100,
             List.of(new HeroShipSheet.Slice(-1, 0, 10, 10),
                 new HeroShipSheet.Slice(0, 0, 10, 10),
+                new HeroShipSheet.Slice(0, 0, 10, 10),
+                new HeroShipSheet.Slice(0, 0, 10, 10),
                 new HeroShipSheet.Slice(0, 0, 10, 10))));
     assertThrows(IllegalArgumentException.class,
         () -> new HeroShipSheet.Sheet("assets/images/player/bad.png", 100, 100,
             List.of(new HeroShipSheet.Slice(0, 0, 0, 10),
+                new HeroShipSheet.Slice(0, 0, 10, 10),
+                new HeroShipSheet.Slice(0, 0, 10, 10),
                 new HeroShipSheet.Slice(0, 0, 10, 10),
                 new HeroShipSheet.Slice(0, 0, 10, 10))));
     assertThrows(IllegalArgumentException.class,

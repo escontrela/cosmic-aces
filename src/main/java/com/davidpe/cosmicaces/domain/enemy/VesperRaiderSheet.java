@@ -4,33 +4,36 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import java.util.List;
 
 /**
- * Metadata of the Vesper Raider roll sprite sheet. The sheet is described by its classpath
- * location, its dimensions and the pose cells. The three images lay left to right: left bank,
- * neutral and right bank, each in a 724×724 cell of the 2172×724 sheet.
+ * Metadata of the Vesper Raider v3 sprite sheet. Its five measured regions lie left to right:
+ * left bank, neutral, right bank, right yaw and left yaw. The yaw poses are reserved for the
+ * directional-flight behavior; the current encounter continues to select the three bank poses.
  */
 public final class VesperRaiderSheet {
 
-  /** The three roll poses in sheet order. */
+  /** The five poses in sheet order. */
   public enum Pose {
     LEFT,
     NEUTRAL,
-    RIGHT
+    RIGHT,
+    YAW_RIGHT,
+    YAW_LEFT
   }
 
   /** A rectangular region of the sheet. */
   public record Slice(int x, int y, int width, int height) {}
 
-  public static final int WIDTH = 2172;
-  public static final int HEIGHT = 724;
+  public static final int WIDTH = 1983;
+  public static final int HEIGHT = 793;
 
-  private static final String INTERNAL_PATH = "assets/images/enemy/vesper_raider_roll_sheet.png";
-  private static final int CELL = 724;
+  private static final String INTERNAL_PATH = "assets/images/enemy/vesper_raider_roll_sheet_v3.png";
 
   private static final List<Slice> SLICES =
       List.of(
-          new Slice(0, 0, CELL, CELL),
-          new Slice(CELL, 0, CELL, CELL),
-          new Slice(CELL * 2, 0, CELL, CELL));
+          new Slice(10, 130, 409, 552),
+          new Slice(419, 134, 416, 548),
+          new Slice(835, 134, 402, 548),
+          new Slice(1242, 134, 291, 513),
+          new Slice(1585, 135, 368, 513));
 
   static {
     if (SLICES.size() != Pose.values().length) {
@@ -61,6 +64,14 @@ public final class VesperRaiderSheet {
   /** Returns the pose slices in {@link Pose} order. */
   public static List<Slice> slices() {
     return SLICES;
+  }
+
+  public static int maxSliceWidth() {
+    return SLICES.stream().mapToInt(Slice::width).max().orElseThrow();
+  }
+
+  public static int maxSliceHeight() {
+    return SLICES.stream().mapToInt(Slice::height).max().orElseThrow();
   }
 
   /** Maps the model's turn direction to the matching bank frame in the descent-oriented sheet. */
