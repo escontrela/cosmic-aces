@@ -67,6 +67,11 @@ la vista real de la cámara (rectángulo rotado por `camera.up` y `camera.zoom`)
 no con un rectángulo fijo. `Ship.draw(batch, rotationDegrees)` rota el
 sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
+`FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
+dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
+lecturas. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
+deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
+el punto rojo con estela direccional de Vesper Raider.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -208,6 +213,10 @@ com.davidpe.cosmicaces
             |   1. update()
             +-- FlightHud: brújula, velocidad y score en coordenadas de pantalla.
                 1. headingLabel()  2. headingDegrees()  3. draw()  4. drawScore()
+            +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
+                1. toggle()  2. isVisible()  3. draw()
+            +-- MinimapProjection: adaptación y proyección del mundo al panel.
+                1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
 ```
 
 ## Comportamiento provisional actual

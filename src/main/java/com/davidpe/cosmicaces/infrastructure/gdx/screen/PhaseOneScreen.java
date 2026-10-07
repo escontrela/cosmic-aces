@@ -54,6 +54,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final Viewport hudViewport;
   private final FlightCamera flightCamera;
   private final FlightHud hud = new FlightHud();
+  private final FlightMinimap minimap = new FlightMinimap();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
   private final WorldScenery scenery;
@@ -143,6 +144,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
+      minimap.toggle();
+    }
     if (!runFinished) {
       int earned = applyMovementInput(delta, shipsCoincidentVisible());
       controller.advanceEncounter(delta);
@@ -179,6 +183,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
+    minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
+        controller.isRaiderActive() ? controller.activeRaider() : null,
+        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed());
     hud.drawScore(batch, font, phaseSnapshot.get().points());
