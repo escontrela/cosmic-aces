@@ -22,16 +22,15 @@ import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PlayArea;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
-import com.davidpe.cosmicaces.domain.scenery.Starfield;
+import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 /**
- * First playable screen: Astra pilots in a finite world while the star field and Raider still use
- * their original viewport behavior pending COS-23 and COS-24. The screen owns and releases every
- * LibGDX resource it creates and translates presentation input into calls on its own {@link
- * PhaseOneGameController}.
+ * First playable screen: world scenery, flight camera, fixed HUD and input. The Raider's legacy
+ * encounter remains pending COS-24. This screen owns and releases every LibGDX resource it creates.
  *
  * <p>It never navigates by itself: it publishes game events through the injected {@link
  * GameEventPublisher} and the composition root decides the next screen. The run's own state (time
@@ -40,13 +39,8 @@ import java.util.function.Supplier;
  */
 public final class PhaseOneScreen extends ScreenAdapter {
 
-  private static final int STAR_COUNT = 197;
-  private static final float STAR_MIN_SPEED = 77f;
-  private static final float STAR_MAX_SPEED = 256f;
-  private static final float STAR_MIN_RADIUS = 0.14f;
-  private static final float STAR_MAX_RADIUS = 1.68f;
   private static final String END_MESSAGE = "FIN DEL RECORRIDO - PULSA ESPACIO";
-  private static final float INITIAL_MARGIN_Y = 77f;
+  private static final float INITIAL_Y = VirtualScreenSize.HEIGHT;
 
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
@@ -55,12 +49,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final Supplier<PhaseResult> phaseSnapshot;
   private final OrthographicCamera camera;
   private final Viewport viewport;
+  private final OrthographicCamera hudCamera;
+  private final Viewport hudViewport;
+  private final FlightCamera flightCamera;
+  private final FlightHud hud = new FlightHud();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
-  private final Starfield starfield;
+  private final WorldScenery scenery;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
   private final BitmapFont font;
+  private final BitmapFont hudFont;
   private final GlyphLayout endLayout;
   private final PlayArea raiderArea;
   private boolean runFinished;
@@ -78,14 +77,24 @@ public final class PhaseOneScreen extends ScreenAdapter {
     this.phaseSnapshot = phaseSnapshot;
     camera = new OrthographicCamera();
     viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
-    camera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
-    camera.update();
+    hudCamera = new OrthographicCamera();
+    hudViewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, hudCamera);
+    hudCamera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
+    hudCamera.update();
+    scenery = new WorldScenery(PhaseOneGameController.WORLD,
+        ThreadLocalRandom.current().nextLong());
+    // COS-24 will replace the Raider encounter's viewport-sized movement area.
+    raiderArea = new PlayArea(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+    float startX = (PhaseOneGameController.WORLD.width() - controller.astra().drawWidth()) / 2f;
+    controller.placeAstra(startX, INITIAL_Y, 0f);
+    flightCamera = new FlightCamera(camera, controller.astra());
 
     SpriteBatch loadedBatch = null;
     ShapeRenderer loadedShapes = null;
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
     BitmapFont loadedFont = null;
+    BitmapFont loadedHudFont = null;
     GlyphLayout loadedLayout;
     try {
       loadedBatch = new SpriteBatch();
@@ -94,8 +103,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedRaider = new VesperRaider.Visuals();
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
+      loadedHudFont = new BitmapFont();
+      loadedHudFont.getData().setScale(1.05f);
       loadedLayout = new GlyphLayout(loadedFont, END_MESSAGE);
     } catch (RuntimeException | Error failure) {
+      if (loadedHudFont != null) {
+        loadedHudFont.dispose();
+      }
       if (loadedFont != null) {
         loadedFont.dispose();
       }
@@ -115,31 +129,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     batch = loadedBatch;
     shapes = loadedShapes;
-    starfield =
-        new Starfield(
-            (int) VirtualScreenSize.WIDTH,
-            (int) VirtualScreenSize.HEIGHT,
-            STAR_COUNT,
-            STAR_MIN_SPEED,
-            STAR_MAX_SPEED,
-            STAR_MIN_RADIUS,
-            STAR_MAX_RADIUS,
-            STAR_MAX_RADIUS);
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
     font = loadedFont;
+    hudFont = loadedHudFont;
     endLayout = loadedLayout;
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
-
-    float shipDrawWidth = controller.astra().drawWidth();
-    // The raider encounter spans the whole viewport so its spawn sits at the top edge and its
-    // retirement matches the drawn box leaving the screen. The draw box matches the domain box
-    // exactly (RaiderEncounter.RAIDER_WIDTH/HEIGHT) so the visual exit coincides with the model.
-    raiderArea = new PlayArea(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
-    float startX = (PhaseOneGameController.WORLD.width() - shipDrawWidth) / 2f;
-    controller.placeAstra(startX, INITIAL_MARGIN_Y, 0f);
-
   }
 
   @Override
@@ -164,20 +160,24 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
-    // Temporary translation keeps world-space Astra visible until COS-23 adds the flight camera.
-    camera.position.set(controller.astra().x() + controller.astra().drawWidth() / 2f,
-        controller.astra().y() + controller.astra().drawHeight() / 2f, 0f);
-    camera.update();
+    flightCamera.update(controller.astra(), delta);
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
-    starfield.update(delta);
-    starfield.draw(shapes);
+    float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
+        VirtualScreenSize.HEIGHT / 2f) * camera.zoom + 180f;
+    scenery.draw(shapes, camera.position.x - visibleRadius,
+        camera.position.y - visibleRadius, camera.position.x + visibleRadius,
+        camera.position.y + visibleRadius);
     batch.begin();
-    controller.astra().draw(batch);
+    controller.astra().draw(batch, -controller.astra().yawDegrees());
     if (!runFinished && controller.isRaiderActive()) {
       controller.activeRaider().draw(batch);
     }
     batch.end();
+    batch.setProjectionMatrix(hudCamera.combined);
+    shapes.setProjectionMatrix(hudCamera.combined);
+    hud.draw(shapes, batch, hudFont, controller.astra().yawDegrees(),
+        controller.astra().flightSpeed());
     if (runFinished) {
       drawEndMessage();
     }
@@ -185,7 +185,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
   @Override
   public void resize(int width, int height) {
-    viewport.update(width, height, true);
+    viewport.update(width, height, false);
+    hudViewport.update(width, height, true);
   }
 
   @Override
@@ -195,6 +196,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     astraVisuals.dispose();
     raiderVisuals.dispose();
     font.dispose();
+    hudFont.dispose();
   }
 
   private void applyMovementInput(float delta) {
@@ -207,8 +209,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   }
 
   private void drawEndMessage() {
-    float x = camera.position.x - endLayout.width / 2f;
-    float y = camera.position.y + VirtualScreenSize.HEIGHT * 0.12f;
+    float x = (VirtualScreenSize.WIDTH - endLayout.width) / 2f;
+    float y = VirtualScreenSize.HEIGHT * 0.62f;
     batch.begin();
     font.setColor(Color.GOLD);
     font.draw(batch, endLayout, x, y);

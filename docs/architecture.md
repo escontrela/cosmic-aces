@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.scenery` | Elementos reutilizables del escenario | Starfield y futuros fondos u objetos del escenario con estado, actualización y dibujo propios. |
+| `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -42,9 +42,18 @@ rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase
 del recorrido y fija el mundo en 3200×12000. `FlightTuning` reúne las cifras
 de velocidad, aceleración, frenado y giro aprobadas; el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
-La cámara de seguimiento completa, el escenario persistente y el HUD siguen
-planificados para COS-23; la pantalla actual solo traslada provisionalmente
-su cámara para conservar a Astra en vista mientras se integra el mundo.
+PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
+estrellas cubren todo el mapa y las isletas de bloques permanecen en las mismas
+coordenadas al regresar. El dibujo filtra los elementos fuera de la región
+visible. `Starfield` conserva el scroll de la pantalla de bienvenida.
+`FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
+del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
+La cámara queda detrás de Astra, rota con su yaw y usa zoom 1,00/1,08/1,15.
+`PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
+`FlightHud` presenta brújula de ocho direcciones y velocidad instantánea
+con espaciado monoespaciado. `Ship.draw(batch, rotationDegrees)` rota el
+sprite sobre el centro de su caja estable, de modo que Astra conserva su
+orientación respecto al mundo mientras la cámara gira.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -54,11 +63,12 @@ VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pa
 es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
 Las láminas v3 de Astra y Vesper Raider tienen cinco recortes: las tres poses de
-alabeo existentes y dos poses de guiñada (derecha, izquierda). Los gráficos v3
-ya se cargan; la selección de las poses de guiñada espera al cambio de rumbo
-de PhaseOne previsto en COS-21.
-Starfield.draw(shapes) abre y cierra el dibujo con el ShapeRenderer recibido, que
-pertenece a la pantalla. El coordinador cambia de pantalla después del render del
+alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
+alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
+rotación de rumbo en coordenadas de mundo. Las poses de guiñada de Vesper Raider
+siguen pendientes de COS-24. Starfield.draw(shapes) y WorldScenery.draw(shapes,...)
+abren y cierran el dibujo con el ShapeRenderer recibido, que pertenece a la
+pantalla. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
 
 Consulta posición y pose en la nave: `controller.astra().x()`,
@@ -118,7 +128,8 @@ com.davidpe.cosmicaces
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]
-|   |   |   3. draw()  4. currentRegion() [abstracto protegido]
+|   |   |   3. draw()  4. draw(batch, rotationDegrees)
+|   |   |   5. currentRegion() [abstracto protegido]
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
@@ -143,9 +154,11 @@ com.davidpe.cosmicaces
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- scenery
-|       +-- Starfield: fondo de estrellas configurable y reutilizable.
-|           1. update(): mueve y recicla estrellas.
-|           2. draw(): dibuja con ShapeRenderer.
+|       +-- Starfield: estrellas con scroll de la bienvenida.
+|       |   1. update(): mueve y recicla estrellas.
+|       |   2. draw(): dibuja con ShapeRenderer.
+|       +-- WorldScenery: estrellas e isletas persistentes de PhaseOne.
+|           1. stars()  2. islands()  3. visibleStarCount()  4. draw()
 |
 +-- infrastructure
     +-- gdx
@@ -162,8 +175,14 @@ com.davidpe.cosmicaces
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()
-            +-- PhaseOneScreen: input, actualizacion y dibujo de fase uno.
-                1. render()  2. resize()  3. dispose()
+            +-- PhaseOneScreen: input, dibujo de mundo y HUD, recursos.
+            |   1. render()  2. resize()  3. dispose()
+            +-- FlightCameraState: seguimiento y zoom interpolados.
+            |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            +-- FlightCamera: aplica el estado a OrthographicCamera.
+            |   1. update()
+            +-- FlightHud: brújula y velocidad en coordenadas de pantalla.
+                1. headingLabel()  2. headingDegrees()  3. draw()
 ```
 
 ## Comportamiento provisional actual
