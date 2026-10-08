@@ -90,6 +90,27 @@ class GunProjectileTest {
   }
 
   @Test
+  void consumeMarksTheProjectileAsSpentOnlyOnce() {
+    GunProjectile projectile = new GunProjectile(0f, 0f, 1f, 0f, 10f, 100f);
+    assertFalse(projectile.isConsumed());
+    projectile.consume();
+    projectile.consume();
+    assertTrue(projectile.isConsumed());
+    assertEquals(0f, projectile.x(), EPS, "consuming never moves the projectile");
+  }
+
+  @Test
+  void remainingDistanceShrinksTowardsTheRange() {
+    GunProjectile projectile = new GunProjectile(0f, 0f, 1f, 0f, 60f, 50f);
+    assertEquals(50f, projectile.remainingDistance(), EPS);
+
+    projectile.advance(1f); // 60 units wanted, clamped exactly at the 50-unit range
+
+    assertEquals(0f, projectile.remainingDistance(), EPS);
+    assertTrue(projectile.expired());
+  }
+
+  @Test
   void rejectsInvalidConstructorArguments() {
     assertThrows(IllegalArgumentException.class,
         () -> new GunProjectile(0f, 0f, 0f, 0f, 10f, 100f));

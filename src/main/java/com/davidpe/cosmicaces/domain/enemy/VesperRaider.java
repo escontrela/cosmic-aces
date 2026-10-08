@@ -71,6 +71,26 @@ public final class VesperRaider extends Ship {
     turnDirection = 0;
   }
 
+  /** Places the raider centre at a world point while keeping it inside the finite world. */
+  public void placeAt(float x, float y, float headingDegrees, WorldBounds world) {
+    if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("Raider position and heading must be finite");
+    }
+    setPosition(world.clampX(x, drawWidth()), world.clampY(y, drawHeight()));
+    setHeadingDegrees(headingDegrees);
+    setDriftDirection(0);
+  }
+
+  /** World X of the ship's stable body centre. */
+  public float centerX() {
+    return x() + drawWidth() / 2f;
+  }
+
+  /** World Y of the ship's stable body centre. */
+  public float centerY() {
+    return y() + drawHeight() / 2f;
+  }
+
   /** Records the side of the current drift so the banked pose can reflect it. */
   public void setDriftDirection(int driftDirection) {
     this.driftDirection = Integer.signum(driftDirection);

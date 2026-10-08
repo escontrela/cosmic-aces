@@ -16,6 +16,7 @@ public final class GunProjectile {
   private float x;
   private float y;
   private float travelled;
+  private boolean consumed;
 
   /**
    * @param x muzzle origin X in world coordinates
@@ -73,6 +74,27 @@ public final class GunProjectile {
   /** True once the projectile has covered its full range; retirement is by distance only. */
   public boolean expired() {
     return travelled >= maxDistance;
+  }
+
+  /**
+   * Distance still available before the projectile expires at its range. Useful to predict the
+   * exact segment a projectile will cover during the next frame, including its final segment.
+   */
+  public float remainingDistance() {
+    return Math.max(0f, maxDistance - travelled);
+  }
+
+  /**
+   * Marks the projectile as having impacted a ship. A consumed projectile is retired by its weapon
+   * and can never impact again, so each projectile contributes at most one hit.
+   */
+  public void consume() {
+    consumed = true;
+  }
+
+  /** True once this projectile has already impacted a ship. */
+  public boolean isConsumed() {
+    return consumed;
   }
 
   public float originX() {

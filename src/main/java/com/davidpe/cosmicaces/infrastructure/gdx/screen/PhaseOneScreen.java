@@ -156,6 +156,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!runFinished) {
       int earned = applyMovementInput(delta, shipsCoincidentVisible());
       controller.advanceEncounter(delta);
+      // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
+      // run; they never advance once the phase has finished.
+      earned += controller.advanceCombat(delta);
       if (earned > 0) {
         // Report points before the completion snapshot so the last second is never overwritten.
         publisher.publish(new PointsEarned(gameId, phase, earned));
@@ -178,9 +181,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // The pre-movement sample above stays the scoring input and is never reused for the weapons.
     boolean weaponsCoincident = shipsCoincidentVisible();
     // One weapons update per frame, after the camera that this frame draws, using the world zoom as
-    // the frozen range so a shot covers about two visible viewport heights.
-    controller.advanceWeapons(delta, emissionSeconds, Gdx.input.isKeyPressed(Input.Keys.SPACE),
-        weaponsCoincident, 2f * VirtualScreenSize.HEIGHT * camera.zoom);
+    // the frozen range so a shot covers about two visible viewport heights. Impacts are resolved
+    // inside this call and the single raider destruction bonus is published once, before the HUD.
+    int weaponEarned = controller.advanceWeapons(delta, emissionSeconds,
+        Gdx.input.isKeyPressed(Input.Keys.SPACE), weaponsCoincident,
+        2f * VirtualScreenSize.HEIGHT * camera.zoom);
+    if (weaponEarned > 0) {
+      publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
+    }
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
@@ -195,7 +203,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
     batch.begin();
-    controller.astra().draw(batch, -controller.astra().yawDegrees());
+    if (controller.isAstraActive()) {
+      controller.astra().draw(batch, -controller.astra().yawDegrees());
+    }
     if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
       VesperRaider raider = controller.activeRaider();
       raider.draw(batch, raider.headingDegrees());
@@ -266,7 +276,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * update. Sampling uses the real camera transform (rotation and zoom), not a fixed 800x600 box.
    */
   private boolean shipsCoincidentVisible() {
-    if (!controller.isRaiderActive()) {
+    if (!controller.isRaiderActive() || !controller.isAstraActive()) {
       return false;
     }
     Astra astra = controller.astra();

@@ -56,6 +56,16 @@ public final class GunBurst {
   }
 
   /**
+   * Observes the world-space segment a projectile covers while it is advanced, including projectiles
+   * emitted this frame and the final segment before retirement. The listener may {@link
+   * GunProjectile#consume()} a projectile, which retires it at the end of the same advance.
+   */
+  @FunctionalInterface
+  public interface ProjectileStep {
+    void onStep(GunProjectile projectile, float fromX, float fromY, float toX, float toY);
+  }
+
+  /**
    * Advances every existing projectile by the full frame and then emits new events inside the
    * allowed window.
    *
@@ -66,13 +76,27 @@ public final class GunBurst {
    * @param source emission-time snapshot provider; {@code null} disables emission
    */
   public void advance(float frameDelta, float emissionSeconds, boolean enabled, ShotSource source) {
+    advance(frameDelta, emissionSeconds, enabled, source, null);
+  }
+
+  /**
+   * Same as {@link #advance(float, float, boolean, ShotSource)} but reports each projectile's
+   * travelled segment to {@code stepListener} so the caller can resolve impacts before retirement.
+   */
+  public void advance(float frameDelta, float emissionSeconds, boolean enabled, ShotSource source,
+      ProjectileStep stepListener) {
     if (!Float.isFinite(frameDelta) || frameDelta <= 0f) {
       return;
     }
     for (GunProjectile projectile : projectiles) {
+      float fromX = projectile.x();
+      float fromY = projectile.y();
       projectile.advance(frameDelta);
+      if (stepListener != null) {
+        stepListener.onStep(projectile, fromX, fromY, projectile.x(), projectile.y());
+      }
     }
-    projectiles.removeIf(GunProjectile::expired);
+    projectiles.removeIf(projectile -> projectile.expired() || projectile.isConsumed());
 
     float window = Float.isFinite(emissionSeconds)
         ? Math.max(0f, Math.min(frameDelta, emissionSeconds)) : 0f;
@@ -91,7 +115,7 @@ public final class GunBurst {
     double eventLocal = nextGap;
     double lastEventLocal = -1d;
     while (eventLocal <= window + TIME_EPSILON) {
-      emit(source, eventLocal, frameDelta);
+      emit(source, eventLocal, frameDelta, stepListener);
       lastEventLocal = eventLocal;
       eventLocal += GunTuning.BURST_INTERVAL_SECONDS;
     }
@@ -100,7 +124,8 @@ public final class GunBurst {
         : sinceLastEmission + frameDelta;
   }
 
-  private void emit(ShotSource source, double eventLocal, float frameDelta) {
+  private void emit(ShotSource source, double eventLocal, float frameDelta,
+      ProjectileStep stepListener) {
     Shot shot = source.shotAt(eventLocal);
     if (shot == null) {
       return;
@@ -109,10 +134,17 @@ public final class GunBurst {
     for (Muzzle muzzle : shot.muzzles()) {
       GunProjectile projectile = new GunProjectile(muzzle.x(), muzzle.y(),
           shot.forwardX(), shot.forwardY(), GunTuning.PROJECTILE_SPEED, shot.range());
+      float fromX = projectile.x();
+      float fromY = projectile.y();
       if (remainingLife > 0f) {
         projectile.advance(remainingLife);
       }
-      projectiles.add(projectile);
+      if (stepListener != null) {
+        stepListener.onStep(projectile, fromX, fromY, projectile.x(), projectile.y());
+      }
+      if (!projectile.isConsumed() && !projectile.expired()) {
+        projectiles.add(projectile);
+      }
     }
   }
 

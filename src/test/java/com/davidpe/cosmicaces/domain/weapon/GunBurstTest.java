@@ -223,6 +223,62 @@ class GunBurstTest {
   }
 
   @Test
+  void stepListenerSeesExistingAndNewlyEmittedSegments() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(oneCannonShot(1f, 0f, HUGE_RANGE));
+    List<float[]> steps = new java.util.ArrayList<>();
+    GunBurst.ProjectileStep listener = (projectile, fromX, fromY, toX, toY) ->
+        steps.add(new float[] {fromX, fromY, toX, toY});
+
+    gun.advance(0.05f, 0.05f, true, counter, listener); // event at 0 -> travels 0.05 s
+    assertEquals(1, steps.size());
+    assertEquals(0f, steps.get(0)[0], 0.001f);
+    assertEquals(90f, steps.get(0)[2], 0.5f, "the new projectile travelled 90 units");
+
+    gun.advance(0.05f, 0.05f, true, counter, listener); // existing 90->180, new 0->36
+    assertEquals(3, steps.size());
+    assertEquals(90f, steps.get(1)[0], 0.001f, "existing projectile starts at its old spot");
+    assertEquals(180f, steps.get(1)[2], 0.5f);
+    assertEquals(36f, steps.get(2)[2], 0.5f);
+  }
+
+  @Test
+  void stepListenerObservesTheFinalSegmentBeforeRetirement() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(oneCannonShot(1f, 0f, 90f)); // expires after exactly 90 units
+    float[] lastTo = {Float.NEGATIVE_INFINITY};
+
+    // One event at 0; the projectile travels a full 0.05 s = 90 units and expires in the same call.
+    gun.advance(0.05f, 0.05f, true, counter,
+        (projectile, fromX, fromY, toX, toY) -> lastTo[0] = toX);
+
+    assertTrue(gun.projectiles().isEmpty(), "the projectile expires at its range limit");
+    assertEquals(90f, lastTo[0], 0.5f, "the final segment still reports the impact point");
+  }
+
+  @Test
+  void consumedProjectilesAreRetiredAtTheEndOfTheAdvance() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(oneCannonShot(1f, 0f, HUGE_RANGE));
+
+    gun.advance(0.01f, 0.01f, true, counter,
+        (projectile, fromX, fromY, toX, toY) -> projectile.consume());
+
+    assertTrue(gun.projectiles().isEmpty(), "a consumed projectile is retired immediately");
+  }
+
+  @Test
+  void aConsumedNewlyEmittedProjectileIsNotAdded() {
+    GunBurst gun = new GunBurst();
+    GunBurst.ShotSource source = offsetSeconds -> oneCannonShot(1f, 0f, HUGE_RANGE);
+
+    gun.advance(0.01f, 0.01f, true, source,
+        (projectile, fromX, fromY, toX, toY) -> projectile.consume());
+
+    assertTrue(gun.projectiles().isEmpty());
+  }
+
+  @Test
   void rejectsInvalidShotRecords() {
     assertThrows(IllegalArgumentException.class,
         () -> new GunBurst.Shot(List.of(), 1f, 0f, 10f));

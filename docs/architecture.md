@@ -125,6 +125,57 @@ no añade colisiones a elementos decorativos ni activa combate por sí solo. COS
 debe reutilizarlo y añadir su integración/pruebas, sin otro motor geométrico para
 PhaseOne. La evitación de Vesper pertenece a `RaiderEncounter`.
 
+### Combate determinista integrado (COS-32)
+
+`domain.ship.ShipCombatState` modela la energía y el ciclo de vida de cada nave,
+sin LibGDX. Cada estado se configura con el umbral de impactos, el daño por tramo
+y los tiempos de respawn/inmunidad: Astra usa 1 % cada 10 impactos, respawn 3 s e
+inmunidad 2 s; Vesper usa 35 % cada 10 impactos y respawn 5 s. `receiveProjectileHit()`
+acumula impactos residuales y aplica el tramo al alcanzar el umbral (el décimo
+impacto daña; no agrupa ráfagas); `destroy()` es idempotente y arranca el reloj de
+muerte; `advance(dt)` avanza el reloj de muerte o de inmunidad; `respawn()` reinicia
+energía, contador residual y generación de vida. `canAct()` = vivo o inmune;
+`canBeHit()` = solo activo. El controlador decide cuándo destruir (energía cero o
+contacto de cascos) para atribuir una única vez el bonus de destrucción.
+
+`PhaseOneGameController` posee `astraCombat()` y `raiderCombat()`. Cada frame dentro
+del recorrido llama a `advanceCombat(delta)`: avanza los dos relojes, reapariciones y
+contacto de cascos. `advanceWeapons(...)` resuelve ya los impactos de proyectil: ahora
+acepta un `GunBurst.ProjectileStep(projectile, fromX, fromY, toX, toY)` (sobrecarga
+nueva; la de 4 argumentos sigue para cadencia) que recibe el segmento de cada
+proyectil —existentes, recién emitidos y el último antes del alcance—; el arma retira
+consumidos/expirados al final del avance y los consumidos en emisión no se añaden.
+`GunProjectile.consume()/isConsumed()`/`remainingDistance()` dan soporte a esa
+retirada y predicción. Cada proyectil impacta como máximo una vez: un casco destruido
+o ausente no es objetivo; un casco inmune consume el proyectil sin daño. La silueta
+de cada nave es su círculo inscrito (radio = mitad de la dimensión menor de la caja),
+adaptado en el controlador a `CollisionDetector.Circle`/`Segment`. El contacto de dos
+naves vulnerables (ambas `canBeHit`) destruye a las dos; si Astra es inmune no
+destruye a ninguna (CA15). `destroyRaider()` llama a `score.awardRaiderDestroyed()`
+(+1000, una vez por vida) y el controlador expone el bonus pendiente con
+`drainCombatPoints()`, que la pantalla publica como `PointsEarned`; no se emite
+`LifeLost` por estas muertes. Astra destruida congela su posición (la cámara la sigue),
+no vuela ni dispara y el reloj de 60 s continúa; reaparece vía `placeAt` en la misma
+posición/rumbo. `RaiderEncounter.destroyActive()` conserva la instancia y sus
+Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige con
+`UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
+del punto de muerte, con fallback al mejor candidato y sin recrear texturas.
+
+`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, deriva
+±10° cada 4–6 s, giro 75°/s) y CA18: la sobrecarga
+`advance(dt, world, targetX, targetY, targetVelX, targetVelY, targetRadius, selfRadius)`
+prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimiento
+relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
+contacto (radios + margen 70), gira perpendicular a la demora en un lado elegido por
+menor cambio de rumbo y lo mantiene ≥ 1,2 s para evitar oscilación; el vector de
+bordes interiores se mantiene. La sobrecarga de 4 argumentos conserva el
+comportamiento de búsqueda pura para las pruebas deterministas. `PhaseOneScreen`
+llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainCombatPoints()`
+con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuando
+`isAstraActive()` es falso y la coincidencia visible (`shipsCoincidentVisible`)
+también exige a Astra activa. La explosión gráfica, el parpadeo y el HUD de energía
+pertenecen a COS-33.
+
 ### Lámina de explosión preparada para COS-33
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
@@ -164,7 +215,9 @@ constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
 avanza en línea recta con `advance(delta)` y no retiene referencias a nave,
 cámara, mundo ni puntuación. Limita su avance al alcance recibido y `expired()`
 se cumple exactamente al cubrirlo, de modo que la retirada depende solo de la
-distancia. `domain.weapon.GunTuning` reúne la cadencia (0,08 s), la velocidad
+distancia. COS-32 añadió `consume()/isConsumed()` (retirada por impacto, un único
+impacto por proyectil) y `remainingDistance()` para predecir el segmento exacto
+del próximo frame. `domain.weapon.GunTuning` reúne la cadencia (0,08 s), la velocidad
 (1800 u/s) y la duración del fogonazo (0,035 s); el alcance lo congela el
 adaptador en cada disparo. `domain.weapon.GunBurst` posee el reloj de cadencia,
 el pulso de fogonazo y la colección de proyectiles, sin depender de LibGDX ni de
@@ -181,7 +234,11 @@ de modo que los dos cañones de Astra producen dos trayectorias. La cadencia se
 mide por tiempo acumulado, por lo que no depende de los FPS, y no hay cupo ni
 munición: la caducidad por distancia acota la colección. `GunBurst` expone
 `projectiles()` como vista de solo lectura, `isFiring()`, `flashVisible()` y
-`clear()`; no colisiona, no causa daño y no toca vidas ni puntos.
+`clear()`; no decide daños ni toca vidas/puntos, pero su sobrecarga nueva de
+`advance` acepta un `ProjectileStep` que observa el segmento de cada proyectil
+(existente, recién emitido o antes de expirar) y retira consumidos/expirados al
+final del mismo avance, de modo que el controlador resuelve ahí los impactos
+(véase «Combate determinista integrado (COS-32)»).
 
 Astra integra el cañón visual con PhaseOne. `PhaseOneGameController` posee un
 `astraGun` (`GunBurst`) y lo expone con `astraGun()`; `advanceWeapons(frameDelta,
@@ -250,7 +307,10 @@ alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
 rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
 instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
 ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
-salga de cámara. `VesperRaider.steerTowards` gira el rumbo con un límite de
+salga de cámara. Con COS-32 la velocidad es 180 u/s, la deriva ±10° cada 4–6 s
+y `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
+tras la destrucción (véase «Combate determinista integrado (COS-32)»).
+`VesperRaider.steerTowards` gira el rumbo con un límite de
 velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
 girar o la de alabeo al derivar; el empuje acotado combina la aproximación al
 jugador con una deriva reproducible de `UnitRandom` y una respuesta suave en los
@@ -293,10 +353,12 @@ com.davidpe.cosmicaces
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
-|   +-- PhaseOneGameController extends GameController: encuentros y armas de PhaseOne.
+|   +-- PhaseOneGameController extends GameController: encuentros, armas y combate de PhaseOne.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
-|       4. isRaiderActive()  5. activeRaider()  6. setRaiderVisuals()
-|       7. scorePoints()  8. astraGun()  9. raiderGun()  10. advanceWeapons()
+|       4. advanceCombat()  5. advanceWeapons()  6. drainCombatPoints()
+|       7. isRaiderActive()  8. activeRaider()  9. setRaiderVisuals()
+|       10. astraCombat()  11. raiderCombat()  12. isAstraActive()
+|       13. scorePoints()  14. astraGun()  15. raiderGun()
 |
 +-- domain
 |   +-- game
@@ -306,8 +368,8 @@ com.davidpe.cosmicaces
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
 |   |   +-- PlayableRun: recorrido actual de 60 segundos.
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
-|   |   +-- PhaseScore: puntos por segundos completos y coincidencia visible.
-|   |   |   1. advance()  2. totalPoints()
+|   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
+|   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
 |   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
 |   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
@@ -325,6 +387,11 @@ com.davidpe.cosmicaces
 |   |   |   5. spritePlacement() [protegido]: colocación de la región en la caja.
 |   |   |   6. currentRegion() [abstracto protegido]
 |   |   |   +-- SpritePlacement(scale, offsetX, offsetY): registro de la pose.
+|   |   +-- ShipCombatState: energía, impactos, vidas e inmunidad de una nave.
+|   |   |   1. receiveProjectileHit()  2. destroy()  3. advance()
+|   |   |   4. readyToRespawn()  5. respawn()  6. energyPercent()
+|   |   |   7. canAct()  8. canBeHit()  9. secondsSinceDeath()
+|   |   |   10. invulnerabilityRemaining()  11. lifeGeneration()
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
@@ -343,11 +410,13 @@ com.davidpe.cosmicaces
 |   +-- enemy
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
-|   |   |   4. setDriftDirection()  5. clampToWorld()  6. pose()  7. setVisuals()
-|   |   |   8. setMuzzleFlashVisible()  9. shotAt(): instantánea de los dos cañones.
+|   |   |   4. placeAt()  5. centerX()  6. centerY()  7. setDriftDirection()
+|   |   |   8. clampToWorld()  9. pose()  10. setVisuals()
+|   |   |   11. setMuzzleFlashVisible()  12. shotAt(): instantánea de los dos cañones.
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
-|   |   +-- RaiderEncounter: única aparición persistente del enemigo en el mundo.
-|   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
+|   |   +-- RaiderEncounter: aparición, muerte y reaparición del enemigo en el mundo.
+|   |   |   1. advance() [2 sobrecargas]  2. destroyActive()  3. respawnAt()
+|   |   |   4. isActive()  5. isDefeated()  6. raider()  7. setVisuals()
 |   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
@@ -368,13 +437,16 @@ com.davidpe.cosmicaces
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
-|   |   |   1. advance()  2. expired()  3. x()  4. y()  5. forwardX()  6. forwardY()
-|   |   |   7. travelled()
+|   |   |   1. advance()  2. expired()  3. consume()  4. isConsumed()
+|   |   |   5. remainingDistance()  6. x()  7. y()  8. forwardX()  9. forwardY()
+|   |   |   10. travelled()
 |   |   +-- GunBurst: emisor visual con cadencia, fogonazo y colección de proyectiles.
-|   |   |   1. advance()  2. projectiles()  3. isFiring()  4. flashVisible()  5. clear()
+|   |   |   1. advance() [2 sobrecargas]  2. projectiles()  3. isFiring()
+|   |   |   4. flashVisible()  5. clear()
 |   |   |   +-- Muzzle(x,y): origen de un cañón congelado al disparar.
 |   |   |   +-- Shot(muzzles,forwardX,forwardY,range): instantánea de una emisión.
 |   |   |   +-- ShotSource: shotAt(offsetSeconds) entrega la instantánea.
+|   |   |   +-- ProjectileStep: observador del segmento que cubre cada proyectil.
 |   |   +-- GunBurstVisual: aspecto reutilizable de un trazador, sin recursos propios.
 |   |       1. draw(): punta y estela según posición y vector del proyectil.
 |   +-- scenery
