@@ -16,6 +16,7 @@ public final class PhaseOneGameController extends GameController {
   private final RaiderEncounter raiderEncounter;
   private final PhaseScore score = new PhaseScore();
   private final GunBurst astraGun = new GunBurst();
+  private final GunBurst raiderGun = new GunBurst();
   private AstraMotion astraMotion;
 
   public PhaseOneGameController() {
@@ -64,20 +65,35 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
-   * Advances Astra's visual cannon once per frame. Existing projectiles always travel the full
+   * The Vesper Raider's autonomous cannon. It only emits while Astra and the raider coincide in the
+   * real camera view; its projectiles outlive that coincidence and keep their frozen path.
+   */
+  public GunBurst raiderGun() {
+    return raiderGun;
+  }
+
+  /**
+   * Advances both visual cannons once per frame. Existing projectiles always travel the full
    * {@code frameDelta}; new emissions only happen inside {@code emissionSeconds}, so passing zero
-   * stops new shots while the already-fired ones keep flying. Shots snapshot Astra's interpolated
-   * position and heading for this frame and the measured cannon mouths, then retain no ship
-   * reference. This never awards points, consumes ammunition or changes the run clock.
+   * stops new shots while the already-fired ones keep flying. Astra fires on its own trigger. The
+   * raider fires only when it is present and {@code shipsCoincidentVisible} is true for this frame,
+   * using its own heading; disabling it resets cadence debt and the pulse without clearing the
+   * projectiles already in flight. Neither weapon awards points, consumes ammunition or changes the
+   * run clock, the encounter or collisions.
    *
    * @param frameDelta elapsed frame seconds, also used to advance existing projectiles
    * @param emissionSeconds part of the frame during which the run is still active
    * @param astraTrigger whether SPACE is held
+   * @param shipsCoincidentVisible whether Astra and the raider are both visible in the drawn frame
    * @param shotRange travel distance frozen into each new projectile
    */
   public void advanceWeapons(float frameDelta, float emissionSeconds, boolean astraTrigger,
-      float shotRange) {
+      boolean shipsCoincidentVisible, float shotRange) {
     astraGun.advance(frameDelta, emissionSeconds, astraTrigger, astraShotSource(shotRange));
+    VesperRaider raider = activeRaider();
+    boolean raiderEnabled = raider != null && shipsCoincidentVisible;
+    raiderGun.advance(frameDelta, emissionSeconds, raiderEnabled,
+        raiderEnabled ? raiderShotSource(raider, shotRange) : null);
   }
 
   private GunBurst.ShotSource astraShotSource(float shotRange) {
@@ -110,6 +126,19 @@ public final class PhaseOneGameController extends GameController {
     if (normalized > 180f) normalized -= 360f;
     if (normalized <= -180f) normalized += 360f;
     return normalized;
+  }
+
+  /**
+   * Snapshots the raider's box center, heading and measured side cannon mouths at the emission
+   * instant. Unlike Astra, the raider moves only a few units per frame, so no intra-frame
+   * interpolation is needed; each {@code Shot} still freezes origin and direction, and the
+   * resulting projectiles retain no ship reference.
+   */
+  private GunBurst.ShotSource raiderShotSource(VesperRaider raider, float shotRange) {
+    return offsetSeconds -> raider.shotAt(
+        raider.x() + raider.drawWidth() / 2f,
+        raider.y() + raider.drawHeight() / 2f,
+        raider.headingDegrees(), shotRange);
   }
 
   /** Astra's box position and heading before and after this frame's bounded flight. */

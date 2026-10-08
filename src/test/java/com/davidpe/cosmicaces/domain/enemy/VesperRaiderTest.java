@@ -1,9 +1,12 @@
 package com.davidpe.cosmicaces.domain.enemy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import org.junit.jupiter.api.Test;
 
 class VesperRaiderTest {
@@ -121,6 +124,40 @@ class VesperRaiderTest {
     assertThrows(IllegalArgumentException.class, () -> new VesperRaider(100f, 10f, 10f, Float.NaN, 0f, 0f));
     assertThrows(IllegalArgumentException.class, () -> new VesperRaider(100f, 10f, 10f, 0f, Float.NaN, 0f));
     assertThrows(IllegalArgumentException.class, () -> new VesperRaider(100f, 10f, 10f, 0f, 0f, Float.NaN));
+  }
+
+  @Test
+  void shotAtUsesTheDescentForwardVectorForBothTurnDirections() {
+    GunBurst.Shot straight = raider(0f, 0f, 0f).shotAt(0f, 0f, 0f, 1000f);
+    assertEquals(0f, straight.forwardX(), 1e-6f);
+    assertEquals(-1f, straight.forwardY(), 1e-6f);
+
+    GunBurst.Shot right = raider(0f, 0f, 0f).shotAt(0f, 0f, 90f, 1000f);
+    assertEquals(1f, right.forwardX(), 1e-6f);
+    assertEquals(0f, right.forwardY(), 1e-6f);
+
+    GunBurst.Shot left = raider(0f, 0f, 0f).shotAt(0f, 0f, -90f, 1000f);
+    assertEquals(-1f, left.forwardX(), 1e-6f);
+    assertEquals(0f, left.forwardY(), 1e-6f);
+  }
+
+  @Test
+  void shotAtProducesTwoDistinctSideCannonMuzzles() {
+    GunBurst.Shot shot = raider(100f, 200f, 0f).shotAt(100f, 200f, 0f, 1000f);
+    assertEquals(2, shot.muzzles().size());
+    assertNotEquals(shot.muzzles().get(0).x(), shot.muzzles().get(1).x(), 1e-3f,
+        "the two side cannons must not share a lateral origin");
+  }
+
+  @Test
+  void shotMuzzlesRotateWithTheHeading() {
+    GunBurst.Shot shot = raider(0f, 0f, 0f).shotAt(0f, 0f, 90f, 1000f);
+    // Heading 90: forward=(1,0), right=(0,1); the lateral cannon split moves to world Y.
+    assertEquals(shot.muzzles().get(0).x(), shot.muzzles().get(1).x(), 0.05f);
+    assertNotEquals(shot.muzzles().get(0).y(), shot.muzzles().get(1).y(), 1e-3f);
+    for (GunBurst.Muzzle muzzle : shot.muzzles()) {
+      assertTrue(Float.isFinite(muzzle.x()) && Float.isFinite(muzzle.y()));
+    }
   }
 
   private static VesperRaider raider(float x, float y, float headingDegrees) {

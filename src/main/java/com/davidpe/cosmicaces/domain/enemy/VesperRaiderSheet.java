@@ -22,6 +22,14 @@ public final class VesperRaiderSheet {
   /** A rectangular region of the sheet. */
   public record Slice(int x, int y, int width, int height) {}
 
+  /**
+   * A cannon mouth of the Raider, expressed as offsets from the center of the stable draw box:
+   * lateral is positive towards the ship's right and forward is positive towards the nose, both as
+   * fractions of the box width and height. Measured from the two warm muzzle flashes that the
+   * firing PNG adds on the sides of the body.
+   */
+  public record CannonMouth(float lateral, float forward) {}
+
   public static final int WIDTH = 1983;
   public static final int HEIGHT = 793;
 
@@ -47,9 +55,26 @@ public final class VesperRaiderSheet {
           new Slice(1242, 134, 291, 513),
           new Slice(1585, 135, 368, 513));
 
+  /**
+   * The two measured side cannon mouths per pose, ordered left then right. They are taken from the
+   * symmetric warm flashes that only the firing sheet adds to the wing area; when a pose hides one
+   * flash behind the body (right yaw) the pair is completed by mirroring, so a burst always leaves
+   * both cannons. Forward is small because the guns sit near the middle of the body.
+   */
+  private static final List<List<CannonMouth>> CANNON_MOUTHS = List.of(
+      List.of(new CannonMouth(-0.2418f, 0.0571f), new CannonMouth(0.2636f, 0.0208f)),
+      List.of(new CannonMouth(-0.2935f, 0.0408f), new CannonMouth(0.2935f, 0.0426f)),
+      List.of(new CannonMouth(-0.2618f, 0.0362f), new CannonMouth(0.2473f, 0.0471f)),
+      List.of(new CannonMouth(-0.2074f, -0.0063f), new CannonMouth(0.2056f, -0.0063f)),
+      List.of(new CannonMouth(-0.3034f, -0.0109f), new CannonMouth(0.2129f, -0.0145f)));
+
   static {
     validate(SLICES, WIDTH, HEIGHT);
     validate(FIRING_SLICES, FIRING_WIDTH, FIRING_HEIGHT);
+    if (CANNON_MOUTHS.size() != Pose.values().length) {
+      throw new IllegalStateException(
+          "The raider sheet must define cannon mouths for every pose, got " + CANNON_MOUTHS.size());
+    }
   }
 
   private static void validate(List<Slice> slices, int width, int height) {
@@ -94,6 +119,11 @@ public final class VesperRaiderSheet {
 
   public static List<Slice> firingSlices() {
     return FIRING_SLICES;
+  }
+
+  /** The two measured cannon mouths of the given pose, ordered left then right. */
+  public static List<CannonMouth> cannonMouths(Pose pose) {
+    return CANNON_MOUTHS.get(pose.ordinal());
   }
 
   public static int maxSliceWidth() {

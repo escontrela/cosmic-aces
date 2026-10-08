@@ -22,7 +22,14 @@ class PhaseOneWeaponTest {
     float emission = controller.isRunStarted() && !controller.isRunFinished()
         ? Math.min(delta, controller.remainingRunSeconds()) : 0f;
     controller.advanceFlight(FlightControls.neutral(), delta, false);
-    controller.advanceWeapons(delta, emission, trigger, RANGE);
+    controller.advanceWeapons(delta, emission, trigger, false, RANGE);
+  }
+
+  private static void vesperFrame(PhaseOneGameController controller, float delta,
+      boolean coincident) {
+    float emission = controller.isRunStarted() && !controller.isRunFinished()
+        ? Math.min(delta, controller.remainingRunSeconds()) : 0f;
+    controller.advanceWeapons(delta, emission, false, coincident, RANGE);
   }
 
   @Test
@@ -110,7 +117,7 @@ class PhaseOneWeaponTest {
     controller.start();
 
     controller.advanceFlight(FlightControls.neutral(), 1f / 60f, false);
-    controller.advanceWeapons(1f / 60f, 1f / 60f, true, RANGE);
+    controller.advanceWeapons(1f / 60f, 1f / 60f, true, false, RANGE);
     GunProjectile projectile = controller.astraGun().projectiles().get(0);
     float forwardX = projectile.forwardX();
     float forwardY = projectile.forwardY();
@@ -119,7 +126,7 @@ class PhaseOneWeaponTest {
     for (int frame = 0; frame < 30; frame++) {
       controller.advanceFlight(new FlightControls(false, true, true, false, false),
           1f / 60f, false);
-      controller.advanceWeapons(1f / 60f, 0f, false, RANGE);
+      controller.advanceWeapons(1f / 60f, 0f, false, false, RANGE);
     }
 
     assertEquals(forwardX, projectile.forwardX(), 1e-6f);
@@ -139,9 +146,114 @@ class PhaseOneWeaponTest {
 
     controller.advanceFlight(FlightControls.neutral(), 1f, false);
     assertTrue(controller.isRunFinished());
-    controller.advanceWeapons(1f, remaining, true, RANGE);
+    controller.advanceWeapons(1f, remaining, true, false, RANGE);
 
     assertEquals(2, controller.astraGun().projectiles().size(),
         "only the immediate event fits inside the still-active fraction");
+  }
+
+  @Test
+  void vesperDoesNotFireWithoutARaiderAndFiresOnceItCoincides() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f); // spawn after 3 s
+
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    vesperFrame(controller, 1f / 60f, true);
+    assertTrue(controller.raiderGun().projectiles().isEmpty(),
+        "no raider yet, so no autonomous shots");
+
+    controller.advanceEncounter(3f);
+    assertTrue(controller.isRaiderActive());
+
+    vesperFrame(controller, 1f / 60f, true);
+    assertEquals(2, controller.raiderGun().projectiles().size(),
+        "the raider's two side cannons fire one event each");
+  }
+
+  @Test
+  void vesperDoesNotFireWhenNotCoincident() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+
+    for (int frame = 0; frame < 30; frame++) {
+      vesperFrame(controller, 1f / 60f, false);
+    }
+
+    assertTrue(controller.raiderGun().projectiles().isEmpty());
+  }
+
+  @Test
+  void vesperStopsNewShotsWhenCoincidenceEndsButKeepsExistingOnes() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    vesperFrame(controller, 1f / 60f, true);
+    int fired = controller.raiderGun().projectiles().size();
+    assertTrue(fired >= 2);
+
+    for (int frame = 0; frame < 60; frame++) {
+      vesperFrame(controller, 1f / 60f, false);
+    }
+
+    assertEquals(fired, controller.raiderGun().projectiles().size(),
+        "leaving the camera must not remove in-flight projectiles");
+    assertFalse(controller.raiderGun().isFiring());
+  }
+
+  @Test
+  void vesperReenablingDoesNotAccumulateBursts() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    vesperFrame(controller, 1f / 60f, true);
+    int afterFirst = controller.raiderGun().projectiles().size();
+    assertEquals(2, afterFirst);
+
+    for (int frame = 0; frame < 60; frame++) {
+      vesperFrame(controller, 1f / 60f, false);
+    }
+    vesperFrame(controller, 1f / 60f, true);
+
+    assertEquals(afterFirst + 2, controller.raiderGun().projectiles().size(),
+        "a long loss of coincidence must not bank extra bursts");
+  }
+
+  @Test
+  void vesperShotsKeepTheirFrozenDirectionWhenTheRaiderMoves() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    vesperFrame(controller, 1f / 60f, true);
+
+    GunProjectile projectile = controller.raiderGun().projectiles().get(0);
+    float forwardX = projectile.forwardX();
+    float forwardY = projectile.forwardY();
+
+    for (int frame = 0; frame < 30; frame++) {
+      controller.advanceEncounter(1f / 60f);
+      vesperFrame(controller, 1f / 60f, false);
+    }
+
+    assertEquals(forwardX, projectile.forwardX(), 1e-6f);
+    assertEquals(forwardY, projectile.forwardY(), 1e-6f);
+  }
+
+  @Test
+  void vesperDoesNotFireAfterTheRunEnds() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    controller.advanceRun(60f);
+    assertTrue(controller.isRunFinished());
+
+    controller.advanceWeapons(1f / 60f, 0f, false, true, RANGE);
+    assertTrue(controller.raiderGun().projectiles().isEmpty(),
+        "the phase end cuts new autonomous shots");
   }
 }

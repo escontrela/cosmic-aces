@@ -155,6 +155,26 @@ transforma con `forward=(sin yaw, cos yaw)` y `right=(cos yaw, -sin yaw)`.
 `shotAt` no activa láminas ni dibuja: el fogonazo anclado, el trazador y el HUD
 M61 Vulcan corresponden a la hija final.
 
+Vesper integra su cañón autónomo en el mismo controlador. `PhaseOneGameController`
+posee un segundo `GunBurst`, `raiderGun()`, y `advanceWeapons(frameDelta,
+emissionSeconds, astraTrigger, shipsCoincidentVisible, shotRange)` autoriza la
+emisión del raider solo si la fase está activa (`emissionSeconds>0`), el Raider
+existe y `shipsCoincidentVisible` es verdadero para el frame dibujado. Al cesar la
+coincidencia, `GunBurst` deshabilita la emisión, reinicia deuda/pulso y conserva
+los proyectiles ya emitidos; el Raider y el arma no se recrean al salir de cámara.
+`VesperRaider.shotAt(centerX, centerY, headingDegrees, range)` usa
+`forward=(sin heading, -cos heading)` y `right=(cos heading, sin heading)` y
+transforma las bocas laterales medidas en `VesperRaiderSheet.cannonMouths(pose)`
+(dos por pose, tomadas de los fogonazos simétricos que solo añade la lámina de
+disparo; la pose de guiñada derecha completa el par oculto por simetría). Cada
+`Shot` congela centro, bocas, rumbo y alcance, sin retener referencia a la nave.
+La coincidencia de las armas se calcula **después** del vuelo, el encuentro y la
+cámara del frame, con el helper puro `CameraVisibility.shipVisible(centerX,
+centerY, halfBox, cameraX, cameraY, upX, upY, viewWidth, viewHeight, zoom)`; la
+puntuación sigue usando la coincidencia muestreada antes del movimiento, de modo
+que su regla y valores no cambian y nunca se reutiliza una coincidencia obsoleta
+para disparar. El dibujo del HUD/arma visible sigue perteneciendo a la hija final.
+
 Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
@@ -204,10 +224,10 @@ com.davidpe.cosmicaces
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
-|   +-- PhaseOneGameController extends GameController: encuentros y arma de Astra.
+|   +-- PhaseOneGameController extends GameController: encuentros y armas de PhaseOne.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
 |       4. isRaiderActive()  5. activeRaider()  6. setRaiderVisuals()
-|       7. scorePoints()  8. astraGun()  9. advanceWeapons()
+|       7. scorePoints()  8. astraGun()  9. raiderGun()  10. advanceWeapons()
 |
 +-- domain
 |   +-- game
@@ -252,12 +272,15 @@ com.davidpe.cosmicaces
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
 |   |   |   4. setDriftDirection()  5. clampToWorld()  6. pose()  7. setVisuals()
+|   |   |   8. shotAt(): instantánea de los dos cañones laterales para una emisión.
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
 |   |   +-- RaiderEncounter: única aparición persistente del enemigo en el mundo.
 |   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
 |   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
+|   |   |   7. cannonMouths()
+|   |   |   +-- CannonMouth(lateral, forward): boca de cañón medida por pose.
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- weapon
@@ -298,6 +321,8 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             +-- FlightCameraState: seguimiento y zoom interpolados.
             |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
+            |   1. shipVisible()
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
             +-- FlightHud: brújula, velocidad y score en coordenadas de pantalla.

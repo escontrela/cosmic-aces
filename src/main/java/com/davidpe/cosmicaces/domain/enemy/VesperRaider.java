@@ -7,6 +7,9 @@ import com.badlogic.gdx.utils.Disposable;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.ship.MovementIntent;
 import com.davidpe.cosmicaces.domain.ship.Ship;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * An autonomous enemy that flies by its own heading and wanders the finite world. Its heading uses
@@ -98,6 +101,39 @@ public final class VesperRaider extends Ship {
       return VesperRaiderSheet.poseForTurn(turnDirection);
     }
     return VesperRaiderSheet.poseForBank(driftDirection);
+  }
+
+  /**
+   * Builds a two-cannon emission snapshot from a box center and heading, freezing the direction and
+   * both measured {@link VesperRaiderSheet.CannonMouth} origins so later turns or movement cannot
+   * bend the shots. The descent heading uses {@code forward=(sin heading, -cos heading)} and
+   * {@code right=(cos heading, sin heading)}; the mouths are transformed with the current pose's
+   * lateral/forward offsets.
+   *
+   * @param centerX world X of the stable box center
+   * @param centerY world Y of the stable box center
+   * @param headingDegrees descent heading at the emission instant; zero points down
+   * @param range travel distance frozen into each projectile
+   */
+  public GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees, float range) {
+    if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("Shot center and heading must be finite");
+    }
+    double radians = Math.toRadians(headingDegrees);
+    float forwardX = (float) Math.sin(radians);
+    float forwardY = (float) -Math.cos(radians);
+    float rightX = (float) Math.cos(radians);
+    float rightY = (float) Math.sin(radians);
+    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose());
+    List<GunBurst.Muzzle> muzzles = new ArrayList<>(mouths.size());
+    for (VesperRaiderSheet.CannonMouth mouth : mouths) {
+      float lateral = mouth.lateral() * drawWidth();
+      float forward = mouth.forward() * drawHeight();
+      muzzles.add(new GunBurst.Muzzle(
+          centerX + rightX * lateral + forwardX * forward,
+          centerY + rightY * lateral + forwardY * forward));
+    }
+    return new GunBurst.Shot(muzzles, forwardX, forwardY, range);
   }
 
   private static float normalizeYaw(float yaw) {

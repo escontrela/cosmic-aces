@@ -170,10 +170,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
       return;
     }
     flightCamera.update(controller.astra(), delta);
+    // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
+    // encounter and the camera update) so Vesper fires only while both ships are really visible.
+    // The pre-movement sample above stays the scoring input and is never reused for the weapons.
+    boolean weaponsCoincident = shipsCoincidentVisible();
     // One weapons update per frame, after the camera that this frame draws, using the world zoom as
     // the frozen range so a shot covers about two visible viewport heights.
     controller.advanceWeapons(delta, emissionSeconds, Gdx.input.isKeyPressed(Input.Keys.SPACE),
-        2f * VirtualScreenSize.HEIGHT * camera.zoom);
+        weaponsCoincident, 2f * VirtualScreenSize.HEIGHT * camera.zoom);
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
@@ -261,18 +265,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
   /**
    * Projects a world point into the camera's rotated view frame and checks it against the visible
-   * half extents, including the ship's half box as margin. {@code camera.up} encodes the yaw.
+   * half extents, including the ship's half box as margin. Delegates to the shared pure rule so the
+   * drawing decision and the weapon-coincidence decision cannot diverge. {@code camera.up} encodes
+   * the yaw.
    */
   private boolean shipVisible(float centerX, float centerY, float halfBox) {
-    float dx = centerX - camera.position.x;
-    float dy = centerY - camera.position.y;
-    float upX = camera.up.x;
-    float upY = camera.up.y;
-    float localRight = dx * upY - dy * upX;
-    float localUp = dx * upX + dy * upY;
-    float halfWidth = VirtualScreenSize.WIDTH / 2f * camera.zoom + halfBox;
-    float halfHeight = VirtualScreenSize.HEIGHT / 2f * camera.zoom + halfBox;
-    return Math.abs(localRight) <= halfWidth && Math.abs(localUp) <= halfHeight;
+    return CameraVisibility.shipVisible(centerX, centerY, halfBox,
+        camera.position.x, camera.position.y, camera.up.x, camera.up.y,
+        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera.zoom);
   }
 
   private void drawEndMessage() {
