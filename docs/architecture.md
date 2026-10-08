@@ -14,6 +14,8 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
+| `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
+| `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
@@ -98,6 +100,52 @@ fogonazo, input, proyectiles y HUD pertenecen a COS-27. Al integrarlos, conserva
 la escala y ancla del cuerpo entre variantes: las imágenes fuente de disparo
 tienen diferencias de geometría y margen respecto a las originales; no estirar
 cada pose para rellenar la caja ni aumentar la caja de vuelo por el fogonazo.
+
+### Detector de colisiones preparado para COS-32
+
+`domain.collision.CollisionDetector` es una utilidad sin estado ni LibGDX, utilizable
+por todas las fases y tipos de entidad. Sus records inmutables `Circle`, `Box`
+(centro, semianchos y ángulo matemático antihorario desde X) y `Segment` reciben
+coordenadas del mundo, nunca del viewport. `overlaps(shapeA, shapeB)` detecta
+contacto entre círculos, círculo/caja orientada y dos cajas orientadas (SAT).
+Tangencias cuentan como contacto; un círculo de radio cero representa un punto.
+
+`firstHit(segment, shape)` devuelve `OptionalDouble` con la primera fracción del
+recorrido [0,1], o vacío; una superposición inicial devuelve cero. `sweep` acepta
+dos círculos móviles o un círculo y una caja móvil de orientación fija, usando
+movimiento relativo. La expansión círculo/caja conserva esquinas redondeadas;
+no confunde la caja expandida con la geometría exacta. Radios/tamaño/orientación
+deben permanecer constantes durante cada barrido. No calcula barridos exactos de
+cajas rotatorias ni polígonos arbitrarios: usar subpasos o envolventes circulares
+para naves que viran. Tamaños/posiciones se validan y no se crean recursos nativos.
+
+La fase adapta las entidades a estas formas, consulta el detector y decide daños,
+inmunidad, consumo de proyectiles, destrucción y evitación de choques. El detector
+no añade colisiones a elementos decorativos ni activa combate por sí solo. COS-32
+debe reutilizarlo y añadir su integración/pruebas, sin otro motor geométrico para
+PhaseOne. La evitación de Vesper pertenece a `RaiderEncounter`.
+
+### Lámina de explosión preparada para COS-33
+
+`domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
+recortes medidos (alfa > 8, margen de dos píxeles), ordenados de izquierda a derecha
+en la primera fila y luego en la segunda. `internalPath()`, `frameSlices()` y
+`frameSlice(index)` no necesitan contexto gráfico. Cada `Slice` expone anclas
+geométricas centradas; `REFERENCE_SIZE=417` permite usar una sola escala en todos
+los frames y conservar expansión/disipación sin estirar cada recorte.
+
+`ShipExplosionVisuals` carga una textura compartida y prepara sus ocho regiones
+una vez, con filtrado Nearest. `region(index)` entrega una región prestada que no
+se debe modificar. `draw(batch, index, centerX, centerY, peakSize)` dibuja sobre
+un batch mundial ya abierto; peakSize es la dimensión máxima de la animación en
+unidades del mundo. No cambia proyección/color ni abre/cierra lotes. La pantalla
+crea una instancia para las explosiones de ambas naves y la libera en `dispose()`;
+el cargador limpia fallos parciales y su liberación es idempotente.
+
+Esta preparación manual no activa explosiones en PhaseOne. COS-33 debe reutilizar
+estos dos componentes y añadir el estado temporal `ShipExplosion`, la conexión
+con destrucción/reaparición del controlador, parpadeo y HUD. Los temporizadores de
+vida/daño no pertenecen a la lámina ni al cargador.
 
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
@@ -308,6 +356,15 @@ com.davidpe.cosmicaces
 |   |   |   +-- FiringPlacement(offsetXPx, offsetYPx): ancla del fogonazo por pose.
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
+|   +-- collision
+|   |   +-- CollisionDetector: contactos y barridos geométricos compartidos entre fases.
+|   |       1. overlaps()  2. firstHit()  3. sweep()
+|   |       +-- Circle, Box, Segment: geometría mundial inmutable, sin entidades/recursos.
+|   +-- effect
+|   |   +-- ShipExplosionSheet: ocho recortes medidos y escala de referencia.
+|   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
+|   |   +-- ShipExplosionVisuals: textura compartida screen-owned, regiones y dibujo.
+|   |       1. region()  2. draw()  3. dispose()
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
