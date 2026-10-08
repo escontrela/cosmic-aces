@@ -30,6 +30,21 @@ public final class VesperRaiderSheet {
    */
   public record CannonMouth(float lateral, float forward) {}
 
+  /**
+   * Registration correction, in sheet pixels, that keeps the firing variant's body anchored on the
+   * flight variant for a pose. {@code offsetXPx} is {@code (bodyCx - w/2)} of the flight slice minus
+   * that of the firing slice; {@code offsetYPx} uses {@code (h/2 - bodyCy)}, which stays valid in
+   * the drawn frame where {@link #orientedForDescent} flips the region vertically because the flip
+   * cancels in the difference. Measured on the bundled PNGs with the shared warm-flash color rule.
+   */
+  public record FiringPlacement(float offsetXPx, float offsetYPx) {
+    public FiringPlacement {
+      if (!Float.isFinite(offsetXPx) || !Float.isFinite(offsetYPx)) {
+        throw new IllegalArgumentException("Firing placement offsets must be finite");
+      }
+    }
+  }
+
   public static final int WIDTH = 1983;
   public static final int HEIGHT = 793;
 
@@ -68,12 +83,25 @@ public final class VesperRaiderSheet {
       List.of(new CannonMouth(-0.2074f, -0.0063f), new CannonMouth(0.2056f, -0.0063f)),
       List.of(new CannonMouth(-0.3034f, -0.0109f), new CannonMouth(0.2129f, -0.0145f)));
 
+  /** Per-pose registration of the firing variant against the flight variant, in {@link Pose} order. */
+  private static final List<FiringPlacement> FIRING_PLACEMENTS = List.of(
+      new FiringPlacement(3.5f, -3.0f),
+      new FiringPlacement(0.0f, 0.5f),
+      new FiringPlacement(-0.5f, 0.5f),
+      new FiringPlacement(2.0f, 0.0f),
+      new FiringPlacement(1.5f, 3.0f));
+
   static {
     validate(SLICES, WIDTH, HEIGHT);
     validate(FIRING_SLICES, FIRING_WIDTH, FIRING_HEIGHT);
     if (CANNON_MOUTHS.size() != Pose.values().length) {
       throw new IllegalStateException(
           "The raider sheet must define cannon mouths for every pose, got " + CANNON_MOUTHS.size());
+    }
+    if (FIRING_PLACEMENTS.size() != Pose.values().length) {
+      throw new IllegalStateException(
+          "The raider sheet must define firing placement for every pose, got "
+              + FIRING_PLACEMENTS.size());
     }
   }
 
@@ -124,6 +152,11 @@ public final class VesperRaiderSheet {
   /** The two measured cannon mouths of the given pose, ordered left then right. */
   public static List<CannonMouth> cannonMouths(Pose pose) {
     return CANNON_MOUTHS.get(pose.ordinal());
+  }
+
+  /** Correction that keeps the firing variant anchored on the flight pose. */
+  public static FiringPlacement firingPlacement(Pose pose) {
+    return FIRING_PLACEMENTS.get(pose.ordinal());
   }
 
   public static int maxSliceWidth() {

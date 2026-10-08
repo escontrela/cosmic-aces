@@ -23,6 +23,7 @@ public final class VesperRaider extends Ship {
   private float headingDegrees;
   private int turnDirection;
   private int driftDirection;
+  private boolean muzzleFlashVisible;
   private Visuals visuals;
 
   public VesperRaider(float speed, float width, float height, float x, float y,
@@ -37,6 +38,11 @@ public final class VesperRaider extends Ship {
 
   public void setVisuals(Visuals visuals) {
     this.visuals = visuals;
+  }
+
+  /** Presentation flag driven by the cannon's own emission pulse; never independently timed. */
+  public void setMuzzleFlashVisible(boolean muzzleFlashVisible) {
+    this.muzzleFlashVisible = muzzleFlashVisible;
   }
 
   public float width() {
@@ -148,7 +154,25 @@ public final class VesperRaider extends Ship {
     if (visuals == null) {
       throw new IllegalStateException("Vesper Raider visuals have not been attached");
     }
-    return visuals.region(pose());
+    return visuals.region(pose(), muzzleFlashVisible);
+  }
+
+  /**
+   * Keeps the body anchored between the flight and firing variants: while the muzzle flash is
+   * visible the firing region is shifted by the per-pose correction measured on the sheets, with
+   * the same uniform scale and the rotation pivot unchanged (the draw origin stays on the box
+   * center). {@code orientedForDescent} is already applied once by {@link Visuals} and is never
+   * repeated per frame.
+   */
+  @Override
+  protected Ship.SpritePlacement spritePlacement(TextureRegion region) {
+    Ship.SpritePlacement centered = super.spritePlacement(region);
+    if (!muzzleFlashVisible) {
+      return centered;
+    }
+    VesperRaiderSheet.FiringPlacement firing = VesperRaiderSheet.firingPlacement(pose());
+    return new Ship.SpritePlacement(centered.scale(),
+        firing.offsetXPx() * centered.scale(), firing.offsetYPx() * centered.scale());
   }
 
   /** Flight and firing sheets shared by the single raider; owned by the phase screen. */

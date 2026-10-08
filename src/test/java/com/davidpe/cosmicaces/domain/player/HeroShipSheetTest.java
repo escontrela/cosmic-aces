@@ -141,6 +141,71 @@ class HeroShipSheetTest {
     }
   }
 
+  /**
+   * The firing placement metadata must keep the cool body hull of each firing pose anchored on the
+   * flight pose of the same speed family. The expected offset is re-measured from the bundled PNGs
+   * with the same warm-flash color rule, so a slice edit or a stale constant is caught.
+   */
+  @Test
+  void firingPlacementKeepsTheBodyHullAnchoredOnItsFlightVariant() throws IOException {
+    List<HeroShipSheet.Sheet> flight = HeroShipSheet.sheets();
+    List<HeroShipSheet.Sheet> firing = HeroShipSheet.firingSheets();
+    for (int family = 0; family < flight.size(); family++) {
+      boolean accelerating = family == 1;
+      BufferedImage flightImage = ImageIO.read(
+          getClass().getResource("/" + flight.get(family).internalPath()));
+      BufferedImage firingImage = ImageIO.read(
+          getClass().getResource("/" + firing.get(family).internalPath()));
+      for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
+        HeroShipSheet.Slice flightSlice = flight.get(family).slice(pose);
+        HeroShipSheet.Slice firingSlice = firing.get(family).slice(pose);
+        double[] flightHull = coolHullCenter(flightImage, flightSlice.x(), flightSlice.y(),
+            flightSlice.width(), flightSlice.height());
+        double[] firingHull = coolHullCenter(firingImage, firingSlice.x(), firingSlice.y(),
+            firingSlice.width(), firingSlice.height());
+        double expectedX = (flightHull[0] - flightSlice.width() / 2d)
+            - (firingHull[0] - firingSlice.width() / 2d);
+        double expectedY = (flightSlice.height() / 2d - flightHull[1])
+            - (firingSlice.height() / 2d - firingHull[1]);
+        HeroShipSheet.FiringPlacement placement =
+            HeroShipSheet.firingPlacement(pose, accelerating);
+        assertEquals(expectedX, placement.offsetXPx(), 1f, "deltaX of " + pose);
+        assertEquals(expectedY, placement.offsetYPx(), 1f, "deltaY of " + pose);
+      }
+    }
+  }
+
+  /** Warm muzzle flash / engine flame pixel shared with the anchor measurement. */
+  private static boolean warm(int pixel) {
+    int r = (pixel >> 16) & 255;
+    int g = (pixel >> 8) & 255;
+    int b = pixel & 255;
+    return r > 180 && r > b + 60 && g > b + 20;
+  }
+
+  /** Center of the cool opaque hull (alpha > 32, not warm) of a slice, in slice-local pixels. */
+  private static double[] coolHullCenter(BufferedImage image, int sliceX, int sliceY,
+      int width, int height) {
+    int x0 = Integer.MAX_VALUE;
+    int y0 = Integer.MAX_VALUE;
+    int x1 = -1;
+    int y1 = -1;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int pixel = image.getRGB(sliceX + x, sliceY + y);
+        if ((pixel >>> 24) <= 32 || warm(pixel)) {
+          continue;
+        }
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      }
+    }
+    assertTrue(x0 <= x1, "the slice must contain a cool opaque hull");
+    return new double[] {(x0 + x1) / 2d, (y0 + y1) / 2d};
+  }
+
   @Test
   void rejectsSlicesOutsideTheSheet() {
     assertThrows(IllegalArgumentException.class,

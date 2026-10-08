@@ -16,4 +16,9 @@ class FlightHudTest {
     assertEquals("NO", FlightHud.headingLabel(-45f));
     assertEquals(359, FlightHud.headingDegrees(-1f));
   }
+
+  @Test void weaponLabelShowsTheActiveGunOnlyWhileFiring() {
+    assertEquals("M61 VULCAN", FlightHud.weaponLabel(true));
+    assertEquals("", FlightHud.weaponLabel(false));
+  }
 }

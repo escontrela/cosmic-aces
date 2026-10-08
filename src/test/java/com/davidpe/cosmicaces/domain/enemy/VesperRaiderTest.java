@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.ship.Ship;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import org.junit.jupiter.api.Test;
 
@@ -158,6 +160,36 @@ class VesperRaiderTest {
     for (GunBurst.Muzzle muzzle : shot.muzzles()) {
       assertTrue(Float.isFinite(muzzle.x()) && Float.isFinite(muzzle.y()));
     }
+  }
+
+  @Test
+  void spritePlacementCentersFlightRegionsAndAnchorsTheFiringVariant() throws Exception {
+    VesperRaider raider = raider(0f, 0f, 0f);
+    raider.setDriftDirection(1);
+    assertEquals(VesperRaiderSheet.Pose.LEFT, raider.pose());
+    TextureRegion region = new TextureRegion();
+
+    Ship.SpritePlacement idle = spritePlacement(raider, region);
+    assertTrue(idle.scale() > 0f);
+    assertEquals(0f, idle.offsetX(), 1e-4f, "flight drawing stays centered on the box");
+    assertEquals(0f, idle.offsetY(), 1e-4f);
+
+    raider.setMuzzleFlashVisible(true);
+    Ship.SpritePlacement firing = spritePlacement(raider, region);
+    VesperRaiderSheet.FiringPlacement expected =
+        VesperRaiderSheet.firingPlacement(VesperRaiderSheet.Pose.LEFT);
+    assertEquals(expected.offsetXPx() * idle.scale(), firing.offsetX(), 1e-3f);
+    assertEquals(expected.offsetYPx() * idle.scale(), firing.offsetY(), 1e-3f);
+    assertEquals(idle.scale(), firing.scale(), 1e-4f, "the uniform scale never changes");
+  }
+
+  /** Invokes the protected placement hook via reflection; no GL context is required. */
+  private static Ship.SpritePlacement spritePlacement(VesperRaider raider, TextureRegion region)
+      throws Exception {
+    java.lang.reflect.Method method =
+        Ship.class.getDeclaredMethod("spritePlacement", TextureRegion.class);
+    method.setAccessible(true);
+    return (Ship.SpritePlacement) method.invoke(raider, region);
   }
 
   private static VesperRaider raider(float x, float y, float headingDegrees) {

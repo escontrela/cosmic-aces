@@ -80,14 +80,50 @@ public abstract class Ship {
     draw(batch, 0f);
   }
 
-  /** Rotates around the stable box center, keeping every sprite slice aligned. */
+  /**
+   * Where and at what scale the current pose's region is drawn inside the stable box. The default
+   * centers the region without stretching it, exactly like the pre-registration drawing; subclasses
+   * override it to keep the body anchor stable between variants (for example flight vs firing) by
+   * shifting the region without moving the rotation pivot.
+   */
+  public record SpritePlacement(float scale, float offsetX, float offsetY) {
+    public SpritePlacement {
+      if (!Float.isFinite(scale) || scale <= 0f || !Float.isFinite(offsetX)
+          || !Float.isFinite(offsetY)) {
+        throw new IllegalArgumentException("Sprite placement must have a finite positive scale");
+      }
+    }
+
+    static SpritePlacement centered(float scale) {
+      return new SpritePlacement(scale, 0f, 0f);
+    }
+  }
+
+  /** Placement of the current region; the default centers it like the historical drawing. */
+  protected SpritePlacement spritePlacement(TextureRegion region) {
+    return SpritePlacement.centered(drawScale());
+  }
+
+  private float drawScale() {
+    return Math.min(drawWidth / widestRegion, drawHeight / tallestRegion);
+  }
+
+  /**
+   * Rotates around the stable box center, keeping every sprite slice aligned. The region is placed
+   * by {@link #spritePlacement}; offsets shift the image content but never the pivot, because the
+   * draw origin is always the box center.
+   */
   public final void draw(SpriteBatch batch, float rotationDegrees) {
     TextureRegion region = currentRegion();
-    float scale = Math.min(drawWidth / widestRegion, drawHeight / tallestRegion);
-    float width = region.getRegionWidth() * scale;
-    float height = region.getRegionHeight() * scale;
-    batch.draw(region, x + (drawWidth - width) / 2f, y + (drawHeight - height) / 2f,
-        width / 2f, height / 2f, width, height, 1f, 1f, rotationDegrees);
+    SpritePlacement placement = spritePlacement(region);
+    float width = region.getRegionWidth() * placement.scale();
+    float height = region.getRegionHeight() * placement.scale();
+    float centerX = x + drawWidth / 2f;
+    float centerY = y + drawHeight / 2f;
+    float originX = width / 2f + placement.offsetX();
+    float originY = height / 2f + placement.offsetY();
+    batch.draw(region, centerX - originX, centerY - originY,
+        originX, originY, width, height, 1f, 1f, rotationDegrees);
   }
 
   protected abstract TextureRegion currentRegion();

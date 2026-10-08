@@ -22,6 +22,7 @@ public final class Astra extends Ship {
   private Visuals visuals;
   private HeroShipSheet.Pose pose = HeroShipSheet.Pose.NEUTRAL;
   private boolean accelerating;
+  private boolean muzzleFlashVisible;
   private float yawDegrees;
   private float flightSpeed = FlightTuning.NORMAL_SPEED;
   private float ultraRemainingSeconds;
@@ -38,6 +39,11 @@ public final class Astra extends Ship {
 
   public void setVisuals(Visuals visuals) {
     this.visuals = visuals;
+  }
+
+  /** Presentation flag driven by the cannon's own emission pulse; never independently timed. */
+  public void setMuzzleFlashVisible(boolean muzzleFlashVisible) {
+    this.muzzleFlashVisible = muzzleFlashVisible;
   }
 
   public float yawDegrees() {
@@ -207,7 +213,24 @@ public final class Astra extends Ship {
     if (visuals == null) {
       throw new IllegalStateException("Astra visuals have not been attached");
     }
-    return visuals.region(pose, accelerating);
+    return visuals.region(pose, accelerating, muzzleFlashVisible);
+  }
+
+  /**
+   * Keeps the body anchored between the flight and firing variants: while the muzzle flash is
+   * visible the firing region is shifted by the pose/family correction measured on the sheets, with
+   * the same uniform scale and the rotation pivot unchanged (the draw origin stays on the box
+   * center).
+   */
+  @Override
+  protected SpritePlacement spritePlacement(TextureRegion region) {
+    SpritePlacement centered = super.spritePlacement(region);
+    if (!muzzleFlashVisible) {
+      return centered;
+    }
+    HeroShipSheet.FiringPlacement firing = HeroShipSheet.firingPlacement(pose, accelerating);
+    return new SpritePlacement(centered.scale(),
+        firing.offsetXPx() * centered.scale(), firing.offsetYPx() * centered.scale());
   }
 
   private static int maxRegionWidth() {

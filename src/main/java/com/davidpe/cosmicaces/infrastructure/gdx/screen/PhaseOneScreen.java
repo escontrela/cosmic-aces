@@ -23,6 +23,8 @@ import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
+import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
+import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.concurrent.ThreadLocalRandom;
@@ -55,6 +57,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final FlightCamera flightCamera;
   private final FlightHud hud = new FlightHud();
   private final FlightMinimap minimap = new FlightMinimap();
+  private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
   private final WorldScenery scenery;
@@ -185,6 +188,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
     scenery.draw(shapes, camera.position.x - visibleRadius,
         camera.position.y - visibleRadius, camera.position.x + visibleRadius,
         camera.position.y + visibleRadius);
+    // Feed the cannon's own emission pulse into the ship visuals right before the draw, so the
+    // muzzle flash and the burst share one clock and no extra timer exists in the screen.
+    controller.astra().setMuzzleFlashVisible(controller.astraGun().flashVisible());
+    if (controller.isRaiderActive()) {
+      controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
+    }
     batch.begin();
     controller.astra().draw(batch, -controller.astra().yawDegrees());
     if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
@@ -192,13 +201,27 @@ public final class PhaseOneScreen extends ScreenAdapter {
       raider.draw(batch, raider.headingDegrees());
     }
     batch.end();
+    // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
+    // projectile with its frozen shot-time position and forward vector. Never re-read the current
+    // ship heading or camera to orient an already-fired shot.
+    shapes.setProjectionMatrix(camera.combined);
+    shapes.begin(ShapeRenderer.ShapeType.Filled);
+    for (GunProjectile projectile : controller.astraGun().projectiles()) {
+      tracer.draw(shapes, projectile.x(), projectile.y(),
+          projectile.forwardX(), projectile.forwardY());
+    }
+    for (GunProjectile projectile : controller.raiderGun().projectiles()) {
+      tracer.draw(shapes, projectile.x(), projectile.y(),
+          projectile.forwardX(), projectile.forwardY());
+    }
+    shapes.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
     minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
         controller.isRaiderActive() ? controller.activeRaider() : null,
         VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
-        controller.astra().flightSpeed());
+        controller.astra().flightSpeed(), controller.astraGun().isFiring());
     hud.drawScore(batch, font, phaseSnapshot.get().points());
     if (runFinished) {
       drawEndMessage();

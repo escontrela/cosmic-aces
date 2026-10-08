@@ -153,7 +153,28 @@ respecto al centro de la caja estable, medidos sobre los fogonazos de
 `NORMAL_FIRING`; `Astra.shotAt(centerX, centerY, yawDegrees, range)` los
 transforma con `forward=(sin yaw, cos yaw)` y `right=(cos yaw, -sin yaw)`.
 `shotAt` no activa láminas ni dibuja: el fogonazo anclado, el trazador y el HUD
-M61 Vulcan corresponden a la hija final.
+M61 Vulcan pertenecen a la hija final. La entrega visible de COS-27 quedó
+integrada así: `PhaseOneScreen` posee un `GunBurstVisual` compartido (sin
+recursos nativos) y, tras cerrar el `SpriteBatch` de naves, mantiene la
+proyección de mundo y abre una sola sesión `ShapeRenderer.Filled` para dibujar
+los proyectiles de ambas armas con `draw(shapes, x, y, forwardX, forwardY)`
+usando siempre la posición y el vector congelados de cada `GunProjectile`;
+después cambia a `hudCamera` para minimap/HUD. `Ship.draw` rota sobre el centro
+de la caja estable mediante el hook protegido `spritePlacement(TextureRegion)`
+que devuelve `Ship.SpritePlacement(scale, offsetX, offsetY)`: el default centra
+la región idéntico al dibujo histórico y un desplazamiento solo mueve la imagen,
+nunca el pivote. `HeroShipSheet.firingPlacement(pose, accelerating)` y
+`VesperRaiderSheet.firingPlacement(pose)` guardan, medido sobre los PNG reales
+con la regla de color cálido de los tests, el pequeño desplazamiento que deja el
+cuerpo de la variante de disparo anclado sobre el de vuelo de la misma familia y
+pose (escala uniforme; no se estira la pose ni cambia la caja). El pulso del
+fogonazo lo da el propio `GunBurst.flashVisible()` (0,035 s del mismo reloj de
+emisión): la pantalla lo propaga con `Astra.setMuzzleFlashVisible` y
+`VesperRaider.setMuzzleFlashVisible` antes del dibujo, y `currentRegion` elige
+`region(pose, accelerating, flash)` / `region(pose, flash)`. `FlightHud.draw`
+recibe `isFiring` y `weaponLabel(boolean)` devuelve «M61 VULCAN» o vacío,
+dibujado centrado en una fila inferior libre (y=58) sin mover cámara ni
+reorganizar las lecturas existentes.
 
 Vesper integra su cañón autónomo en el mismo controlador. `PhaseOneGameController`
 posee un segundo `GunBurst`, `raiderGun()`, y `advanceWeapons(frameDelta,
@@ -253,34 +274,38 @@ com.davidpe.cosmicaces
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]
 |   |   |   3. draw()  4. draw(batch, rotationDegrees)
-|   |   |   5. currentRegion() [abstracto protegido]
+|   |   |   5. spritePlacement() [protegido]: colocación de la región en la caja.
+|   |   |   6. currentRegion() [abstracto protegido]
+|   |   |   +-- SpritePlacement(scale, offsetX, offsetY): registro de la pose.
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
 |   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
 |   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()
-|   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. currentRegion()
-|   |   |   8. shotAt(): instantánea de los dos cañones para una emisión.
+|   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. setMuzzleFlashVisible()
+|   |   |   8. currentRegion()  9. shotAt(): instantánea de los dos cañones para una emisión.
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
 |   |   +-- FlightControls: teclas de pilotaje y activación puntual de Ultra.
 |   |   |   1. neutral()  2. lateral()  3. turning()
 |   |   +-- FlightTuning: parámetros de vuelo aprobados de PhaseOne.
 |   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
-|   |       1. sheets()  2. firingSheets()  3. cannonMouths()
-|   |       +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
+|   |   |   1. sheets()  2. firingSheets()  3. cannonMouths()  4. firingPlacement()
+|   |   |   +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
+|   |   |   +-- FiringPlacement(offsetXPx, offsetYPx): ancla del fogonazo por pose/familia.
 |   +-- enemy
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
 |   |   |   4. setDriftDirection()  5. clampToWorld()  6. pose()  7. setVisuals()
-|   |   |   8. shotAt(): instantánea de los dos cañones laterales para una emisión.
+|   |   |   8. setMuzzleFlashVisible()  9. shotAt(): instantánea de los dos cañones.
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
 |   |   +-- RaiderEncounter: única aparición persistente del enemigo en el mundo.
 |   |   |   1. advance()  2. isActive()  3. raider()  4. setVisuals()
 |   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
-|   |   |   7. cannonMouths()
+|   |   |   7. cannonMouths()  8. firingPlacement()
 |   |   |   +-- CannonMouth(lateral, forward): boca de cañón medida por pose.
+|   |   |   +-- FiringPlacement(offsetXPx, offsetYPx): ancla del fogonazo por pose.
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- weapon
@@ -325,8 +350,9 @@ com.davidpe.cosmicaces
             |   1. shipVisible()
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
-            +-- FlightHud: brújula, velocidad y score en coordenadas de pantalla.
-                1. headingLabel()  2. headingDegrees()  3. draw()  4. drawScore()
+            +-- FlightHud: brújula, velocidad, arma activa y score en pantalla.
+                1. headingLabel()  2. headingDegrees()  3. weaponLabel()
+                4. draw()  5. drawScore()
             +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
                 1. toggle()  2. isVisible()  3. draw()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.

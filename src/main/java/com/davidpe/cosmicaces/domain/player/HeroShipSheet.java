@@ -29,6 +29,22 @@ public final class HeroShipSheet {
    */
   public record CannonMouth(float lateral, float forward) {}
 
+  /**
+   * Registration correction, in sheet pixels, that keeps the firing variant's body anchored on the
+   * flight variant of the same speed family for a given pose. {@code offsetXPx} is the difference of
+   * the body-center offsets from each slice center: {@code (bodyCx - w/2)} of the flight slice minus
+   * the same value of the firing slice; {@code offsetYPx} uses {@code (h/2 - bodyCy)} so it stays
+   * valid in the drawn (bottom-left) frame, where the vertical mirror of the Raider cancels out.
+   * Measured on the bundled PNGs with the warm-flash color criterion shared with the tests.
+   */
+  public record FiringPlacement(float offsetXPx, float offsetYPx) {
+    public FiringPlacement {
+      if (!Float.isFinite(offsetXPx) || !Float.isFinite(offsetYPx)) {
+        throw new IllegalArgumentException("Firing placement offsets must be finite");
+      }
+    }
+  }
+
   /** One hero ship sprite sheet: its classpath location, size and measured pose slices. */
   public static final class Sheet {
 
@@ -149,6 +165,30 @@ public final class HeroShipSheet {
       List.of(new CannonMouth(-0.215f, 0.124f), new CannonMouth(0.216f, 0.123f)),
       List.of(new CannonMouth(-0.133f, 0.210f), new CannonMouth(0.340f, 0.083f)),
       List.of(new CannonMouth(-0.332f, 0.075f), new CannonMouth(0.162f, 0.179f)));
+
+  /**
+   * Registration of each firing pose against its flight counterpart: normal family first (indices
+   * 0-4 for {@link Pose}) and accelerate family next (indices 5-9). See {@link FiringPlacement} for
+   * the measurement convention; values come from {@link #NORMAL}/{@link #NORMAL_FIRING} and
+   * {@link #ACCELERATE}/{@link #ACCELERATE_FIRING} on the bundled PNGs.
+   */
+  private static final List<FiringPlacement> FIRING_PLACEMENTS = List.of(
+      new FiringPlacement(5.0f, -1.5f),
+      new FiringPlacement(3.5f, 1.0f),
+      new FiringPlacement(-1.0f, 1.0f),
+      new FiringPlacement(0.0f, 2.0f),
+      new FiringPlacement(-5.5f, 0.0f),
+      new FiringPlacement(0.0f, -1.0f),
+      new FiringPlacement(6.0f, -1.0f),
+      new FiringPlacement(-1.5f, 0.5f),
+      new FiringPlacement(2.0f, 0.0f),
+      new FiringPlacement(0.5f, -3.0f));
+
+  /** Correction that keeps the firing variant anchored on its speed family's flight pose. */
+  public static FiringPlacement firingPlacement(Pose pose, boolean accelerating) {
+    int index = pose.ordinal() + (accelerating ? Pose.values().length : 0);
+    return FIRING_PLACEMENTS.get(index);
+  }
 
   private HeroShipSheet() {}
 }
