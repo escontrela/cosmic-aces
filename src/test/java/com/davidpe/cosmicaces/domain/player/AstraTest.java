@@ -3,6 +3,7 @@ package com.davidpe.cosmicaces.domain.player;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import org.junit.jupiter.api.Test;
 
 class AstraTest {
@@ -105,6 +106,38 @@ class AstraTest {
     ship.fly(new FlightControls(false,false,false,false,true), 1f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
     assertEquals(300f, ship.flightSpeed(), EPS);
+  }
+
+  @Test void shotAtFiresFromTwoDistinctMeasuredCannonMouths() {
+    Astra ship = new Astra();
+    float centerX = 1600f;
+    float centerY = 6000f;
+
+    GunBurst.Shot north = ship.shotAt(centerX, centerY, 0f, 1200f);
+    assertEquals(2, north.muzzles().size());
+    assertEquals(0f, north.forwardX(), 1e-5f);
+    assertEquals(1f, north.forwardY(), 1e-5f);
+    GunBurst.Muzzle left = north.muzzles().get(0);
+    GunBurst.Muzzle right = north.muzzles().get(1);
+    assertTrue(left.x() < centerX && right.x() > centerX, "mouths must sit on both sides");
+    assertEquals(centerX, (left.x() + right.x()) / 2f, 1f);
+    assertEquals(left.y(), right.y(), 1.5f);
+
+    GunBurst.Shot east = ship.shotAt(centerX, centerY, 90f, 1200f);
+    assertEquals(1f, east.forwardX(), 1e-5f);
+    assertEquals(0f, east.forwardY(), 1e-5f);
+    assertNotEquals(east.muzzles().get(0).y(), east.muzzles().get(1).y(), 1e-3f);
+
+    GunBurst.Shot south = ship.shotAt(centerX, centerY, 180f, 1200f);
+    assertEquals(0f, south.forwardX(), 1e-5f);
+    assertEquals(-1f, south.forwardY(), 1e-5f);
+  }
+
+  @Test void shotAtRejectsInvalidInput() {
+    Astra ship = new Astra();
+    assertThrows(IllegalArgumentException.class, () -> ship.shotAt(Float.NaN, 0f, 0f, 1200f));
+    assertThrows(IllegalArgumentException.class, () -> ship.shotAt(0f, Float.NaN, 0f, 1200f));
+    assertThrows(IllegalArgumentException.class, () -> ship.shotAt(0f, 0f, 0f, 0f));
   }
 
   @Test void framePartitionAndInvalidDelta() {

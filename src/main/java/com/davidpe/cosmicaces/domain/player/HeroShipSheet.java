@@ -22,6 +22,13 @@ public final class HeroShipSheet {
   /** A rectangular region of a sheet, measured from the alpha channel. */
   public record Slice(int x, int y, int width, int height) {}
 
+  /**
+   * A cannon mouth of Astra, expressed as offsets from the center of the stable draw box: lateral is
+   * positive towards the ship's right and forward is positive towards the nose, both as fractions of
+   * the box width and height. Measured from the warm muzzle flashes of the prepared firing PNGs.
+   */
+  public record CannonMouth(float lateral, float forward) {}
+
   /** One hero ship sprite sheet: its classpath location, size and measured pose slices. */
   public static final class Sheet {
 
@@ -123,6 +130,25 @@ public final class HeroShipSheet {
   public static List<Sheet> firingSheets() {
     return List.of(NORMAL_FIRING, ACCELERATE_FIRING);
   }
+
+  /**
+   * The two measured M61 Vulcan cannon mouths per pose, ordered left then right. Lateral and forward
+   * are fractions of the stable draw box center, so every pose and speed variant shares the same
+   * anchor: {@code Ship.draw} already centers each slice without stretching it. The values are the
+   * warm muzzle flashes measured on {@link #NORMAL_FIRING}; the accelerate firing sheet keeps the
+   * same body anchor but also carries the engine flame, which is not a cannon mouth. Projectile
+   * origins and, later, the muzzle-flash registration both reuse this geometry.
+   */
+  public static List<CannonMouth> cannonMouths(Pose pose) {
+    return CANNON_MOUTHS.get(pose.ordinal());
+  }
+
+  private static final List<List<CannonMouth>> CANNON_MOUTHS = List.of(
+      List.of(new CannonMouth(-0.214f, 0.128f), new CannonMouth(0.220f, 0.129f)),
+      List.of(new CannonMouth(-0.266f, 0.132f), new CannonMouth(0.260f, 0.133f)),
+      List.of(new CannonMouth(-0.215f, 0.124f), new CannonMouth(0.216f, 0.123f)),
+      List.of(new CannonMouth(-0.133f, 0.210f), new CannonMouth(0.340f, 0.083f)),
+      List.of(new CannonMouth(-0.332f, 0.075f), new CannonMouth(0.162f, 0.179f)));
 
   private HeroShipSheet() {}
 }

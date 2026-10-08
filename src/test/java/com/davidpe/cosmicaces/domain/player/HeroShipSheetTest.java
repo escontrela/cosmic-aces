@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.domain.player;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -119,6 +120,23 @@ class HeroShipSheetTest {
           }
         }
         assertTrue(containsShip, "every pose slice must contain part of the ship");
+      }
+    }
+  }
+
+  @Test
+  void everyPoseExposesTwoDistinctLateralCannonMouths() {
+    for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
+      List<HeroShipSheet.CannonMouth> mouths = HeroShipSheet.cannonMouths(pose);
+      assertEquals(2, mouths.size(), "Astra has two cannons: " + pose);
+      HeroShipSheet.CannonMouth left = mouths.get(0);
+      HeroShipSheet.CannonMouth right = mouths.get(1);
+      assertTrue(left.lateral() < 0f, "left mouth must sit left of center: " + pose);
+      assertTrue(right.lateral() > 0f, "right mouth must sit right of center: " + pose);
+      assertNotEquals(left.lateral(), right.lateral());
+      for (HeroShipSheet.CannonMouth mouth : mouths) {
+        assertTrue(Float.isFinite(mouth.lateral()) && Float.isFinite(mouth.forward()),
+            "mouth offsets must be finite: " + pose);
       }
     }
   }

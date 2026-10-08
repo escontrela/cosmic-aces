@@ -135,6 +135,26 @@ munición: la caducidad por distancia acota la colección. `GunBurst` expone
 `projectiles()` como vista de solo lectura, `isFiring()`, `flashVisible()` y
 `clear()`; no colisiona, no causa daño y no toca vidas ni puntos.
 
+Astra integra el cañón visual con PhaseOne. `PhaseOneGameController` posee un
+`astraGun` (`GunBurst`) y lo expone con `astraGun()`; `advanceWeapons(frameDelta,
+emissionSeconds, astraTrigger, shotRange)` avanza una vez por frame los
+proyectiles existentes y emite nuevos solo dentro de `emissionSeconds`. Antes de
+avanzar el reloj, `advanceFlight` guarda la posición y el rumbo de Astra
+anteriores y posteriores a `fly()`, y la fuente de disparo interpola por arco
+corto la instantánea de cada emisión; cada `GunProjectile` congela origen y
+rumbo y no retiene referencias a la nave. `PhaseOneScreen` traduce
+`isKeyPressed(SPACE)` como gatillo y llama a `advanceWeapons` exactamente una vez
+tras el vuelo, el encuentro y la cámara del frame, también al terminar la fase
+con `emissionSeconds=0`; conserva el `SPACE` de abandono y ESC/M. El alcance es
+`2 × altura visible × camera.zoom`, congelado por disparo (unos 1200–1380
+unidades). La geometría de los dos cañones vive en
+`HeroShipSheet.cannonMouths(pose)`, como desplazamientos lateral/avanzado
+respecto al centro de la caja estable, medidos sobre los fogonazos de
+`NORMAL_FIRING`; `Astra.shotAt(centerX, centerY, yawDegrees, range)` los
+transforma con `forward=(sin yaw, cos yaw)` y `right=(cos yaw, -sin yaw)`.
+`shotAt` no activa láminas ni dibuja: el fogonazo anclado, el trazador y el HUD
+M61 Vulcan corresponden a la hija final.
+
 Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
@@ -184,10 +204,10 @@ com.davidpe.cosmicaces
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
-|   +-- PhaseOneGameController extends GameController: encuentros de fase uno.
+|   +-- PhaseOneGameController extends GameController: encuentros y arma de Astra.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
 |       4. isRaiderActive()  5. activeRaider()  6. setRaiderVisuals()
-|       7. scorePoints()
+|       7. scorePoints()  8. astraGun()  9. advanceWeapons()
 |
 +-- domain
 |   +-- game
@@ -220,12 +240,14 @@ com.davidpe.cosmicaces
 |   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
 |   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()
 |   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. currentRegion()
+|   |   |   8. shotAt(): instantánea de los dos cañones para una emisión.
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
 |   |   +-- FlightControls: teclas de pilotaje y activación puntual de Ultra.
 |   |   |   1. neutral()  2. lateral()  3. turning()
 |   |   +-- FlightTuning: parámetros de vuelo aprobados de PhaseOne.
 |   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
-|   |       1. sheets()
+|   |       1. sheets()  2. firingSheets()  3. cannonMouths()
+|   |       +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
 |   +-- enemy
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()

@@ -6,14 +6,17 @@ import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.PhaseScore;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Rules specific to phase one: timed run, autonomous Raider and scoring. */
+/** Rules specific to phase one: timed run, autonomous Raider, scoring and the Astra cannon. */
 public final class PhaseOneGameController extends GameController {
 
   public static final WorldBounds WORLD = new WorldBounds(8192f, 12000f);
   private final RaiderEncounter raiderEncounter;
   private final PhaseScore score = new PhaseScore();
+  private final GunBurst astraGun = new GunBurst();
+  private AstraMotion astraMotion;
 
   public PhaseOneGameController() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -45,10 +48,73 @@ public final class PhaseOneGameController extends GameController {
       return 0;
     }
     float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    float beforeX = astra().x();
+    float beforeY = astra().y();
+    float beforeYaw = astra().yawDegrees();
     astra().fly(controls, activeSeconds, WORLD);
+    astraMotion = new AstraMotion(beforeX, beforeY, beforeYaw,
+        astra().x(), astra().y(), astra().yawDegrees(), activeSeconds);
     advanceRun(activeSeconds);
     return score.advance(activeSeconds, coincident);
   }
+
+  /** The player's visual Astra cannon, exposed so the screen can query and, later, draw it. */
+  public GunBurst astraGun() {
+    return astraGun;
+  }
+
+  /**
+   * Advances Astra's visual cannon once per frame. Existing projectiles always travel the full
+   * {@code frameDelta}; new emissions only happen inside {@code emissionSeconds}, so passing zero
+   * stops new shots while the already-fired ones keep flying. Shots snapshot Astra's interpolated
+   * position and heading for this frame and the measured cannon mouths, then retain no ship
+   * reference. This never awards points, consumes ammunition or changes the run clock.
+   *
+   * @param frameDelta elapsed frame seconds, also used to advance existing projectiles
+   * @param emissionSeconds part of the frame during which the run is still active
+   * @param astraTrigger whether SPACE is held
+   * @param shotRange travel distance frozen into each new projectile
+   */
+  public void advanceWeapons(float frameDelta, float emissionSeconds, boolean astraTrigger,
+      float shotRange) {
+    astraGun.advance(frameDelta, emissionSeconds, astraTrigger, astraShotSource(shotRange));
+  }
+
+  private GunBurst.ShotSource astraShotSource(float shotRange) {
+    AstraMotion motion = astraMotion;
+    if (motion == null) {
+      return offsetSeconds -> astra().shotAt(
+          astra().x() + astra().drawWidth() / 2f,
+          astra().y() + astra().drawHeight() / 2f,
+          astra().yawDegrees(), shotRange);
+    }
+    return offsetSeconds -> {
+      float fraction = motion.duration() <= 0f ? 1f
+          : (float) Math.max(0d, Math.min(1d, offsetSeconds / motion.duration()));
+      float centerX = lerp(motion.beforeX(), motion.afterX(), fraction)
+          + astra().drawWidth() / 2f;
+      float centerY = lerp(motion.beforeY(), motion.afterY(), fraction)
+          + astra().drawHeight() / 2f;
+      float yaw = motion.beforeYaw()
+          + normalizeYaw(motion.afterYaw() - motion.beforeYaw()) * fraction;
+      return astra().shotAt(centerX, centerY, yaw, shotRange);
+    };
+  }
+
+  private static float lerp(float from, float to, float fraction) {
+    return from + (to - from) * fraction;
+  }
+
+  private static float normalizeYaw(float yaw) {
+    float normalized = yaw % 360f;
+    if (normalized > 180f) normalized -= 360f;
+    if (normalized <= -180f) normalized += 360f;
+    return normalized;
+  }
+
+  /** Astra's box position and heading before and after this frame's bounded flight. */
+  private record AstraMotion(float beforeX, float beforeY, float beforeYaw,
+      float afterX, float afterY, float afterYaw, float duration) {}
 
   /** Total points this run has awarded so far. */
   public int scorePoints() {
