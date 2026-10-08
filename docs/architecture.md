@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.weapon` | Elementos de las armas | Dibujo reutilizable de ráfagas; la generación y el movimiento se integrarán en COS-27. |
+| `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
@@ -110,6 +110,30 @@ Una instancia visual puede compartirse entre Astra y Vesper y todos sus disparos
 Longitud y grosor (42 y 1,2 unidades inicialmente) son ajuste de dibujo, no alcance
 ni velocidad. Se dibuja una vez por proyectil de cada cañón; la colocación de los
 dos cañones, emisión, movimiento, cadencia y retirada corresponden a COS-27.
+
+`domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
+constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
+avanza en línea recta con `advance(delta)` y no retiene referencias a nave,
+cámara, mundo ni puntuación. Limita su avance al alcance recibido y `expired()`
+se cumple exactamente al cubrirlo, de modo que la retirada depende solo de la
+distancia. `domain.weapon.GunTuning` reúne la cadencia (0,08 s), la velocidad
+(1800 u/s) y la duración del fogonazo (0,035 s); el alcance lo congela el
+adaptador en cada disparo. `domain.weapon.GunBurst` posee el reloj de cadencia,
+el pulso de fogonazo y la colección de proyectiles, sin depender de LibGDX ni de
+infraestructura. `advance(frameDelta, emissionSeconds, enabled, ShotSource)`
+avanza una vez por frame los proyectiles existentes y luego emite dentro de la
+ventana `emissionSeconds` (recortada a `[0, frameDelta]`); los proyectiles
+nuevos avanzan solo el tiempo posterior a su emisión. La emisión es inmediata al
+activar y cada 0,08 s; deshabilitar descarta la deuda de cadencia, detiene el
+pulso y no borra los proyectiles existentes, y `emissionSeconds=0` corta los
+disparos nuevos al terminar la fase sin alterar la trayectoria de los ya
+emitidos. `ShotSource.shotAt(offsetSeconds)` entrega una instantánea `Shot` con
+sus orígenes `Muzzle`, la dirección y el alcance; cada origen emite un proyectil,
+de modo que los dos cañones de Astra producen dos trayectorias. La cadencia se
+mide por tiempo acumulado, por lo que no depende de los FPS, y no hay cupo ni
+munición: la caducidad por distancia acota la colección. `GunBurst` expone
+`projectiles()` como vista de solo lectura, `isFiring()`, `flashVisible()` y
+`clear()`; no colisiona, no causa daño y no toca vidas ni puntos.
 
 Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
@@ -215,6 +239,15 @@ com.davidpe.cosmicaces
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
 |   +-- weapon
+|   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
+|   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
+|   |   |   1. advance()  2. expired()  3. x()  4. y()  5. forwardX()  6. forwardY()
+|   |   |   7. travelled()
+|   |   +-- GunBurst: emisor visual con cadencia, fogonazo y colección de proyectiles.
+|   |   |   1. advance()  2. projectiles()  3. isFiring()  4. flashVisible()  5. clear()
+|   |   |   +-- Muzzle(x,y): origen de un cañón congelado al disparar.
+|   |   |   +-- Shot(muzzles,forwardX,forwardY,range): instantánea de una emisión.
+|   |   |   +-- ShotSource: shotAt(offsetSeconds) entrega la instantánea.
 |   |   +-- GunBurstVisual: aspecto reutilizable de un trazador, sin recursos propios.
 |   |       1. draw(): punta y estela según posición y vector del proyectil.
 |   +-- scenery
