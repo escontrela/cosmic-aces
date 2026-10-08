@@ -34,6 +34,8 @@ public final class PhaseOneGameController extends GameController {
   private float astraDeathX;
   private float astraDeathY;
   private float astraDeathYaw;
+  private float raiderDeathCenterX;
+  private float raiderDeathCenterY;
   private int pendingCombatPoints;
 
   public PhaseOneGameController() {
@@ -204,6 +206,11 @@ public final class PhaseOneGameController extends GameController {
     if (raiderCombat.isDestroyed()) {
       return;
     }
+    VesperRaider raider = raiderEncounter.raider();
+    if (raider != null) {
+      raiderDeathCenterX = raider.centerX();
+      raiderDeathCenterY = raider.centerY();
+    }
     raiderCombat.destroy();
     raiderEncounter.destroyActive();
     pendingCombatPoints += score.awardRaiderDestroyed();
@@ -356,6 +363,24 @@ public final class PhaseOneGameController extends GameController {
   /** The live raider, or {@code null} while it has not appeared or is destroyed awaiting respawn. */
   public VesperRaider activeRaider() {
     return raiderEncounter.isActive() ? raiderEncounter.raider() : null;
+  }
+
+  /** World centre captured at Astra's last destruction, so the screen can anchor her explosion. */
+  public float astraDeathCenterX() {
+    return astraDeathX + astra().drawWidth() / 2f;
+  }
+
+  public float astraDeathCenterY() {
+    return astraDeathY + astra().drawHeight() / 2f;
+  }
+
+  /** World centre captured at the raider's last destruction, for its explosion. */
+  public float raiderDeathCenterX() {
+    return raiderDeathCenterX;
+  }
+
+  public float raiderDeathCenterY() {
+    return raiderDeathCenterY;
   }
 
 }

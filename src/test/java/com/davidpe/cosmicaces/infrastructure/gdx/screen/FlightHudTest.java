@@ -21,4 +21,12 @@ class FlightHudTest {
     assertEquals("M61 VULCAN", FlightHud.weaponLabel(true));
     assertEquals("", FlightHud.weaponLabel(false));
   }
+
+  @Test void energyLabelRendersThePercentageClampedToZeroHundred() {
+    assertEquals("ENERGIA 100%", FlightHud.energyLabel(100));
+    assertEquals("ENERGIA 0%", FlightHud.energyLabel(0));
+    assertEquals("ENERGIA 73%", FlightHud.energyLabel(73));
+    assertEquals("ENERGIA 0%", FlightHud.energyLabel(-5), "negative energy clamps to zero");
+    assertEquals("ENERGIA 100%", FlightHud.energyLabel(125), "overflow clamps to one hundred");
+  }
 }

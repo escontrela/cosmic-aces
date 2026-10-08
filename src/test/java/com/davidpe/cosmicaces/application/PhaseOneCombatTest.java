@@ -108,4 +108,27 @@ class PhaseOneCombatTest {
     assertEquals(1, earned, "a dead Astra earns the base second but no coincidence bonus");
     assertEquals(1001, controller.scorePoints());
   }
+
+  @Test
+  void deathCentersExposeTheFrozenWorldPositionOfEachShip() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    float astraCenterX = raider.x() + controller.astra().drawWidth() / 2f;
+    float astraCenterY = raider.y() + controller.astra().drawHeight() / 2f;
+    float raiderCenterX = raider.centerX();
+    float raiderCenterY = raider.centerY();
+    controller.placeAstra(raider.x(), raider.y(), 0f);
+
+    controller.advanceCombat(DELTA);
+
+    assertEquals(astraCenterX, controller.astraDeathCenterX(), 0.01f);
+    assertEquals(astraCenterY, controller.astraDeathCenterY(), 0.01f);
+    assertEquals(raiderCenterX, controller.raiderDeathCenterX(), 0.01f);
+    assertEquals(raiderCenterY, controller.raiderDeathCenterY(), 0.01f);
+
+    // Reappearing moves the ship but never rewrites the death centre used by its explosion.
+    controller.advanceCombat(3f);
+    assertTrue(controller.isAstraActive());
+    assertEquals(astraCenterX, controller.astraDeathCenterX(), 0.01f);
+  }
 }

@@ -13,6 +13,9 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
+import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
+import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameId;
@@ -44,6 +47,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
   private static final String END_MESSAGE = "FIN DEL RECORRIDO - PULSA ESPACIO";
   private static final float INITIAL_Y = VirtualScreenSize.HEIGHT;
+  /** Explosion peak size as a multiple of each ship's largest draw dimension (visual tuning). */
+  private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
+  /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
+  private static final float BLINK_INTERVAL_SECONDS = 0.1f;
 
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
@@ -63,10 +70,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final WorldScenery scenery;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
+  private final ShipExplosionVisuals explosionVisuals;
   private final BitmapFont font;
   private final BitmapFont hudFont;
   private final GlyphLayout endLayout;
   private boolean runFinished;
+  private ActiveExplosion astraExplosion;
+  private ActiveExplosion raiderExplosion;
+  private boolean astraExplosionSpawned;
+  private boolean raiderExplosionSpawned;
 
   public PhaseOneScreen(
       GameEventPublisher publisher,
@@ -95,6 +107,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ShapeRenderer loadedShapes = null;
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
+    ShipExplosionVisuals loadedExplosion = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
     GlyphLayout loadedLayout;
@@ -103,6 +116,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedShapes = new ShapeRenderer();
       loadedAstra = new Astra.Visuals();
       loadedRaider = new VesperRaider.Visuals();
+      loadedExplosion = new ShipExplosionVisuals();
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -114,6 +128,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       if (loadedFont != null) {
         loadedFont.dispose();
+      }
+      if (loadedExplosion != null) {
+        loadedExplosion.dispose();
       }
       if (loadedRaider != null) {
         loadedRaider.dispose();
@@ -133,6 +150,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes = loadedShapes;
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
+    explosionVisuals = loadedExplosion;
     font = loadedFont;
     hudFont = loadedHudFont;
     endLayout = loadedLayout;
@@ -189,6 +207,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (weaponEarned > 0) {
       publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
     }
+    // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
+    // and advance the running ones. Death/respawn timing stays in the controller; the screen only
+    // converts the destroyed state into a world-anchored animation.
+    updateExplosions(delta);
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
@@ -203,13 +225,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
     batch.begin();
-    if (controller.isAstraActive()) {
+    if (controller.isAstraActive()
+        && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
       controller.astra().draw(batch, -controller.astra().yawDegrees());
     }
     if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
       VesperRaider raider = controller.activeRaider();
       raider.draw(batch, raider.headingDegrees());
     }
+    drawExplosions(batch);
     batch.end();
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
     // projectile with its frozen shot-time position and forward vector. Never re-read the current
@@ -231,7 +255,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         controller.isRaiderActive() ? controller.activeRaider() : null,
         VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
-        controller.astra().flightSpeed(), controller.astraGun().isFiring());
+        controller.astra().flightSpeed(), controller.astraGun().isFiring(),
+        controller.astraCombat().energyPercent());
     hud.drawScore(batch, font, phaseSnapshot.get().points());
     if (runFinished) {
       drawEndMessage();
@@ -250,6 +275,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.dispose();
     astraVisuals.dispose();
     raiderVisuals.dispose();
+    explosionVisuals.dispose();
     font.dispose();
     hudFont.dispose();
   }
@@ -316,4 +342,76 @@ public final class PhaseOneScreen extends ScreenAdapter {
     font.draw(batch, endLayout, x, y);
     batch.end();
   }
+
+  /**
+   * Starts exactly one explosion when a ship becomes destroyed and keeps advancing the running
+   * animations. The {@code spawned} flag is only cleared when the ship is alive again, so a still
+   * destroyed ship whose animation already ended does not restart it. Independent per ship, so a
+   * simultaneous hull-to-hull destruction produces two animations.
+   */
+  private void updateExplosions(float delta) {
+    if (!controller.astraCombat().isDestroyed()) {
+      astraExplosion = null;
+      astraExplosionSpawned = false;
+    } else if (!astraExplosionSpawned) {
+      float peak = EXPLOSION_PEAK_FACTOR
+          * Math.max(controller.astra().drawWidth(), controller.astra().drawHeight());
+      astraExplosion = new ActiveExplosion(
+          new ShipExplosion(controller.astraDeathCenterX(), controller.astraDeathCenterY()), peak);
+      astraExplosionSpawned = true;
+    }
+    if (astraExplosion != null) {
+      astraExplosion.animation().advance(delta);
+      if (astraExplosion.animation().isFinished()) {
+        astraExplosion = null;
+      }
+    }
+
+    if (!controller.raiderCombat().isDestroyed()) {
+      raiderExplosion = null;
+      raiderExplosionSpawned = false;
+    } else if (!raiderExplosionSpawned) {
+      float peak = EXPLOSION_PEAK_FACTOR
+          * Math.max(RaiderEncounter.RAIDER_WIDTH, RaiderEncounter.RAIDER_HEIGHT);
+      raiderExplosion = new ActiveExplosion(
+          new ShipExplosion(controller.raiderDeathCenterX(), controller.raiderDeathCenterY()), peak);
+      raiderExplosionSpawned = true;
+    }
+    if (raiderExplosion != null) {
+      raiderExplosion.animation().advance(delta);
+      if (raiderExplosion.animation().isFinished()) {
+        raiderExplosion = null;
+      }
+    }
+  }
+
+  /** Draws every running explosion into the open world-space batch, anchored at its death centre. */
+  private void drawExplosions(SpriteBatch batch) {
+    if (astraExplosion != null) {
+      explosionVisuals.draw(batch, astraExplosion.animation().frameIndex(),
+          astraExplosion.animation().centerX(), astraExplosion.animation().centerY(),
+          astraExplosion.peakSize());
+    }
+    if (raiderExplosion != null) {
+      explosionVisuals.draw(batch, raiderExplosion.animation().frameIndex(),
+          raiderExplosion.animation().centerX(), raiderExplosion.animation().centerY(),
+          raiderExplosion.peakSize());
+    }
+  }
+
+  /**
+   * Pure blink rule for Astra's invulnerability: visible while not protected, and alternating every
+   * {@link #BLINK_INTERVAL_SECONDS} while a positive protection window runs. Domain immunity, not
+   * this drawing flag, decides whether hits count.
+   */
+  static boolean astraVisible(float invulnerabilityRemainingSeconds) {
+    if (!Float.isFinite(invulnerabilityRemainingSeconds) || invulnerabilityRemainingSeconds <= 0f) {
+      return true;
+    }
+    int phase = (int) (invulnerabilityRemainingSeconds / BLINK_INTERVAL_SECONDS);
+    return phase % 2 == 0;
+  }
+
+  /** One running explosion: its animation plus the shared peak size captured at destruction. */
+  private record ActiveExplosion(ShipExplosion animation, float peakSize) {}
 }

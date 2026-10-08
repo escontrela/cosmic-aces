@@ -174,9 +174,9 @@ llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainComb
 con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuando
 `isAstraActive()` es falso y la coincidencia visible (`shipsCoincidentVisible`)
 también exige a Astra activa. La explosión gráfica, el parpadeo y el HUD de energía
-pertenecen a COS-33.
+quedan descritos en la sección «Explosiones, parpadeo y energía integrados (COS-33)».
 
-### Lámina de explosión preparada para COS-33
+### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
 recortes medidos (alfa > 8, margen de dos píxeles), ordenados de izquierda a derecha
@@ -193,10 +193,35 @@ unidades del mundo. No cambia proyección/color ni abre/cierra lotes. La pantall
 crea una instancia para las explosiones de ambas naves y la libera en `dispose()`;
 el cargador limpia fallos parciales y su liberación es idempotente.
 
-Esta preparación manual no activa explosiones en PhaseOne. COS-33 debe reutilizar
-estos dos componentes y añadir el estado temporal `ShipExplosion`, la conexión
-con destrucción/reaparición del controlador, parpadeo y HUD. Los temporizadores de
-vida/daño no pertenecen a la lámina ni al cargador.
+Esta preparación ya está conectada a PhaseOne por COS-33. `domain.effect.ShipExplosion`
+es una animación no cíclica: congela el centro mundial de cada destrucción y expone
+`advance(dt)`, `frameIndex()` (ocho frames a 0,1 s, 0,8 s en total) e `isFinished()`;
+no conoce timers de respawn/daño ni posee recursos. `PhaseOneGameController` expone el
+centro de muerte de ambas naves con `astraDeathCenterX()/Y()` (derivados de la posición
+congelada de Astra) y `raiderDeathCenterX()/Y()` (capturados en `destroyRaider()` antes
+de `destroyActive()`), de solo lectura. `PhaseOneScreen` posee una única
+`ShipExplosionVisuals` compartida por ambas naves y dos animaciones independientes:
+detecta la transición de `state.destroyed` una sola vez por vida (bandera propia que se
+resetea al reaparecer) para iniciar la explosión exactamente en el centro congelado,
+avanza las animaciones cada frame, las elimina al terminar y oculta cada nave hasta su
+respawn aunque la animación ya haya acabado; la explosión se dibuja en proyección de
+mundo, por lo que girar/mover la cámara no la arrastra. Un choque simultáneo produce
+dos animaciones independientes. El pico de cada explosión es `1,8 ×` la dimensión
+mayor de la caja de la nave (ajuste visual, revisable en la QA del PO); la escala
+común `peakSize/417` se aplica a los ocho frames sin estirarlos.
+
+El parpadeo de Astra es presentación pura: mientras `invulnerabilityRemaining() > 0`
+alterna cuerpo/fogonazo cada 0,1 s (regla `PhaseOneScreen.astraVisible(remaining)`,
+sin pruebas de color/alpha residual en el batch); la inmunidad que decide el dominio
+(`ShipCombatState`) no depende de la visibilidad del sprite y Astra puede pilotar y
+disparar mientras parpadea. `FlightHud.draw(...)` recibe ahora además la energía
+0–100 de `astraCombat().energyPercent()` y `energyLabel(int)` muestra «ENERGIA NN%»
+(clamp a 0–100) en la fila inferior izquierda, siempre visible durante la partida,
+incluidos el 0 % de la espera y el 100 % del respawn, sin invadir rumbo, velocidad,
+arma, score ni minimapa. El cuerpo del Vesper muerto no se dibuja ni cuenta como
+coincidente ni en el minimapa (`isRaiderActive()` ya es falso mientras está destruido);
+el score mostrado sigue siendo el snapshot del coordinador, incluido el bonus 1000 de
+COS-32, y ni la animación ni el fin de explosión publican puntos.
 
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
@@ -432,6 +457,8 @@ com.davidpe.cosmicaces
 |   +-- effect
 |   |   +-- ShipExplosionSheet: ocho recortes medidos y escala de referencia.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
+|   |   +-- ShipExplosion: animación mundial no cíclica de una destrucción.
+|   |   |   1. advance()  2. frameIndex()  3. isFinished()
 |   |   +-- ShipExplosionVisuals: textura compartida screen-owned, regiones y dibujo.
 |   |       1. region()  2. draw()  3. dispose()
 |   +-- weapon
@@ -471,7 +498,7 @@ com.davidpe.cosmicaces
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()
-            +-- PhaseOneScreen: input, dibujo de mundo y HUD, recursos.
+            +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
             |   1. render()  2. resize()  3. dispose()
             +-- FlightCameraState: seguimiento y zoom interpolados.
             |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
@@ -479,9 +506,9 @@ com.davidpe.cosmicaces
             |   1. shipVisible()
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
-            +-- FlightHud: brújula, velocidad, arma activa y score en pantalla.
-                1. headingLabel()  2. headingDegrees()  3. weaponLabel()
-                4. draw()  5. drawScore()
+            +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
+                1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
+                5. draw()  6. drawScore()
             +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
                 1. toggle()  2. isVisible()  3. draw()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
