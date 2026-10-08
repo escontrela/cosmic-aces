@@ -77,12 +77,17 @@ public abstract class Ship {
 
   /** Draws the current pose in the ship's stable box without stretching the sprite. */
   public final void draw(SpriteBatch batch) {
+    draw(batch, 0f);
+  }
+
+  /** Rotates around the stable box center, keeping every sprite slice aligned. */
+  public final void draw(SpriteBatch batch, float rotationDegrees) {
     TextureRegion region = currentRegion();
     float scale = Math.min(drawWidth / widestRegion, drawHeight / tallestRegion);
     float width = region.getRegionWidth() * scale;
     float height = region.getRegionHeight() * scale;
     batch.draw(region, x + (drawWidth - width) / 2f, y + (drawHeight - height) / 2f,
-        width, height);
+        width / 2f, height / 2f, width, height, 1f, 1f, rotationDegrees);
   }
 
   protected abstract TextureRegion currentRegion();

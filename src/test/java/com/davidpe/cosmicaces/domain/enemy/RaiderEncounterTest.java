@@ -2,155 +2,150 @@ package com.davidpe.cosmicaces.domain.enemy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.davidpe.cosmicaces.domain.game.PlayArea;
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import org.junit.jupiter.api.Test;
 
 class RaiderEncounterTest {
 
-  private static final PlayArea AREA = new PlayArea(1024f, 768f);
+  private static final WorldBounds WORLD = new WorldBounds(4000f, 12000f);
   private static final float EPSILON = 0.001f;
+  private static final float TARGET_X = 2000f;
+  private static final float TARGET_Y = 600f;
 
   @Test
-  void waitsForTheRandomDelayBeforeSpawning() {
+  void waitsForTheRandomDelayBeforeSpawningOnce() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
     assertFalse(encounter.isActive());
+    assertNull(encounter.raider());
 
-    encounter.advance(2.99f, AREA);
+    encounter.advance(2.99f, WORLD, TARGET_X, TARGET_Y);
     assertFalse(encounter.isActive());
 
-    encounter.advance(0.02f, AREA);
+    encounter.advance(0.02f, WORLD, TARGET_X, TARGET_Y);
     assertTrue(encounter.isActive());
     assertNotNull(encounter.raider());
-    assertEquals(AREA.height(), encounter.raider().y(), EPSILON);
   }
 
   @Test
-  void waitDurationVariesWithTheRandomSource() {
-    RaiderEncounter shortWait = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
-    shortWait.advance(2.99f, AREA);
-    assertFalse(shortWait.isActive());
-    shortWait.advance(0.01f, AREA);
-    assertTrue(shortWait.isActive());
-
-    RaiderEncounter longWait = new RaiderEncounter(new ScriptedRandom(0.999f)); // wait ~ 6.996s
-    longWait.advance(6.99f, AREA);
-    assertFalse(longWait.isActive());
-    longWait.advance(0.01f, AREA);
-    assertTrue(longWait.isActive());
-  }
-
-  @Test
-  void keepsASingleInstanceWhileActive() {
+  void spawnsAheadOfTheTargetAndInsideTheWorld() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5s
-    encounter.advance(5f, AREA);
-    assertTrue(encounter.isActive());
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+    assertNotNull(raider);
+    assertTrue(raider.y() > TARGET_Y, "raider must appear ahead of the initial route");
+    assertTrue(raider.y() <= WORLD.maxY(raider.drawHeight()) + EPSILON);
+    assertTrue(raider.x() >= -EPSILON && raider.x() <= WORLD.maxX(raider.drawWidth()) + EPSILON);
+  }
+
+  @Test
+  void keepsASinglePersistentInstanceForTheWholeRun() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f));
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
     VesperRaider first = encounter.raider();
+    assertNotNull(first);
 
-    encounter.advance(3f, AREA);
-    assertTrue(encounter.isActive());
-    assertSame(first, encounter.raider());
-  }
-
-  @Test
-  void retiresWhenTheWholeBoxLeavesTheBottomAndRespawnsAfterANewWait() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5s, straight down
-    encounter.advance(5f, AREA);
-    assertTrue(encounter.isActive());
-    assertEquals(768f, encounter.raider().y(), EPSILON);
-
-    // Six full seconds of descent leave the top of the box inside the area...
-    encounter.advance(1f, AREA);
-    encounter.advance(1f, AREA);
-    encounter.advance(1f, AREA);
-    encounter.advance(1f, AREA);
-    encounter.advance(1f, AREA);
-    encounter.advance(1f, AREA);
-    assertTrue(encounter.isActive());
-
-    // ...and 0.2s more put the whole box below the bottom edge: retired.
-    encounter.advance(0.2f, AREA);
-    assertFalse(encounter.isActive());
-
-    // A new random wait is scheduled: 5s with the scripted 0.5 source.
-    encounter.advance(4.99f, AREA);
-    assertFalse(encounter.isActive());
-    encounter.advance(0.02f, AREA);
-    assertTrue(encounter.isActive());
-  }
-
-  @Test
-  void headingChangesStayWithinTheBoundedDeviation() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
-    encounter.advance(3f, AREA); // spawn; heading 0 until the first turn
-    assertEquals(0f, encounter.raider().headingDegrees(), EPSILON);
-
-    for (int i = 0; i < 40; i++) {
-      encounter.advance(0.5f, AREA);
-      if (encounter.isActive()) {
-        float heading = encounter.raider().headingDegrees();
-        assertTrue(
-            heading >= -RaiderEncounter.MAX_HEADING_DEGREES - EPSILON
-                && heading <= RaiderEncounter.MAX_HEADING_DEGREES + EPSILON,
-            "heading out of bounds: " + heading);
-      }
+    // A full run's worth of frames, with the target far away: the raider persists and never respawns.
+    for (int i = 0; i < 600; i++) {
+      encounter.advance(0.1f, WORLD, 200f, 11000f);
+      assertTrue(encounter.isActive());
+      assertSame(first, encounter.raider());
     }
   }
 
   @Test
-  void bankReflectsTheCurrentHeadingThroughTheEncounter() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
-    encounter.advance(3f, AREA);
-    assertEquals(0, encounter.raider().bank());
+  void turnsTowardTheTargetWithBoundedSteps() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // drift = 0
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+    float previous = raider.headingDegrees();
+    float maxStep = RaiderEncounter.MAX_TURN_RATE_DEGREES / 120f + 0.01f;
 
-    encounter.advance(1f, AREA); // first turn: heading = -20 with the 0f source
-    assertEquals(-1, encounter.raider().bank());
+    for (int i = 0; i < 120; i++) {
+      // Keep the target straight to the right so the raider must turn toward east (heading +90).
+      encounter.advance(1f / 120f, WORLD, raider.x() + 1000f, raider.y());
+      float current = raider.headingDegrees();
+      assertTrue(Math.abs(current - previous) <= maxStep,
+          "heading jumped from " + previous + " to " + current);
+      previous = current;
+    }
+    assertTrue(raider.headingDegrees() > 5f, "the raider should have started turning right");
+    assertTrue(raider.headingDegrees() <= 90f + EPSILON);
   }
 
   @Test
-  void retiresWhenTheWholeBoxLeavesASide() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s, heading -> -20
-    encounter.advance(3f, AREA); // spawn at x = 0
-    assertTrue(encounter.isActive());
+  void differentRandomSourcesProduceDifferentSearchPaths() {
+    RaiderEncounter neutralDrift = new RaiderEncounter(new ScriptedRandom(0.5f)); // drift = 0
+    RaiderEncounter leftDrift = new RaiderEncounter(new ScriptedRandom(0f)); // drift = -35
+    neutralDrift.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    leftDrift.advance(3f, WORLD, TARGET_X, TARGET_Y);
 
-    encounter.advance(1f, AREA); // straight down, then turn to -20
-    encounter.advance(1f, AREA); // drifting left
-    encounter.advance(0.5f, AREA);
-    encounter.advance(0.3f, AREA); // box fully left of x = 0
-    assertFalse(encounter.isActive());
+    for (int i = 0; i < 120; i++) {
+      neutralDrift.advance(1f / 60f, WORLD, TARGET_X, TARGET_Y);
+      leftDrift.advance(1f / 60f, WORLD, TARGET_X, TARGET_Y);
+    }
+    assertNotEquals(neutralDrift.raider().headingDegrees(),
+        leftDrift.raider().headingDegrees(), 1f,
+        "the reproducible drift must make the search path imperfect");
   }
 
   @Test
-  void nonPositiveOrNonFiniteDeltaIsIgnored() {
+  void staysInsideTheWorldEvenWhenPushedTowardAnEdge() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f));
+    encounter.advance(3f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+
+    for (int i = 0; i < 1200; i++) {
+      encounter.advance(1f / 60f, WORLD, -WORLD.width(), TARGET_Y);
+    }
+    assertTrue(raider.x() >= -EPSILON, "left edge crossed: " + raider.x());
+    assertTrue(raider.x() <= WORLD.maxX(raider.drawWidth()) + EPSILON, "right edge crossed");
+    assertTrue(raider.y() >= -EPSILON, "bottom edge crossed: " + raider.y());
+    assertTrue(raider.y() <= WORLD.maxY(raider.drawHeight()) + EPSILON, "top edge crossed");
+  }
+
+  @Test
+  void isDeterministicForTheSameRandomSource() {
+    RaiderEncounter a = new RaiderEncounter(new ScriptedRandom(0.5f, 0.25f, 0.75f));
+    RaiderEncounter b = new RaiderEncounter(new ScriptedRandom(0.5f, 0.25f, 0.75f));
+    for (int i = 0; i < 300; i++) {
+      a.advance(0.1f, WORLD, TARGET_X, TARGET_Y);
+      b.advance(0.1f, WORLD, TARGET_X, TARGET_Y);
+    }
+    assertEquals(a.raider().x(), b.raider().x(), EPSILON);
+    assertEquals(a.raider().y(), b.raider().y(), EPSILON);
+    assertEquals(a.raider().headingDegrees(), b.raider().headingDegrees(), EPSILON);
+  }
+
+  @Test
+  void ignoresNonPositiveOrNonFiniteDeltas() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
-    encounter.advance(-1f, AREA);
-    encounter.advance(0f, AREA);
-    encounter.advance(Float.NaN, AREA);
-    encounter.advance(Float.POSITIVE_INFINITY, AREA);
+    encounter.advance(-1f, WORLD, TARGET_X, TARGET_Y);
+    encounter.advance(0f, WORLD, TARGET_X, TARGET_Y);
+    encounter.advance(Float.NaN, WORLD, TARGET_X, TARGET_Y);
+    encounter.advance(Float.POSITIVE_INFINITY, WORLD, TARGET_X, TARGET_Y);
     assertFalse(encounter.isActive());
 
-    encounter.advance(3f, AREA);
+    encounter.advance(3f, WORLD, TARGET_X, TARGET_Y);
     assertTrue(encounter.isActive()); // the wait was not consumed by the invalid deltas
   }
 
   @Test
-  void largeDeltaSettlesInAValidStateWithoutError() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f));
-    encounter.advance(60f, AREA); // wait consumed: the raider spawns parked at the top edge
-    assertTrue(encounter.isActive());
-    assertEquals(768f, encounter.raider().y(), EPSILON);
-
-    encounter.advance(60f, AREA); // huge active delta: the box is far below the area
-    assertFalse(encounter.isActive());
-  }
-
-  @Test
-  void rejectsANullRandomSource() {
+  void rejectsNullAndNonFiniteArguments() {
     assertThrows(IllegalArgumentException.class, () -> new RaiderEncounter(null));
+
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f));
+    assertThrows(IllegalArgumentException.class, () -> encounter.advance(1f, null, 0f, 0f));
+    assertThrows(IllegalArgumentException.class,
+        () -> encounter.advance(1f, WORLD, Float.NaN, 0f));
+    assertThrows(IllegalArgumentException.class,
+        () -> encounter.advance(1f, WORLD, 0f, Float.POSITIVE_INFINITY));
   }
 
   /** Deterministic unit-random source feeding a scripted queue; the last value repeats. */
