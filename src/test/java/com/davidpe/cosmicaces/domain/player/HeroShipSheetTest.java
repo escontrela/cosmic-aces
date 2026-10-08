@@ -13,9 +13,35 @@ import org.junit.jupiter.api.Test;
 
 class HeroShipSheetTest {
 
+  private static List<HeroShipSheet.Sheet> allSheets() {
+    return java.util.stream.Stream.concat(HeroShipSheet.sheets().stream(),
+        HeroShipSheet.firingSheets().stream()).toList();
+  }
+
   @Test
-  void bothSheetsExposeFivePosesInSheetOrder() {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+  void everyFiringPoseIncludesVisibleMuzzleFlashes() throws IOException {
+    for (HeroShipSheet.Sheet sheet : HeroShipSheet.firingSheets()) {
+      BufferedImage image = ImageIO.read(getClass().getResource("/" + sheet.internalPath()));
+      for (HeroShipSheet.Slice slice : sheet.slices()) {
+        boolean hasFlash = false;
+        for (int y = slice.y(); y < slice.y() + slice.height() / 2 && !hasFlash; y++) {
+          for (int x = slice.x(); x < slice.x() + slice.width(); x++) {
+            int pixel = image.getRGB(x, y);
+            if ((pixel >>> 24) > 128 && ((pixel >> 16) & 255) > 200
+                && ((pixel >> 8) & 255) > 130 && (pixel & 255) < 100) {
+              hasFlash = true;
+              break;
+            }
+          }
+        }
+        assertTrue(hasFlash, "firing pose must include the warm muzzle flash: " + slice);
+      }
+    }
+  }
+
+  @Test
+  void allSheetsExposeFivePosesInSheetOrder() {
+    for (HeroShipSheet.Sheet sheet : allSheets()) {
       List<HeroShipSheet.Slice> slices = sheet.slices();
       assertEquals(5, slices.size());
       assertEquals(List.of(
@@ -34,7 +60,7 @@ class HeroShipSheetTest {
 
   @Test
   void everySliceLiesInsideItsOwnSheet() {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+    for (HeroShipSheet.Sheet sheet : allSheets()) {
       for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
         HeroShipSheet.Slice slice = sheet.slice(pose);
         assertTrue(slice.x() >= 0 && slice.y() >= 0);
@@ -47,8 +73,8 @@ class HeroShipSheetTest {
   }
 
   @Test
-  void neutralPoseIsTheWidestInBothSheets() {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+  void neutralPoseIsTheWidestInAllSheets() {
+    for (HeroShipSheet.Sheet sheet : allSheets()) {
       HeroShipSheet.Slice neutral = sheet.slice(HeroShipSheet.Pose.NEUTRAL);
       for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
         if (pose != HeroShipSheet.Pose.NEUTRAL) {
@@ -61,7 +87,7 @@ class HeroShipSheetTest {
 
   @Test
   void sliceAndPoseAreConsistentByOrdinal() {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+    for (HeroShipSheet.Sheet sheet : allSheets()) {
       for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
         assertEquals(sheet.slices().get(pose.ordinal()), sheet.slice(pose));
       }
@@ -69,8 +95,8 @@ class HeroShipSheetTest {
   }
 
   @Test
-  void bothBundledSheetsHaveTheExpectedTransparentFivePoseLayout() throws IOException {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.sheets()) {
+  void allBundledSheetsHaveTheExpectedTransparentFivePoseLayout() throws IOException {
+    for (HeroShipSheet.Sheet sheet : allSheets()) {
       var resource = getClass().getResource("/" + sheet.internalPath());
       assertNotNull(resource, "sheet must be bundled with the game: " + sheet.internalPath());
       BufferedImage image = ImageIO.read(resource);

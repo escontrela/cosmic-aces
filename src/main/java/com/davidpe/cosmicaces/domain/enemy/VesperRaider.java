@@ -115,28 +115,47 @@ public final class VesperRaider extends Ship {
     return visuals.region(pose());
   }
 
-  /** One shared sprite sheet for the single raider of a phase. */
+  /** Flight and firing sheets shared by the single raider; owned by the phase screen. */
   public static final class Visuals implements Disposable {
     private final Texture texture;
+    private final Texture firingTexture;
     private final TextureRegion[] regions;
+    private final TextureRegion[] firingRegions;
 
     public Visuals() {
       texture = new Texture(Gdx.files.internal(VesperRaiderSheet.internalPath()));
+      try {
+        firingTexture = new Texture(Gdx.files.internal(VesperRaiderSheet.firingInternalPath()));
+      } catch (RuntimeException | Error failure) {
+        texture.dispose();
+        throw failure;
+      }
       regions = new TextureRegion[VesperRaiderSheet.Pose.values().length];
+      firingRegions = new TextureRegion[VesperRaiderSheet.Pose.values().length];
       for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
         VesperRaiderSheet.Slice slice = VesperRaiderSheet.slice(pose);
         regions[pose.ordinal()] = VesperRaiderSheet.orientedForDescent(
             new TextureRegion(texture, slice.x(), slice.y(), slice.width(), slice.height()));
+        VesperRaiderSheet.Slice firingSlice = VesperRaiderSheet.firingSlice(pose);
+        firingRegions[pose.ordinal()] = VesperRaiderSheet.orientedForDescent(
+            new TextureRegion(firingTexture, firingSlice.x(), firingSlice.y(),
+                firingSlice.width(), firingSlice.height()));
       }
     }
 
     private TextureRegion region(VesperRaiderSheet.Pose pose) {
-      return regions[pose.ordinal()];
+      return region(pose, false);
+    }
+
+    /** Prepared firing pose; caller supplies the muzzle-flash timing. */
+    public TextureRegion region(VesperRaiderSheet.Pose pose, boolean firing) {
+      return (firing ? firingRegions : regions)[pose.ordinal()];
     }
 
     @Override
     public void dispose() {
       texture.dispose();
+      firingTexture.dispose();
     }
   }
 }

@@ -99,5 +99,30 @@ public final class HeroShipSheet {
     return List.of(NORMAL, ACCELERATE);
   }
 
+  /** Normal-flight firing sheet, including both lateral muzzle flashes. */
+  public static final Sheet NORMAL_FIRING = new Sheet(
+      "assets/images/player/hero_ship_v3_firing.png", 2079, 756,
+      List.of(
+          new Slice(15, 83, 388, 583),
+          new Slice(403, 112, 442, 531),
+          new Slice(845, 81, 386, 582),
+          new Slice(1242, 105, 414, 587),
+          new Slice(1678, 106, 401, 586)));
+
+  /** Accelerated-flight firing sheet; it has its own dimensions and measured cuts. */
+  public static final Sheet ACCELERATE_FIRING = new Sheet(
+      "assets/images/player/hero_ship_v3_accelerate_firing.png", 2078, 757,
+      List.of(
+          new Slice(19, 82, 386, 576),
+          new Slice(405, 114, 434, 532),
+          new Slice(839, 82, 385, 575),
+          new Slice(1240, 104, 392, 558),
+          new Slice(1674, 105, 391, 568)));
+
+  /** Firing variants in the same pose order; separate from the existing flight-size reference. */
+  public static List<Sheet> firingSheets() {
+    return List.of(NORMAL_FIRING, ACCELERATE_FIRING);
+  }
+
   private HeroShipSheet() {}
 }

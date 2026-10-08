@@ -196,26 +196,50 @@ public final class Astra extends Ship {
     return max;
   }
 
-  /** Loads the two Astra sheets once; the owning screen disposes them when it closes. */
+  /** Loads flight and firing variants once; the owning screen disposes all four textures. */
   public static final class Visuals implements Disposable {
     private final Texture normalTexture;
     private final Texture accelerateTexture;
+    private final Texture normalFiringTexture;
+    private final Texture accelerateFiringTexture;
     private final TextureRegion[] normal;
     private final TextureRegion[] accelerate;
+    private final TextureRegion[] normalFiring;
+    private final TextureRegion[] accelerateFiring;
 
     public Visuals() {
       normalTexture = new Texture(Gdx.files.internal(HeroShipSheet.NORMAL.internalPath()));
+      Texture loadedAccelerate = null;
+      Texture loadedNormalFiring = null;
+      Texture loadedAccelerateFiring = null;
       try {
-        accelerateTexture = new Texture(Gdx.files.internal(HeroShipSheet.ACCELERATE.internalPath()));
-      } catch (RuntimeException error) {
+        loadedAccelerate = new Texture(Gdx.files.internal(HeroShipSheet.ACCELERATE.internalPath()));
+        loadedNormalFiring = new Texture(Gdx.files.internal(HeroShipSheet.NORMAL_FIRING.internalPath()));
+        loadedAccelerateFiring = new Texture(
+            Gdx.files.internal(HeroShipSheet.ACCELERATE_FIRING.internalPath()));
+      } catch (RuntimeException | Error error) {
+        if (loadedAccelerateFiring != null) loadedAccelerateFiring.dispose();
+        if (loadedNormalFiring != null) loadedNormalFiring.dispose();
+        if (loadedAccelerate != null) loadedAccelerate.dispose();
         normalTexture.dispose();
         throw error;
       }
+      accelerateTexture = loadedAccelerate;
+      normalFiringTexture = loadedNormalFiring;
+      accelerateFiringTexture = loadedAccelerateFiring;
       normal = regions(HeroShipSheet.NORMAL, normalTexture);
       accelerate = regions(HeroShipSheet.ACCELERATE, accelerateTexture);
+      normalFiring = regions(HeroShipSheet.NORMAL_FIRING, normalFiringTexture);
+      accelerateFiring = regions(HeroShipSheet.ACCELERATE_FIRING, accelerateFiringTexture);
     }
 
     private TextureRegion region(HeroShipSheet.Pose pose, boolean accelerating) {
+      return region(pose, accelerating, false);
+    }
+
+    /** Selects a prepared pose; the weapon's burst timing will supply the flashing flag. */
+    public TextureRegion region(HeroShipSheet.Pose pose, boolean accelerating, boolean firing) {
+      if (firing) return (accelerating ? accelerateFiring : normalFiring)[pose.ordinal()];
       return (accelerating ? accelerate : normal)[pose.ordinal()];
     }
 
@@ -233,6 +257,8 @@ public final class Astra extends Ship {
     public void dispose() {
       normalTexture.dispose();
       accelerateTexture.dispose();
+      normalFiringTexture.dispose();
+      accelerateFiringTexture.dispose();
     }
   }
 }

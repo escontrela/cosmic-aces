@@ -17,6 +17,37 @@ import org.junit.jupiter.api.Test;
 class VesperRaiderSheetTest {
 
   @Test
+  void firingSheetHasFiveOrderedSlicesWithMuzzleFlashes() throws IOException {
+    BufferedImage image = ImageIO.read(
+        getClass().getResource("/" + VesperRaiderSheet.firingInternalPath()));
+    assertNotNull(image);
+    assertEquals(VesperRaiderSheet.FIRING_WIDTH, image.getWidth());
+    assertEquals(VesperRaiderSheet.FIRING_HEIGHT, image.getHeight());
+    assertEquals(5, VesperRaiderSheet.firingSlices().size());
+    int previousEnd = 0;
+    for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
+      VesperRaiderSheet.Slice slice = VesperRaiderSheet.firingSlice(pose);
+      assertEquals(VesperRaiderSheet.firingSlices().get(pose.ordinal()), slice);
+      assertTrue(slice.x() >= previousEnd);
+      assertTrue(slice.y() >= 0 && slice.x() + slice.width() <= image.getWidth()
+          && slice.y() + slice.height() <= image.getHeight());
+      previousEnd = slice.x() + slice.width();
+      boolean hasFlash = false;
+      for (int y = slice.y(); y < slice.y() + slice.height() / 2 && !hasFlash; y++) {
+        for (int x = slice.x(); x < slice.x() + slice.width(); x++) {
+          int pixel = image.getRGB(x, y);
+          if ((pixel >>> 24) > 128 && ((pixel >> 16) & 255) > 200
+              && ((pixel >> 8) & 255) > 130 && (pixel & 255) < 100) {
+            hasFlash = true;
+            break;
+          }
+        }
+      }
+      assertTrue(hasFlash, "firing slice must include a muzzle flash: " + pose);
+    }
+  }
+
+  @Test
   void exposesFivePosesInSheetOrder() {
     List<VesperRaiderSheet.Slice> slices = VesperRaiderSheet.slices();
     assertEquals(5, slices.size());

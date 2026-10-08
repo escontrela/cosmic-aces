@@ -13,6 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
+| `domain.weapon` | Elementos de las armas | Dibujo reutilizable de ráfagas; la generación y el movimiento se integrarán en COS-27. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
@@ -81,6 +82,36 @@ VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pa
 es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
 Las láminas v3 de Astra y Vesper Raider tienen cinco recortes: las tres poses de
+alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
+`HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
+de cada PNG; `firingSheets()` las enumera sin cambiar las referencias de tamaño
+de las láminas de vuelo. `VesperRaiderSheet.firingInternalPath()`, `firingSlice()`
+y `firingSlices()` proporcionan la variante del enemigo. Los recortes incluyen
+fogonazos y excluyen manchas aisladas de fondo; los tres primeros dibujos de
+algunas láminas se tocan en los bordes, por lo que no son celdas uniformes.
+`Astra.Visuals.region(pose, accelerating, firing)` y
+`VesperRaider.Visuals.region(pose, firing)` exponen las regiones listas para usar.
+La variante del Raider conserva el mismo volteo vertical que su lámina de vuelo.
+Las pantallas liberan las cuatro texturas de Astra y las dos de Vesper mediante
+sus `Visuals.dispose()`. La preparación no activa el disparo: el temporizador de
+fogonazo, input, proyectiles y HUD pertenecen a COS-27. Al integrarlos, conservar
+la escala y ancla del cuerpo entre variantes: las imágenes fuente de disparo
+tienen diferencias de geometría y margen respecto a las originales; no estirar
+cada pose para rellenar la caja ni aumentar la caja de vuelo por el fogonazo.
+
+`domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
+`docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
+amarilla clara. `draw(shapes, tipX, tipY, forwardX, forwardY)` recibe coordenadas
+del mundo y el vector de disparo guardado al emitirlo; no consulta la nave ni la
+cámara. La pantalla pone la proyección del mundo y abre/cierra un único lote
+`ShapeRenderer.ShapeType.Filled` para todos los proyectiles, después de cerrar
+`SpriteBatch`. El objeto restaura el color del renderer y no crea recursos nativos.
+Una instancia visual puede compartirse entre Astra y Vesper y todos sus disparos.
+Longitud y grosor (42 y 1,2 unidades inicialmente) son ajuste de dibujo, no alcance
+ni velocidad. Se dibuja una vez por proyectil de cada cañón; la colocación de los
+dos cañones, emisión, movimiento, cadencia y retirada corresponden a COS-27.
+
+Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
 rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
@@ -183,6 +214,9 @@ com.davidpe.cosmicaces
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
 |   |   +-- UnitRandom: fuente sustituible de aleatoriedad.
 |   |       1. nextUnit()
+|   +-- weapon
+|   |   +-- GunBurstVisual: aspecto reutilizable de un trazador, sin recursos propios.
+|   |       1. draw(): punta y estela según posición y vector del proyectil.
 |   +-- scenery
 |       +-- Starfield: estrellas con scroll de la bienvenida.
 |       |   1. update(): mueve y recicla estrellas.

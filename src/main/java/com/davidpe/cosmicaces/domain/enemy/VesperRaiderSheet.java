@@ -25,6 +25,18 @@ public final class VesperRaiderSheet {
   public static final int WIDTH = 1983;
   public static final int HEIGHT = 793;
 
+  public static final int FIRING_WIDTH = 1983;
+  public static final int FIRING_HEIGHT = 793;
+  private static final String FIRING_INTERNAL_PATH =
+      "assets/images/enemy/vesper_raider_roll_sheet_v3_firing.png";
+
+  private static final List<Slice> FIRING_SLICES = List.of(
+      new Slice(14, 125, 405, 563),
+      new Slice(419, 127, 416, 559),
+      new Slice(835, 129, 405, 556),
+      new Slice(1244, 132, 291, 519),
+      new Slice(1581, 130, 373, 520));
+
   private static final String INTERNAL_PATH = "assets/images/enemy/vesper_raider_roll_sheet_v3.png";
 
   private static final List<Slice> SLICES =
@@ -36,15 +48,20 @@ public final class VesperRaiderSheet {
           new Slice(1585, 135, 368, 513));
 
   static {
-    if (SLICES.size() != Pose.values().length) {
+    validate(SLICES, WIDTH, HEIGHT);
+    validate(FIRING_SLICES, FIRING_WIDTH, FIRING_HEIGHT);
+  }
+
+  private static void validate(List<Slice> slices, int width, int height) {
+    if (slices.size() != Pose.values().length) {
       throw new IllegalStateException(
-          "The raider sheet must define one slice per pose, got " + SLICES.size());
+          "The raider sheet must define one slice per pose, got " + slices.size());
     }
-    for (Slice slice : SLICES) {
+    for (Slice slice : slices) {
       if (slice.x() < 0 || slice.y() < 0 || slice.width() <= 0 || slice.height() <= 0
-          || slice.x() + slice.width() > WIDTH || slice.y() + slice.height() > HEIGHT) {
+          || slice.x() + slice.width() > width || slice.y() + slice.height() > height) {
         throw new IllegalStateException(
-            "Slice must lie inside the " + WIDTH + "x" + HEIGHT + " sheet: "
+            "Slice must lie inside the " + width + "x" + height + " sheet: "
                 + "x=" + slice.x() + " y=" + slice.y()
                 + " w=" + slice.width() + " h=" + slice.height());
       }
@@ -64,6 +81,19 @@ public final class VesperRaiderSheet {
   /** Returns the pose slices in {@link Pose} order. */
   public static List<Slice> slices() {
     return SLICES;
+  }
+
+  /** Firing variant with flashes included, using the same {@link Pose} order. */
+  public static String firingInternalPath() {
+    return FIRING_INTERNAL_PATH;
+  }
+
+  public static Slice firingSlice(Pose pose) {
+    return FIRING_SLICES.get(pose.ordinal());
+  }
+
+  public static List<Slice> firingSlices() {
+    return FIRING_SLICES;
   }
 
   public static int maxSliceWidth() {
