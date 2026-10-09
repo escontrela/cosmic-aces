@@ -71,6 +71,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
   private final ShipExplosionVisuals explosionVisuals;
+  private final ShipHitFlashRenderer hitFlashRenderer;
   private final BitmapFont font;
   private final BitmapFont hudFont;
   private final GlyphLayout endLayout;
@@ -108,6 +109,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
     ShipExplosionVisuals loadedExplosion = null;
+    ShipHitFlashRenderer loadedHitFlash = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
     GlyphLayout loadedLayout;
@@ -117,6 +119,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedAstra = new Astra.Visuals();
       loadedRaider = new VesperRaider.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
+      loadedHitFlash = new ShipHitFlashRenderer();
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -138,6 +141,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedAstra != null) {
         loadedAstra.dispose();
       }
+      if (loadedHitFlash != null) {
+        loadedHitFlash.dispose();
+      }
       if (loadedShapes != null) {
         loadedShapes.dispose();
       }
@@ -151,6 +157,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
     explosionVisuals = loadedExplosion;
+    hitFlashRenderer = loadedHitFlash;
     font = loadedFont;
     hudFont = loadedHudFont;
     endLayout = loadedLayout;
@@ -198,6 +205,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // encounter and the camera update) so Vesper fires only while both ships are really visible.
     // The pre-movement sample above stays the scoring input and is never reused for the weapons.
     boolean weaponsCoincident = shipsCoincidentVisible();
+    // One hit-feedback advance per frame, before impacts are resolved so a pulse accepted this
+    // frame is drawn at its full first intensity. It also runs after the run finishes so the last
+    // pulse of an in-flight projectile keeps extinguishing.
+    controller.advanceHitFeedback(delta);
     // One weapons update per frame, after the camera that this frame draws, using the world zoom as
     // the frozen range so a shot covers about two visible viewport heights. Impacts are resolved
     // inside this call and the single raider destruction bonus is published once, before the HUD.
@@ -227,11 +238,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.begin();
     if (controller.isAstraActive()
         && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
-      controller.astra().draw(batch, -controller.astra().yawDegrees());
+      hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
+          controller.astraHitFlashIntensity());
     }
     if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
       VesperRaider raider = controller.activeRaider();
-      raider.draw(batch, raider.headingDegrees());
+      hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
+          controller.raiderHitFlashIntensity());
     }
     drawExplosions(batch);
     batch.end();
@@ -276,6 +289,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     astraVisuals.dispose();
     raiderVisuals.dispose();
     explosionVisuals.dispose();
+    hitFlashRenderer.dispose();
     font.dispose();
     hudFont.dispose();
   }

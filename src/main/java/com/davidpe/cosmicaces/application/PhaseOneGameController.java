@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
+import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
@@ -30,6 +31,13 @@ public final class PhaseOneGameController extends GameController {
   private final GunBurst raiderGun = new GunBurst();
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
+  /**
+   * Independent hit-flash pulses for presentation: each valid projectile impact renews the pulse of
+   * the ship actually hit; the screen converts {@link #astraHitFlashIntensity()} and {@link
+   * #raiderHitFlashIntensity()} into the shared white shader. They own no damage rules.
+   */
+  private final ShipHitFlash astraHitFlash = new ShipHitFlash();
+  private final ShipHitFlash raiderHitFlash = new ShipHitFlash();
   private AstraMotion astraMotion;
   private float astraDeathX;
   private float astraDeathY;
@@ -164,6 +172,27 @@ public final class PhaseOneGameController extends GameController {
     return points;
   }
 
+  /**
+   * Advances both hit-flash decay timers once per frame. It runs unconditionally (also after the
+   * phase has finished) so the last pulse of an in-flight projectile keeps extinguishing, and the
+   * screen calls it before {@link #advanceWeapons} so an impact accepted this frame is drawn at its
+   * full first intensity instead of losing one whole frame to the decay.
+   */
+  public void advanceHitFeedback(float deltaSeconds) {
+    astraHitFlash.advance(deltaSeconds);
+    raiderHitFlash.advance(deltaSeconds);
+  }
+
+  /** Presentation white intensity (0–1) of Astra's current hit-flash pulse. */
+  public float astraHitFlashIntensity() {
+    return astraHitFlash.intensity();
+  }
+
+  /** Presentation white intensity (0–1) of the Vesper Raider's current hit-flash pulse. */
+  public float raiderHitFlashIntensity() {
+    return raiderHitFlash.intensity();
+  }
+
   private void resolveShipContact() {
     VesperRaider raider = activeRaider();
     if (raider == null || astraCombat.isDestroyed() || raiderCombat.isDestroyed()) {
@@ -182,11 +211,13 @@ public final class PhaseOneGameController extends GameController {
   private void handleRespawns() {
     if (astraCombat.readyToRespawn()) {
       astraCombat.respawn();
+      astraHitFlash.clear();
       astra().placeAt(astraDeathX, astraDeathY, astraDeathYaw, WORLD);
       astraMotion = null;
     }
     if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null) {
       raiderCombat.respawn();
+      raiderHitFlash.clear();
       raiderEncounter.respawnAt(WORLD, astra().x() + astra().drawWidth() / 2f,
           astra().y() + astra().drawHeight() / 2f, bodyRadius(astra()));
     }
@@ -197,6 +228,7 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     astraCombat.destroy();
+    astraHitFlash.clear();
     astraDeathX = astra().x();
     astraDeathY = astra().y();
     astraDeathYaw = astra().yawDegrees();
@@ -212,6 +244,7 @@ public final class PhaseOneGameController extends GameController {
       raiderDeathCenterY = raider.centerY();
     }
     raiderCombat.destroy();
+    raiderHitFlash.clear();
     raiderEncounter.destroyActive();
     pendingCombatPoints += score.awardRaiderDestroyed();
   }
@@ -236,6 +269,9 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     projectile.consume();
+    // Every counted impact flashes the ship actually hit, even the first nine that do not yet
+    // complete a damage step; the pulse is presentation only and never decides damage (CA20-21).
+    raiderHitFlash.trigger();
     raiderCombat.receiveProjectileHit();
     if (raiderCombat.energyPercent() <= 0) {
       destroyRaider();
@@ -260,6 +296,7 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     projectile.consume();
+    astraHitFlash.trigger();
     astraCombat.receiveProjectileHit();
     if (astraCombat.energyPercent() <= 0) {
       destroyAstra();

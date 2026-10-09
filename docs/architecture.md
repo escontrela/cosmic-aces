@@ -223,6 +223,40 @@ coincidente ni en el minimapa (`isRaiderActive()` ya es falso mientras está des
 el score mostrado sigue siendo el snapshot del coordinador, incluido el bonus 1000 de
 COS-32, y ni la animación ni el fin de explosión publican puntos.
 
+### Destello de impacto integrado (COS-34)
+
+`domain.effect.ShipHitFlash` es un pulso temporal puro, sin LibGDX y reutilizable por cualquier
+nave/fase: `trigger()` renueva a 0,10 s de intensidad 1, `advance(dt)` decae linealmente hacia 0
+(ignora deltas no finitos/no positivos y clampa al terminar) y `intensity()` devuelve 0–1. Cada
+impacto de proyectil válido renueva el pulso sin acumular duración; `clear()` lo corta al instante
+cuando la muerte toma prioridad. No contiene energía, umbral de daño, inmunidad, input, cámara ni
+shader: el controlador decide qué impactos cuentan y si el pulso se limpia.
+
+`PhaseOneGameController` posee `astraHitFlash` y `raiderHitFlash` independientes. Cada frame la
+pantalla llama a `advanceHitFeedback(delta)` una vez, **antes** de resolver impactos y también tras
+terminar la fase (un proyectil en vuelo puede aún impactar y el último pulso debe extinguirse);
+avanzar antes de los `trigger()` nuevos permite dibujar la primera intensidad completa del impacto
+aceptado en el mismo frame. Los triggers se activan en `astraProjectileStep` (impacto sobre Vesper →
+`raiderHitFlash.trigger()`) y en `raiderProjectileStep` (impacto sobre Astra → `astraHitFlash
+.trigger()`), **sin** depender del boolean de `receiveProjectileHit()` que solo señala el tramo de
+daño cada 10 impactos. Las ramas de inmunidad consumen el proyectil sin activar el destello (CA22);
+`destroyAstra`/`destroyRaider` y el respawn limpian el pulso de cada nave. `astraHitFlashIntensity()`
+y `raiderHitFlashIntensity()` exponen 0–1 para la presentación.
+
+`infrastructure.gdx.screen.ShipHitFlashRenderer` es el adaptador gráfico compartido, propiedad de la
+pantalla (creado en su estructura de carga con limpieza parcial y liberado una vez en `dispose()`).
+Contiene un único `ShaderProgram` para ambas naves cuyo vertex shader replica el default de
+`SpriteBatch` (`u_projTrans`, `a_color`, `a_texCoord0` y la corrección `v_color.a * 255/254`) y cuyo
+fragmento conserva alfa: `rgb = mix(sample.rgb, vec3(1.0), clamp(u_hitFlash, 0, 1))` con
+`gl_FragColor = vec4(rgb, sample.a) * v_color`. `isCompiled()` se comprueba y un fallo lanza error
+explícito con `dispose()`. `draw(batch, ship, rotationDegrees, intensity)` dibuja la nave en su pose
+actual con `Ship.draw` (misma escala/ancla/alpha) y hace `flush()` del lote antes de cambiar el
+uniforme compartido y después de dibujar, restaurando el shader previo al volver; intensidad ≤ 0
+mantiene exactamente el dibujo histórico sin tocar el shader. La pantalla reemplaza únicamente el
+dibujo de Astra y Vesper por este wrapper con la intensidad del controlador; explosiones,
+proyectiles, minimapa, HUD y fondo conservan su shader/color habituales. No hay sprites nuevos ni
+cambio de daño, cadencia, puntuación o controles.
+
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
 amarilla clara. `draw(shapes, tipX, tipY, forwardX, forwardY)` recibe coordenadas
@@ -384,6 +418,7 @@ com.davidpe.cosmicaces
 |       7. isRaiderActive()  8. activeRaider()  9. setRaiderVisuals()
 |       10. astraCombat()  11. raiderCombat()  12. isAstraActive()
 |       13. scorePoints()  14. astraGun()  15. raiderGun()
+|       16. advanceHitFeedback()  17. astraHitFlashIntensity()  18. raiderHitFlashIntensity()
 |
 +-- domain
 |   +-- game
@@ -461,6 +496,8 @@ com.davidpe.cosmicaces
 |   |   |   1. advance()  2. frameIndex()  3. isFinished()
 |   |   +-- ShipExplosionVisuals: textura compartida screen-owned, regiones y dibujo.
 |   |       1. region()  2. draw()  3. dispose()
+|   |   +-- ShipHitFlash: pulso temporal puro de destello por impacto (0,10 s).
+|   |       1. trigger()  2. advance()  3. intensity()  4. clear()
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
@@ -500,6 +537,8 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
             |   1. render()  2. resize()  3. dispose()
+            +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
+            |   1. draw()  2. dispose()
             +-- FlightCameraState: seguimiento y zoom interpolados.
             |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.

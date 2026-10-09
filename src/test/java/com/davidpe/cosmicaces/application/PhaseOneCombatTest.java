@@ -131,4 +131,143 @@ class PhaseOneCombatTest {
     assertTrue(controller.isAstraActive());
     assertEquals(astraCenterX, controller.astraDeathCenterX(), 0.01f);
   }
+
+  /** Fires Astra's sustained burst at the raider until the raider's first hit-flash pulse shows. */
+  private static void fireUntilFirstRaiderFlash(PhaseOneGameController controller) {
+    int guard = 0;
+    while (controller.raiderHitFlashIntensity() <= 0f && guard < 600) {
+      controller.advanceWeapons(DELTA, DELTA, true, false, 10_000f);
+      guard++;
+    }
+  }
+
+  @Test
+  void eachValidImpactFlashesTheRaiderEvenBeforeTheTenthTouchesEnergy() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+
+    fireUntilFirstRaiderFlash(controller);
+
+    assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f,
+        "the first counted impact renews a full-strength pulse");
+    assertEquals(100, controller.raiderCombat().energyPercent(),
+        "the first nine impacts flash without completing a damage step");
+    assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f,
+        "the un-hit Astra never flashes from her own burst");
+  }
+
+  @Test
+  void theTenthImpactAlsoFlashesWhileReducingEnergyByTheApprovedStep() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+
+    int guard = 0;
+    while (controller.raiderCombat().energyPercent() == 100 && guard < 900) {
+      controller.advanceWeapons(DELTA, DELTA, true, false, 10_000f);
+      guard++;
+    }
+
+    assertEquals(65, controller.raiderCombat().energyPercent(),
+        "the tenth impact applies the first approved 35-point step");
+    assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f,
+        "the damaging impact flashes exactly like the first nine");
+  }
+
+  @Test
+  void consumedProjectilesNeverRetriggerThePulseAfterItDecays() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    // Park Astra far below so the single burst needs several frames to arrive.
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 1000f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+
+    controller.advanceWeapons(DELTA, DELTA, true, false, 10_000f);
+
+    boolean sawFlash = false;
+    for (int frame = 0; frame < 240; frame++) {
+      controller.advanceWeapons(DELTA, 0f, false, false, 10_000f);
+      controller.advanceHitFeedback(DELTA);
+      if (controller.raiderHitFlashIntensity() > 0f) {
+        sawFlash = true;
+      }
+    }
+
+    assertTrue(sawFlash, "the two in-flight projectiles must hit and flash once");
+    assertEquals(0f, controller.raiderHitFlashIntensity(), 0.0001f,
+        "a consumed projectile never repeats its impact");
+    assertEquals(100, controller.raiderCombat().energyPercent(),
+        "two impacts are still far below the damage threshold");
+  }
+
+  @Test
+  void destructionClearsAnActivePulseSoTheExplosionStaysUncluttered() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+    fireUntilFirstRaiderFlash(controller);
+    assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f);
+
+    // A vulnerable hull-to-hull contact destroys both ships: death outranks the flash.
+    controller.placeAstra(raider.x(), raider.y(), 0f);
+    controller.advanceCombat(DELTA);
+
+    assertTrue(controller.astraCombat().isDestroyed());
+    assertTrue(controller.raiderCombat().isDestroyed());
+    assertEquals(0f, controller.raiderHitFlashIntensity(), 0.0001f,
+        "death clears the raider pulse before the explosion");
+    assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f);
+
+    // Respawn restarts neither pulse.
+    controller.advanceCombat(3f);
+    controller.advanceCombat(2f);
+    assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f);
+    assertEquals(0f, controller.raiderHitFlashIntensity(), 0.0001f);
+  }
+
+  @Test
+  void hitsAbsorbedDuringAstraInvulnerabilityNeverFlash() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    // Park Astra directly under the raider's spawn point, aligned with its firing line. With the
+    // scripted random the raider keeps heading 0 (straight down) and never moves while the
+    // encounter is not advanced, so both side cannons sweep straight down through her body.
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.y() - 150f - controller.astra().drawHeight();
+    controller.placeAstra(astraX, astraY, 0f);
+
+    // The raider pounds her until she falls while it survives: many impacts, then death clears it.
+    int guard = 0;
+    while (!controller.astraCombat().isDestroyed() && guard < 400) {
+      controller.advanceWeapons(1f, 1f, false, true, 10_000f);
+      guard++;
+    }
+    assertTrue(controller.astraCombat().isDestroyed(),
+        "Astra must fall to the raider's sustained burst drawn by this setup");
+    assertFalse(controller.raiderCombat().isDestroyed(), "the raider survives direct fire");
+    assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f, "death clears the pulse");
+
+    // Three seconds later Astra respawns invulnerable, still in the same spot under the fire.
+    controller.advanceCombat(3f);
+    assertTrue(controller.astraCombat().isInvulnerable());
+    assertEquals(100, controller.astraCombat().energyPercent());
+
+    // Contacts during the protection window are absorbed without a damage flash (CA22).
+    for (int frame = 0; frame < 15; frame++) {
+      controller.advanceWeapons(1f / 60f, 1f / 60f, false, true, 10_000f);
+      controller.advanceHitFeedback(1f / 60f);
+      assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f,
+          "immune contacts must not trigger the hit flash");
+    }
+    assertTrue(controller.astraCombat().isInvulnerable(),
+        "the protection window still runs during these contacts");
+  }
 }
