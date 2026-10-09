@@ -9,6 +9,9 @@ public final class GunTuning {
   /** Seconds between two consecutive emission events of the same weapon. */
   public static final float BURST_INTERVAL_SECONDS = 0.08f;
 
+  /** Vesper's slower cadence leaves room to evade between bursts. */
+  public static final float RAIDER_BURST_INTERVAL_SECONDS = 0.4f;
+
   /** World units travelled by a projectile per second. */
   public static final float PROJECTILE_SPEED = 1800f;
 

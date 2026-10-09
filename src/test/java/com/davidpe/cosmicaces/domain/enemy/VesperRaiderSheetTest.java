@@ -118,11 +118,11 @@ class VesperRaiderSheetTest {
   }
 
   /**
-   * The firing placement metadata must keep the cool body hull of each firing pose anchored on the
-   * flight pose, re-measured from the bundled PNGs with the same warm-flash color rule.
+   * The firing placement metadata must keep the blue cockpit lens of each firing pose anchored on the
+   * flight pose, re-measured from the bundled PNGs with the blue-pixel rule.
    */
   @Test
-  void firingPlacementKeepsTheBodyHullAnchoredOnTheFlightVariant() throws IOException {
+  void firingPlacementKeepsTheCockpitAnchoredOnTheFlightVariant() throws IOException {
     BufferedImage flightImage = ImageIO.read(
         getClass().getResource("/" + VesperRaiderSheet.internalPath()));
     BufferedImage firingImage = ImageIO.read(
@@ -130,49 +130,40 @@ class VesperRaiderSheetTest {
     for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
       VesperRaiderSheet.Slice flightSlice = VesperRaiderSheet.slice(pose);
       VesperRaiderSheet.Slice firingSlice = VesperRaiderSheet.firingSlice(pose);
-      double[] flightHull = coolHullCenter(flightImage, flightSlice.x(), flightSlice.y(),
+      double[] flightHull = cockpitCenter(flightImage, flightSlice.x(), flightSlice.y(),
           flightSlice.width(), flightSlice.height());
-      double[] firingHull = coolHullCenter(firingImage, firingSlice.x(), firingSlice.y(),
+      double[] firingHull = cockpitCenter(firingImage, firingSlice.x(), firingSlice.y(),
           firingSlice.width(), firingSlice.height());
-      double expectedX = (flightHull[0] - flightSlice.width() / 2d)
-          - (firingHull[0] - firingSlice.width() / 2d);
-      double expectedY = (flightSlice.height() / 2d - flightHull[1])
-          - (firingSlice.height() / 2d - firingHull[1]);
+      double expectedX = (firingHull[0] - firingSlice.width() / 2d)
+          - (flightHull[0] - flightSlice.width() / 2d);
+      double expectedY = (firingHull[1] - firingSlice.height() / 2d)
+          - (flightHull[1] - flightSlice.height() / 2d);
       VesperRaiderSheet.FiringPlacement placement = VesperRaiderSheet.firingPlacement(pose);
       assertEquals(expectedX, placement.offsetXPx(), 1f, "deltaX of " + pose);
       assertEquals(expectedY, placement.offsetYPx(), 1f, "deltaY of " + pose);
     }
   }
 
-  /** Warm muzzle flash pixel shared with the anchor measurement. */
-  private static boolean warm(int pixel) {
-    int r = (pixel >> 16) & 255;
-    int g = (pixel >> 8) & 255;
-    int b = pixel & 255;
-    return r > 180 && r > b + 60 && g > b + 20;
-  }
-
-  /** Center of the cool opaque hull (alpha > 32, not warm) of a slice, in slice-local pixels. */
-  private static double[] coolHullCenter(BufferedImage image, int sliceX, int sliceY,
+  /** Centroid of the blue cockpit lens in the top third, excluding the engine flames. */
+  private static double[] cockpitCenter(BufferedImage image, int sliceX, int sliceY,
       int width, int height) {
-    int x0 = Integer.MAX_VALUE;
-    int y0 = Integer.MAX_VALUE;
-    int x1 = -1;
-    int y1 = -1;
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    double sumX = 0, sumY = 0;
+    int count = 0;
+    for (int y = 0; y < Math.min(100, height / 3); y++) {
+      for (int x = width / 4; x < width * 3 / 4; x++) {
         int pixel = image.getRGB(sliceX + x, sliceY + y);
-        if ((pixel >>> 24) <= 32 || warm(pixel)) {
-          continue;
+        int red = (pixel >> 16) & 255;
+        int green = (pixel >> 8) & 255;
+        int blue = pixel & 255;
+        if ((pixel >>> 24) > 128 && blue > 150 && blue > red + 60 && green > 80) {
+          sumX += x;
+          sumY += y;
+          count++;
         }
-        x0 = Math.min(x0, x);
-        y0 = Math.min(y0, y);
-        x1 = Math.max(x1, x);
-        y1 = Math.max(y1, y);
       }
     }
-    assertTrue(x0 <= x1, "the slice must contain a cool opaque hull");
-    return new double[] {(x0 + x1) / 2d, (y0 + y1) / 2d};
+    assertTrue(count > 0, "the slice must contain a blue cockpit lens");
+    return new double[] {sumX / count, sumY / count};
   }
 
   @Test

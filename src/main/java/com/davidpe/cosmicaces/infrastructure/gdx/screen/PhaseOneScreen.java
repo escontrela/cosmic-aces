@@ -241,7 +241,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
           controller.astraHitFlashIntensity());
     }
-    if (!runFinished && controller.isRaiderActive() && raiderVisible()) {
+    boolean enemyInViewport = !runFinished && controller.isRaiderActive() && raiderVisible();
+    if (enemyInViewport) {
       VesperRaider raider = controller.activeRaider();
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
           controller.raiderHitFlashIntensity());
@@ -264,9 +265,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
-    minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
-        controller.isRaiderActive() ? controller.activeRaider() : null,
-        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+    // Combat temporarily suppresses the overlay without changing the player's M preference.
+    // Use the same current-camera visibility decision as the enemy drawing above.
+    if (!enemyInViewport) {
+      minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
+          controller.isRaiderActive() ? controller.activeRaider() : null,
+          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+    }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
         controller.astraCombat().energyPercent());

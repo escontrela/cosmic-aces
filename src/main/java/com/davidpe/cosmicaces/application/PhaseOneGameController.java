@@ -12,6 +12,7 @@ import com.davidpe.cosmicaces.domain.ship.Ship;
 import com.davidpe.cosmicaces.domain.ship.ShipCombatState;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
+import com.davidpe.cosmicaces.domain.weapon.GunTuning;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Rules specific to phase one: timed run, autonomous Raider, scoring and the Astra cannon. */
@@ -28,7 +29,7 @@ public final class PhaseOneGameController extends GameController {
   private final RaiderEncounter raiderEncounter;
   private final PhaseScore score = new PhaseScore();
   private final GunBurst astraGun = new GunBurst();
-  private final GunBurst raiderGun = new GunBurst();
+  private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
   /**

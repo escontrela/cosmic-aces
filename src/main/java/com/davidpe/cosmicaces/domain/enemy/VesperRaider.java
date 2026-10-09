@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * An autonomous enemy that flies by its own heading and wanders the finite world. Its heading uses
- * the descent convention (0 points down, positive turns right) so the v3 sheet keeps its orientation
+ * the descent convention (0 points down, positive turns right) so the v4 sheet keeps its orientation
  * when the sprite is rotated by the heading.
  */
 public final class VesperRaider extends Ship {

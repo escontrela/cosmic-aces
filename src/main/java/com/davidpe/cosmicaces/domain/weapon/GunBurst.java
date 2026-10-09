@@ -17,8 +17,23 @@ public final class GunBurst {
 
   private static final double TIME_EPSILON = 1e-6;
   private final List<GunProjectile> projectiles = new ArrayList<>();
-  private double sinceLastEmission = GunTuning.BURST_INTERVAL_SECONDS;
+  private final double burstIntervalSeconds;
+  private double sinceLastEmission;
   private boolean firing;
+
+  /** Creates a weapon with Astra's standard cadence. */
+  public GunBurst() {
+    this(GunTuning.BURST_INTERVAL_SECONDS);
+  }
+
+  /** Creates a weapon with its own fixed, positive emission interval. */
+  public GunBurst(float burstIntervalSeconds) {
+    if (!Float.isFinite(burstIntervalSeconds) || burstIntervalSeconds <= 0f) {
+      throw new IllegalArgumentException("Burst interval must be positive and finite");
+    }
+    this.burstIntervalSeconds = burstIntervalSeconds;
+    sinceLastEmission = burstIntervalSeconds;
+  }
 
   /** A muzzle position in world coordinates, frozen when the shot is taken. */
   public record Muzzle(float x, float y) {
@@ -103,12 +118,12 @@ public final class GunBurst {
     boolean canFire = enabled && window > 0f && source != null;
     if (!canFire) {
       firing = false;
-      sinceLastEmission = GunTuning.BURST_INTERVAL_SECONDS;
+      sinceLastEmission = burstIntervalSeconds;
       return;
     }
 
     firing = true;
-    double nextGap = GunTuning.BURST_INTERVAL_SECONDS - sinceLastEmission;
+    double nextGap = burstIntervalSeconds - sinceLastEmission;
     if (nextGap < 0d) {
       nextGap = 0d;
     }
@@ -117,7 +132,7 @@ public final class GunBurst {
     while (eventLocal <= window + TIME_EPSILON) {
       emit(source, eventLocal, frameDelta, stepListener);
       lastEventLocal = eventLocal;
-      eventLocal += GunTuning.BURST_INTERVAL_SECONDS;
+      eventLocal += burstIntervalSeconds;
     }
     sinceLastEmission = lastEventLocal >= 0d
         ? frameDelta - lastEventLocal
@@ -167,6 +182,6 @@ public final class GunBurst {
   public void clear() {
     projectiles.clear();
     firing = false;
-    sinceLastEmission = GunTuning.BURST_INTERVAL_SECONDS;
+    sinceLastEmission = burstIntervalSeconds;
   }
 }

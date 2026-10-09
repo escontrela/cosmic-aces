@@ -72,7 +72,11 @@ sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
-lecturas. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
+lecturas. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un
+Vesper activo intersecta el viewport, usando la misma comprobación de cámara
+rotada y zoom que decide dibujar al enemigo. Al salir del viewport o quedar
+destruido, el mapa recupera la preferencia elegida con M; la ocultación temporal
+no modifica esa preferencia. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
 el punto rojo con estela direccional de Vesper Raider.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
@@ -83,7 +87,7 @@ Las pantallas crean y liberan sus recursos gráficos. Astra.Visuals y
 VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pantalla
 es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
-Las láminas v3 de Astra y Vesper Raider tienen cinco recortes: las tres poses de
+Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
 `HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
 de cada PNG; `firingSheets()` las enumera sin cambiar las referencias de tamaño
@@ -93,6 +97,9 @@ fogonazos y excluyen manchas aisladas de fondo; los tres primeros dibujos de
 algunas láminas se tocan en los bordes, por lo que no son celdas uniformes.
 `Astra.Visuals.region(pose, accelerating, firing)` y
 `VesperRaider.Visuals.region(pose, firing)` exponen las regiones listas para usar.
+Los PNG de Vesper se agrupan en `assets/images/enemy/vesper_raider/`; el juego
+carga `vesper_raider_roll_sheet_v4.png` y `vesper_raider_roll_sheet_v4_firing.png`
+(2079 × 756). Las versiones anteriores se conservan en la misma carpeta.
 La variante del Raider conserva el mismo volteo vertical que su lámina de vuelo.
 Las pantallas liberan las cuatro texturas de Astra y las dos de Vesper mediante
 sus `Visuals.dispose()`. La preparación no activa el disparo: el temporizador de
@@ -276,7 +283,8 @@ cámara, mundo ni puntuación. Limita su avance al alcance recibido y `expired()
 se cumple exactamente al cubrirlo, de modo que la retirada depende solo de la
 distancia. COS-32 añadió `consume()/isConsumed()` (retirada por impacto, un único
 impacto por proyectil) y `remainingDistance()` para predecir el segmento exacto
-del próximo frame. `domain.weapon.GunTuning` reúne la cadencia (0,08 s), la velocidad
+del próximo frame. `domain.weapon.GunTuning` reúne la cadencia (Astra: 0,08 s;
+Vesper: 0,4 s), la velocidad
 (1800 u/s) y la duración del fogonazo (0,035 s); el alcance lo congela el
 adaptador en cada disparo. `domain.weapon.GunBurst` posee el reloj de cadencia,
 el pulso de fogonazo y la colección de proyectiles, sin depender de LibGDX ni de
@@ -284,7 +292,9 @@ infraestructura. `advance(frameDelta, emissionSeconds, enabled, ShotSource)`
 avanza una vez por frame los proyectiles existentes y luego emite dentro de la
 ventana `emissionSeconds` (recortada a `[0, frameDelta]`); los proyectiles
 nuevos avanzan solo el tiempo posterior a su emisión. La emisión es inmediata al
-activar y cada 0,08 s; deshabilitar descarta la deuda de cadencia, detiene el
+activar y después respeta el intervalo propio del arma, recibido en
+`GunBurst(float burstIntervalSeconds)`; el constructor sin argumentos conserva
+los 0,08 s de Astra. Deshabilitar descarta la deuda de cadencia, detiene el
 pulso y no borra los proyectiles existentes, y `emissionSeconds=0` corta los
 disparos nuevos al terminar la fase sin alterar la trayectoria de los ya
 emitidos. `ShotSource.shotAt(offsetSeconds)` entrega una instantánea `Shot` con
@@ -329,7 +339,8 @@ que devuelve `Ship.SpritePlacement(scale, offsetX, offsetY)`: el default centra
 la región idéntico al dibujo histórico y un desplazamiento solo mueve la imagen,
 nunca el pivote. `HeroShipSheet.firingPlacement(pose, accelerating)` y
 `VesperRaiderSheet.firingPlacement(pose)` guardan, medido sobre los PNG reales
-con la regla de color cálido de los tests, el pequeño desplazamiento que deja el
+con la regla de color cálido para Astra y el centro de la lente azul de cabina
+para Vesper v4, el desplazamiento que deja el
 cuerpo de la variante de disparo anclado sobre el de vuelo de la misma familia y
 pose (escala uniforme; no se estira la pose ni cambia la caja). El pulso del
 fogonazo lo da el propio `GunBurst.flashVisible()` (0,035 s del mismo reloj de
@@ -350,8 +361,8 @@ los proyectiles ya emitidos; el Raider y el arma no se recrean al salir de cáma
 `VesperRaider.shotAt(centerX, centerY, headingDegrees, range)` usa
 `forward=(sin heading, -cos heading)` y `right=(cos heading, sin heading)` y
 transforma las bocas laterales medidas en `VesperRaiderSheet.cannonMouths(pose)`
-(dos por pose, tomadas de los fogonazos simétricos que solo añade la lámina de
-disparo; la pose de guiñada derecha completa el par oculto por simetría). Cada
+(dos por pose, tomadas de las bases de los fogonazos de la nariz en la lámina
+v4 de disparo, incluidas las dos bocas visibles en las poses de guiñada). Cada
 `Shot` congela centro, bocas, rumbo y alcance, sin retener referencia a la nave.
 La coincidencia de las armas se calcula **después** del vuelo, el encuentro y la
 cámara del frame, con el helper puro `CameraVisibility.shipVisible(centerX,
@@ -477,7 +488,7 @@ com.davidpe.cosmicaces
 |   |   +-- RaiderEncounter: aparición, muerte y reaparición del enemigo en el mundo.
 |   |   |   1. advance() [2 sobrecargas]  2. destroyActive()  3. respawnAt()
 |   |   |   4. isActive()  5. isDefeated()  6. raider()  7. setVisuals()
-|   |   +-- VesperRaiderSheet: lamina v3 y cinco recortes del enemigo.
+|   |   +-- VesperRaiderSheet: laminas v4 de vuelo/disparo y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()
 |   |   |   7. cannonMouths()  8. firingPlacement()
