@@ -20,6 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
+| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
@@ -122,6 +123,34 @@ fogonazo, input, proyectiles y HUD pertenecen a COS-27. Al integrarlos, conserva
 la escala y ancla del cuerpo entre variantes: las imágenes fuente de disparo
 tienen diferencias de geometría y margen respecto a las originales; no estirar
 cada pose para rellenar la caja ni aumentar la caja de vuelo por el fogonazo.
+
+### Audio de PhaseOne y loop de cabina (COS-42)
+
+`infrastructure.gdx.audio.PhaseOneAudio` es el adaptador de audio de la fase, propietario de los
+recursos nativos de sonido: encapsula `Gdx.audio`/`Gdx.files` para que el dominio y
+`PhaseOneGameController` no importen clases de audio y centraliza los volúmenes (sin UI de mezcla
+por alcance de COS-41). `PhaseOneScreen` lo construye junto con los demás recursos (con limpieza
+parcial en el constructor) y lo libera exactamente una vez en `dispose()`, de modo que cambiar de
+pantalla o cerrar el juego detiene y libera la música; WelcomeScreen no crea audio de combate.
+
+El ambiente de cabina se reproduce como `Music` en bucle desde
+`assets/sounds/sound-airplane-cabin-near-ground-pcm16.wav`, un WAV PCM 16-bit estéreo 44,1 kHz de
+120 s derivado del original Float32 de 42 MB (que permanece intacto). La conversión es obligatoria:
+el decoder `Wav` del backend LWJGL3 1.12.1 solo admite PCM (tipo 1) de 16 bits y rechaza IEEE float
+y otros bits con `GdxRuntimeException`. El derivado se generó con
+`afconvert -f WAVE -d LEI16@44100 -c 2` preservando canales, sample rate y duración. `Music` se
+reproduce como stream sin cargar el clip entero como efecto corto.
+
+La política de loop es un helper puro y testeable sin dispositivo de audio:
+`PhaseOneAudio.cabinAmbienceAudible(astraActive, runFinished, flightSpeed)` — audible solo con
+Astra activa, fase sin terminar y velocidad de avance finita > 0 (estado real de la nave, nunca una
+tecla sostenida). `updateCabinAmbience(boolean)` es idempotente: solo llama `play()`/`pause()` en el
+cambio de estado, de modo que un frame nunca reinicia, copia ni apila el stream (`Music.play()` de
+OpenALMusic ya es no-op si está sonando y `pause()` conserva la posición). La pantalla evalúa la
+política una vez por frame después de `updateExplosions(...)`, cuando `runFinished`, vida de Astra y
+velocidad ya reflejan este frame: destrucción de Astra, velocidad cero, fin de fase o salida de
+pantalla pausan/detienen el loop; el vuelo activo posterior reanuda la misma instancia. COS-43 y
+COS-44 extienden este mismo dueño con los efectos de ráfaga y explosión.
 
 ### Detector de colisiones preparado para COS-32
 
@@ -600,6 +629,9 @@ com.davidpe.cosmicaces
         |   |   1. publish()
         |   +-- Subscription: cancelacion de un listener.
         |       1. cancel()
+        +-- audio
+        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne y loop de cabina.
+        |       1. updateCabinAmbience()  2. cabinAmbienceAudible()  3. dispose()
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()
