@@ -16,10 +16,10 @@ class AstraTest {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     ship.fly(FlightControls.neutral(), 1f, WORLD);
-    assertEquals(6300f, ship.y(), EPS);
+    assertEquals(6230f, ship.y(), EPS);
     ship.placeAt(1600f, 6000f, 180f, WORLD);
     ship.fly(FlightControls.neutral(), 1f, WORLD);
-    assertEquals(5700f, ship.y(), EPS);
+    assertEquals(5770f, ship.y(), EPS);
     assertEquals(0f, ship.height());
     assertEquals(0f, ship.pitchDegrees());
   }
@@ -30,7 +30,7 @@ class AstraTest {
         Astra ship = new Astra();
         ship.placeAt(1600f, 6000f, 0f, WORLD);
         ship.fly(new FlightControls(!right, right, up, !up, false), 0.5f, WORLD);
-        assertEquals(right ? 45f : -45f, ship.yawDegrees(), 0.01f);
+        assertEquals(right ? 65f : -65f, ship.yawDegrees(), 0.01f);
         assertEquals(right ? HeroShipSheet.Pose.YAW_RIGHT : HeroShipSheet.Pose.YAW_LEFT,
             ship.pose());
       }
@@ -40,7 +40,7 @@ class AstraTest {
     ship.fly(new FlightControls(false, true, false, false, false), 1f, WORLD);
     assertEquals(0f, ship.yawDegrees(), 0.01f);
     assertEquals(1900f, ship.x(), EPS);
-    assertEquals(6300f, ship.y(), EPS);
+    assertEquals(6230f, ship.y(), EPS);
     assertEquals(HeroShipSheet.Pose.RIGHT, ship.pose());
   }
 
@@ -48,8 +48,8 @@ class AstraTest {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     FlightControls turn = new FlightControls(false, true, true, false, false);
-    ship.fly(turn, 4f, WORLD);
-    assertEquals(0f, ship.yawDegrees(), 0.02f);
+    ship.fly(turn, 360f / FlightTuning.YAW_RATE_DEGREES, WORLD);
+    assertEquals(0f, ship.yawDegrees(), 0.05f);
     assertTrue(ship.x() > 1000f && ship.x() < 2200f);
     assertTrue(ship.y() > 5400f && ship.y() < 6600f);
   }
@@ -57,10 +57,24 @@ class AstraTest {
   @Test void oppositeLateralKeysCancelAndTurboAccelerates() {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
-    ship.fly(new FlightControls(true,true,true,false,false), 1f, WORLD);
+    ship.fly(new FlightControls(true,true,true,false,false), 1.1f, WORLD);
     assertEquals(0f, ship.yawDegrees(), 0.01f);
     assertEquals(1600f, ship.x(), EPS);
     assertEquals(550f, ship.flightSpeed(), EPS);
+  }
+
+  @Test void neutralFlightRecoversFromTurboAndBrakeToTheNewCruiseSpeed() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false,false,true,false,false), 1.1f, WORLD);
+    assertEquals(550f, ship.flightSpeed(), EPS);
+    ship.fly(FlightControls.neutral(), 2f, WORLD);
+    assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS);
+
+    ship.fly(new FlightControls(false,false,true,true,false), 1f, WORLD);
+    assertEquals(0f, ship.flightSpeed(), EPS);
+    ship.fly(FlightControls.neutral(), 2f, WORLD);
+    assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS);
   }
 
   @Test void allEdgesAndCornersSteerInward() {
@@ -105,9 +119,10 @@ class AstraTest {
     ship.fly(new FlightControls(false,false,true,false,false), 4f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
     assertEquals(550f, ship.flightSpeed(), EPS);
-    ship.fly(new FlightControls(false,false,false,false,true), 1f, WORLD);
+    ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
-    assertEquals(300f, ship.flightSpeed(), EPS);
+    assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS,
+        "a spent Ultra recovers to cruise");
   }
 
   @Test void shotAtFiresFromTwoDistinctMeasuredCannonMouths() {

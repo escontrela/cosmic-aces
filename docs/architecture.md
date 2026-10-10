@@ -44,7 +44,9 @@ rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
 unidades. `FlightTuning` reúne las cifras
-de velocidad, aceleración, frenado y giro aprobadas; el borde anticipa el giro
+de velocidad, aceleración, frenado y giro aprobadas (crucero 230 u/s, turbo 550,
+Ultra 750, giro 130°/s; el desplazamiento lateral-solo conserva 300 u/s como
+`STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
 estrellas cubren todo el mapa y las isletas de bloques permanecen en las mismas

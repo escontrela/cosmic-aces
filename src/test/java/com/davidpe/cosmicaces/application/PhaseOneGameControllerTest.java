@@ -18,7 +18,7 @@ class PhaseOneGameControllerTest {
     controller.advanceFlight(FlightControls.neutral(), 5f, false);
     assertTrue(controller.isRunFinished());
     assertEquals(0f, controller.remainingRunSeconds());
-    assertEquals(before + 150f, controller.astra().y(), 0.2f);
+    assertEquals(before + 115f, controller.astra().y(), 0.2f);
     before = controller.astra().y();
     controller.advanceFlight(FlightControls.neutral(), 1f, false);
     assertEquals(before, controller.astra().y());
