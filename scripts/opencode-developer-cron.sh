@@ -7,7 +7,7 @@ PROMPT_FILE="$PROJECT_DIR/docs/agent-workflow/opencode-developer.md"
 LOCK_FILE="/private/tmp/cosmic-aces-opencode-developer-$(/usr/bin/id -u).lock"
 LOG_DIRECTORY="$HOME/Library/Logs/CosmicAces"
 LOG_FILE="$LOG_DIRECTORY/opencode-developer-$(/bin/date +%Y-%m-%d).log"
-PATH="/Users/davidpe/.opencode/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+PATH="/Users/davidpe/.opencode/bin:/opt/homebrew/bin:/usr/local/apache-maven/bin:/usr/local/bin:/usr/bin:/bin"
 export PATH
 
 /bin/mkdir -p "$LOG_DIRECTORY"

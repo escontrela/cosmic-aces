@@ -2,8 +2,8 @@ package com.davidpe.cosmicaces.domain.player;
 
 /** Approved phase-one flight parameters, in world units and seconds. */
 public final class FlightTuning {
-  public static final float NORMAL_SPEED = 230f;
-  public static final float TURBO_SPEED = 550f;
+  public static final float NORMAL_SPEED = 150f;
+  public static final float TURBO_SPEED = 650f;
   public static final float ULTRA_SPEED = 750f;
   public static final float BRAKE_RATE = 450f;
   public static final float RECOVERY_RATE = 300f;

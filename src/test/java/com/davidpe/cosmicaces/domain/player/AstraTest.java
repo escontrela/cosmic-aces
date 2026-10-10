@@ -16,10 +16,10 @@ class AstraTest {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     ship.fly(FlightControls.neutral(), 1f, WORLD);
-    assertEquals(6230f, ship.y(), EPS);
+    assertEquals(6150f, ship.y(), EPS);
     ship.placeAt(1600f, 6000f, 180f, WORLD);
     ship.fly(FlightControls.neutral(), 1f, WORLD);
-    assertEquals(5770f, ship.y(), EPS);
+    assertEquals(5850f, ship.y(), EPS);
     assertEquals(0f, ship.height());
     assertEquals(0f, ship.pitchDegrees());
   }
@@ -40,7 +40,7 @@ class AstraTest {
     ship.fly(new FlightControls(false, true, false, false, false), 1f, WORLD);
     assertEquals(0f, ship.yawDegrees(), 0.01f);
     assertEquals(1900f, ship.x(), EPS);
-    assertEquals(6230f, ship.y(), EPS);
+    assertEquals(6150f, ship.y(), EPS);
     assertEquals(HeroShipSheet.Pose.RIGHT, ship.pose());
   }
 
