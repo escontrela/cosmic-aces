@@ -200,7 +200,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
-    flightCamera.update(controller.astra(), delta);
+    // The camera frames the exploration view and widens into combat framing while the live enemy is
+    // inside the reference exploration view; it never receives a stale target after destruction,
+    // respawn wait or the end of the run.
+    flightCamera.update(controller.astra(), delta, cameraCombatTarget());
     // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
     // encounter and the camera update) so Vesper fires only while both ships are really visible.
     // The pre-movement sample above stays the scoring input and is never reused for the weapons.
@@ -331,6 +334,22 @@ public final class PhaseOneScreen extends ScreenAdapter {
         && shipVisible(raider.x() + raider.drawWidth() / 2f,
             raider.y() + raider.drawHeight() / 2f,
             Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+  }
+
+  /**
+   * The centre and half box of the enemy the combat camera should frame, or an inactive target when
+   * there is no live raider (destroyed, awaiting respawn, or the run has finished). Passed to the
+   * camera before it draws, so the framing decision uses only the enemy's world geometry.
+   */
+  private FlightCameraState.CombatTarget cameraCombatTarget() {
+    if (runFinished || !controller.isRaiderActive()) {
+      return FlightCameraState.CombatTarget.none();
+    }
+    VesperRaider raider = controller.activeRaider();
+    return new FlightCameraState.CombatTarget(true,
+        raider.x() + raider.drawWidth() / 2f,
+        raider.y() + raider.drawHeight() / 2f,
+        Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
   }
 
   /** Exact rotated-rectangle test deciding whether the off-camera raider is drawn. */

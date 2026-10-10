@@ -56,7 +56,20 @@ visible. `Starfield` conserva el scroll de la pantalla de bienvenida.
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
 La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
 0,10 s de retardo, para mantener la nave más abajo en pantalla; suaviza el yaw
-durante 0,25 s y usa zoom 1,00/1,08/1,15.
+durante 0,25 s y usa zoom 1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
+de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
+referencia** (centro de Astra, yaw suavizado, adelanto fijo 100 y zoom del modo de
+vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
+a zoom `max(modo de vuelo, 1,25)` y adelanto 30, interpolados con las mismas
+constantes (0,25 s zoom, 0,10 s posición). El cambio es un latch con umbrales
+distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
+más de 0,75 s más allá de un margen adicional de 120 unidades, de modo que los
+cruces breves del borde no alternan el modo. Sin enemigo activo (destruido, en
+espera de reaparecer o fase terminada) el objetivo se libera de inmediato y los
+valores vuelven suavemente; la referencia estable evita que el zoom de combate se
+active a sí mismo. `PhaseOneScreen` pasa el centro/caja del raider activo antes de
+dibujar; la visibilidad de armas, dibujo y minimapa sigue usando la cámara real ya
+actualizada y la puntuación conserva su muestreo previo al movimiento.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
 `FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
 el mundo, sin panel ni títulos, y el score acumulado en la esquina superior
@@ -563,8 +576,10 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
-            +-- FlightCameraState: seguimiento y zoom interpolados.
-            |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados.
+            |   1. update() [2 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            |   6. combatActive()  7. aheadDistance()
+            |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
             |   1. shipVisible()
             +-- FlightCamera: aplica el estado a OrthographicCamera.

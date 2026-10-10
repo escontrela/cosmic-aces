@@ -14,8 +14,8 @@ final class FlightCamera {
     apply();
   }
 
-  void update(Astra astra, float deltaSeconds) {
-    state.update(astra, deltaSeconds);
+  void update(Astra astra, float deltaSeconds, FlightCameraState.CombatTarget target) {
+    state.update(astra, deltaSeconds, target);
     apply();
   }
 
