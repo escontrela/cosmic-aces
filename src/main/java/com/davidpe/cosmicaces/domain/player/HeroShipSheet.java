@@ -22,6 +22,29 @@ public final class HeroShipSheet {
   /** A rectangular region of a sheet, measured from the alpha channel. */
   public record Slice(int x, int y, int width, int height) {}
 
+  /**
+   * A cannon mouth of Astra, expressed as offsets from the center of the stable draw box: lateral is
+   * positive towards the ship's right and forward is positive towards the nose, both as fractions of
+   * the box width and height. Measured from the warm muzzle flashes of the prepared firing PNGs.
+   */
+  public record CannonMouth(float lateral, float forward) {}
+
+  /**
+   * Registration correction, in sheet pixels, that keeps the firing variant's body anchored on the
+   * flight variant of the same speed family for a given pose. {@code offsetXPx} is the difference of
+   * the body-center offsets from each slice center: {@code (bodyCx - w/2)} of the flight slice minus
+   * the same value of the firing slice; {@code offsetYPx} uses {@code (h/2 - bodyCy)} so it stays
+   * valid in the drawn (bottom-left) frame, where the vertical mirror of the Raider cancels out.
+   * Measured on the bundled PNGs with the warm-flash color criterion shared with the tests.
+   */
+  public record FiringPlacement(float offsetXPx, float offsetYPx) {
+    public FiringPlacement {
+      if (!Float.isFinite(offsetXPx) || !Float.isFinite(offsetYPx)) {
+        throw new IllegalArgumentException("Firing placement offsets must be finite");
+      }
+    }
+  }
+
   /** One hero ship sprite sheet: its classpath location, size and measured pose slices. */
   public static final class Sheet {
 
@@ -122,6 +145,49 @@ public final class HeroShipSheet {
   /** Firing variants in the same pose order; separate from the existing flight-size reference. */
   public static List<Sheet> firingSheets() {
     return List.of(NORMAL_FIRING, ACCELERATE_FIRING);
+  }
+
+  /**
+   * The two measured M61 Vulcan cannon mouths per pose, ordered left then right. Lateral and forward
+   * are fractions of the stable draw box center, so every pose and speed variant shares the same
+   * anchor: {@code Ship.draw} already centers each slice without stretching it. The values are the
+   * warm muzzle flashes measured on {@link #NORMAL_FIRING}; the accelerate firing sheet keeps the
+   * same body anchor but also carries the engine flame, which is not a cannon mouth. Projectile
+   * origins and, later, the muzzle-flash registration both reuse this geometry.
+   */
+  public static List<CannonMouth> cannonMouths(Pose pose) {
+    return CANNON_MOUTHS.get(pose.ordinal());
+  }
+
+  private static final List<List<CannonMouth>> CANNON_MOUTHS = List.of(
+      List.of(new CannonMouth(-0.214f, 0.128f), new CannonMouth(0.220f, 0.129f)),
+      List.of(new CannonMouth(-0.266f, 0.132f), new CannonMouth(0.260f, 0.133f)),
+      List.of(new CannonMouth(-0.215f, 0.124f), new CannonMouth(0.216f, 0.123f)),
+      List.of(new CannonMouth(-0.133f, 0.210f), new CannonMouth(0.340f, 0.083f)),
+      List.of(new CannonMouth(-0.332f, 0.075f), new CannonMouth(0.162f, 0.179f)));
+
+  /**
+   * Registration of each firing pose against its flight counterpart: normal family first (indices
+   * 0-4 for {@link Pose}) and accelerate family next (indices 5-9). See {@link FiringPlacement} for
+   * the measurement convention; values come from {@link #NORMAL}/{@link #NORMAL_FIRING} and
+   * {@link #ACCELERATE}/{@link #ACCELERATE_FIRING} on the bundled PNGs.
+   */
+  private static final List<FiringPlacement> FIRING_PLACEMENTS = List.of(
+      new FiringPlacement(5.0f, -1.5f),
+      new FiringPlacement(3.5f, 1.0f),
+      new FiringPlacement(-1.0f, 1.0f),
+      new FiringPlacement(0.0f, 2.0f),
+      new FiringPlacement(-5.5f, 0.0f),
+      new FiringPlacement(0.0f, -1.0f),
+      new FiringPlacement(6.0f, -1.0f),
+      new FiringPlacement(-1.5f, 0.5f),
+      new FiringPlacement(2.0f, 0.0f),
+      new FiringPlacement(0.5f, -3.0f));
+
+  /** Correction that keeps the firing variant anchored on its speed family's flight pose. */
+  public static FiringPlacement firingPlacement(Pose pose, boolean accelerating) {
+    int index = pose.ordinal() + (accelerating ? Pose.values().length : 0);
+    return FIRING_PLACEMENTS.get(index);
   }
 
   private HeroShipSheet() {}

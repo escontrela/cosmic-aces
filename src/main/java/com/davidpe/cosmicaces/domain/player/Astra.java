@@ -6,6 +6,9 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.utils.Disposable;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.ship.Ship;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
+import java.util.ArrayList;
+import java.util.List;
 
 /** The player's ship and its continuous, world-space flight state. */
 public final class Astra extends Ship {
@@ -19,6 +22,7 @@ public final class Astra extends Ship {
   private Visuals visuals;
   private HeroShipSheet.Pose pose = HeroShipSheet.Pose.NEUTRAL;
   private boolean accelerating;
+  private boolean muzzleFlashVisible;
   private float yawDegrees;
   private float flightSpeed = FlightTuning.NORMAL_SPEED;
   private float ultraRemainingSeconds;
@@ -35,6 +39,11 @@ public final class Astra extends Ship {
 
   public void setVisuals(Visuals visuals) {
     this.visuals = visuals;
+  }
+
+  /** Presentation flag driven by the cannon's own emission pulse; never independently timed. */
+  public void setMuzzleFlashVisible(boolean muzzleFlashVisible) {
+    this.muzzleFlashVisible = muzzleFlashVisible;
   }
 
   public float yawDegrees() {
@@ -160,6 +169,37 @@ public final class Astra extends Ship {
     return normalized;
   }
 
+  /**
+   * Builds a two-cannon emission snapshot from a box center and heading, freezing the direction and
+   * both measured {@link HeroShipSheet.CannonMouth} origins so later turns or movement cannot bend
+   * the shots. The heading uses {@code forward=(sin yaw, cos yaw)} and {@code right=(cos yaw,
+   * -sin yaw)}; the mouths are transformed with the current pose's lateral/forward offsets.
+   *
+   * @param centerX world X of the stable box center
+   * @param centerY world Y of the stable box center
+   * @param yawDegrees heading at the emission instant; zero points north
+   * @param range travel distance frozen into each projectile
+   */
+  public GunBurst.Shot shotAt(float centerX, float centerY, float yawDegrees, float range) {
+    if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(yawDegrees)) {
+      throw new IllegalArgumentException("Shot center and heading must be finite");
+    }
+    double radians = Math.toRadians(yawDegrees);
+    float forwardX = (float) Math.sin(radians);
+    float forwardY = (float) Math.cos(radians);
+    float rightX = (float) Math.cos(radians);
+    float rightY = (float) -Math.sin(radians);
+    List<GunBurst.Muzzle> muzzles = new ArrayList<>(HeroShipSheet.cannonMouths(pose).size());
+    for (HeroShipSheet.CannonMouth mouth : HeroShipSheet.cannonMouths(pose)) {
+      float lateral = mouth.lateral() * drawWidth();
+      float forward = mouth.forward() * drawHeight();
+      muzzles.add(new GunBurst.Muzzle(
+          centerX + rightX * lateral + forwardX * forward,
+          centerY + rightY * lateral + forwardY * forward));
+    }
+    return new GunBurst.Shot(muzzles, forwardX, forwardY, range);
+  }
+
   HeroShipSheet.Pose pose() {
     return pose;
   }
@@ -173,7 +213,24 @@ public final class Astra extends Ship {
     if (visuals == null) {
       throw new IllegalStateException("Astra visuals have not been attached");
     }
-    return visuals.region(pose, accelerating);
+    return visuals.region(pose, accelerating, muzzleFlashVisible);
+  }
+
+  /**
+   * Keeps the body anchored between the flight and firing variants: while the muzzle flash is
+   * visible the firing region is shifted by the pose/family correction measured on the sheets, with
+   * the same uniform scale and the rotation pivot unchanged (the draw origin stays on the box
+   * center).
+   */
+  @Override
+  protected SpritePlacement spritePlacement(TextureRegion region) {
+    SpritePlacement centered = super.spritePlacement(region);
+    if (!muzzleFlashVisible) {
+      return centered;
+    }
+    HeroShipSheet.FiringPlacement firing = HeroShipSheet.firingPlacement(pose, accelerating);
+    return new SpritePlacement(centered.scale(),
+        firing.offsetXPx() * centered.scale(), firing.offsetYPx() * centered.scale());
   }
 
   private static int maxRegionWidth() {

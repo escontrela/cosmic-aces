@@ -4,7 +4,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import java.util.List;
 
 /**
- * Metadata of the Vesper Raider v3 sprite sheet. Its five measured regions lie left to right:
+ * Metadata of the Vesper Raider v4 sprite sheet. Its five measured regions lie left to right:
  * left bank, neutral, right bank, right yaw and left yaw. The yaw poses accompany bounded heading
  * changes and the bank poses cover drift or straight flight.
  */
@@ -22,34 +22,82 @@ public final class VesperRaiderSheet {
   /** A rectangular region of the sheet. */
   public record Slice(int x, int y, int width, int height) {}
 
-  public static final int WIDTH = 1983;
-  public static final int HEIGHT = 793;
+  /**
+   * A cannon mouth of the Raider, expressed as offsets from the center of the stable draw box:
+   * lateral is positive towards the ship's right and forward is positive towards the nose, both as
+   * fractions of the box width and height. Measured from the two warm muzzle flashes that the
+   * firing PNG adds at the nose.
+   */
+  public record CannonMouth(float lateral, float forward) {}
 
-  public static final int FIRING_WIDTH = 1983;
-  public static final int FIRING_HEIGHT = 793;
+  /**
+   * Registration correction in sheet pixels, anchored on the blue cockpit lens rather than the
+   * muzzle flash or engine bounds. X is the firing lens offset from its slice center minus the
+   * flight lens offset; Y is the same source-image difference. Ship.draw subtracts these offsets
+   * from the image position after orientedForDescent flips it, keeping the cockpit fixed.
+   */
+  public record FiringPlacement(float offsetXPx, float offsetYPx) {
+    public FiringPlacement {
+      if (!Float.isFinite(offsetXPx) || !Float.isFinite(offsetYPx)) {
+        throw new IllegalArgumentException("Firing placement offsets must be finite");
+      }
+    }
+  }
+
+  public static final int WIDTH = 2079;
+  public static final int HEIGHT = 756;
+
+  public static final int FIRING_WIDTH = 2079;
+  public static final int FIRING_HEIGHT = 756;
   private static final String FIRING_INTERNAL_PATH =
-      "assets/images/enemy/vesper_raider_roll_sheet_v3_firing.png";
+      "assets/images/enemy/vesper_raider/vesper_raider_roll_sheet_v4_firing.png";
 
   private static final List<Slice> FIRING_SLICES = List.of(
-      new Slice(14, 125, 405, 563),
-      new Slice(419, 127, 416, 559),
-      new Slice(835, 129, 405, 556),
-      new Slice(1244, 132, 291, 519),
-      new Slice(1581, 130, 373, 520));
+      new Slice(7, 91, 371, 560),
+      new Slice(383, 94, 405, 555),
+      new Slice(804, 87, 396, 562),
+      new Slice(1228, 95, 416, 551),
+      new Slice(1672, 85, 407, 566));
 
-  private static final String INTERNAL_PATH = "assets/images/enemy/vesper_raider_roll_sheet_v3.png";
+  private static final String INTERNAL_PATH =
+      "assets/images/enemy/vesper_raider/vesper_raider_roll_sheet_v4.png";
 
-  private static final List<Slice> SLICES =
-      List.of(
-          new Slice(10, 130, 409, 552),
-          new Slice(419, 134, 416, 548),
-          new Slice(835, 134, 402, 548),
-          new Slice(1242, 134, 291, 513),
-          new Slice(1585, 135, 368, 513));
+  // Measured alpha bounds, with two pixels of padding. These are not uniform grid cells.
+  private static final List<Slice> SLICES = List.of(
+      new Slice(16, 116, 374, 535),
+      new Slice(398, 127, 434, 526),
+      new Slice(839, 116, 377, 535),
+      new Slice(1229, 119, 418, 542),
+      new Slice(1676, 118, 401, 542));
+
+  /** Nose cannon exits measured at the bases of the two v4 muzzle flashes. */
+  private static final List<List<CannonMouth>> CANNON_MOUTHS = List.of(
+      List.of(new CannonMouth(-0.0086f, 0.4147f), new CannonMouth(0.0910f, 0.4147f)),
+      List.of(new CannonMouth(-0.0424f, 0.4117f), new CannonMouth(0.0535f, 0.4117f)),
+      List.of(new CannonMouth(-0.0923f, 0.4148f), new CannonMouth(0.0037f, 0.4148f)),
+      List.of(new CannonMouth(0.1156f, 0.4401f), new CannonMouth(0.1875f, 0.3903f)),
+      List.of(new CannonMouth(-0.2611f, 0.3663f), new CannonMouth(-0.1808f, 0.4253f)));
+
+  /** Per-pose registration of the firing variant against the flight variant, in Pose order. */
+  private static final List<FiringPlacement> FIRING_PLACEMENTS = List.of(
+      new FiringPlacement(-13.31f, 16.25f),
+      new FiringPlacement(-17.00f, 19.64f),
+      new FiringPlacement(21.51f, 15.81f),
+      new FiringPlacement(-3.61f, 27.52f),
+      new FiringPlacement(41.98f, 25.52f));
 
   static {
     validate(SLICES, WIDTH, HEIGHT);
     validate(FIRING_SLICES, FIRING_WIDTH, FIRING_HEIGHT);
+    if (CANNON_MOUTHS.size() != Pose.values().length) {
+      throw new IllegalStateException(
+          "The raider sheet must define cannon mouths for every pose, got " + CANNON_MOUTHS.size());
+    }
+    if (FIRING_PLACEMENTS.size() != Pose.values().length) {
+      throw new IllegalStateException(
+          "The raider sheet must define firing placement for every pose, got "
+              + FIRING_PLACEMENTS.size());
+    }
   }
 
   private static void validate(List<Slice> slices, int width, int height) {
@@ -94,6 +142,16 @@ public final class VesperRaiderSheet {
 
   public static List<Slice> firingSlices() {
     return FIRING_SLICES;
+  }
+
+  /** The two measured cannon mouths of the given pose, ordered left then right. */
+  public static List<CannonMouth> cannonMouths(Pose pose) {
+    return CANNON_MOUTHS.get(pose.ordinal());
+  }
+
+  /** Correction that keeps the firing variant anchored on the flight pose. */
+  public static FiringPlacement firingPlacement(Pose pose) {
+    return FIRING_PLACEMENTS.get(pose.ordinal());
   }
 
   public static int maxSliceWidth() {

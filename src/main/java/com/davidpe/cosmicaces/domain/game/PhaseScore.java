@@ -16,6 +16,8 @@ public final class PhaseScore {
   public static final int BASE_POINTS_PER_SECOND = 1;
   /** Extra points granted for each complete second of visible player/enemy coincidence. */
   public static final int COINCIDENCE_POINTS_PER_SECOND = 10;
+  /** Bonus granted once for each destroyed Vesper Raider. */
+  public static final int RAIDER_DESTROYED_BONUS = 1000;
   /**
    * Tolerance used when converting accumulated time to whole seconds, so binary float error from
    * summing small deltas does not lose a second that is mathematically complete.
@@ -26,6 +28,7 @@ public final class PhaseScore {
   private float coincidenceSeconds;
   private int awardedBaseSeconds;
   private int awardedCoincidenceSeconds;
+  private int bonusPoints;
 
   /**
    * Adds valid game time and returns the points newly earned by crossing whole-second boundaries.
@@ -51,10 +54,21 @@ public final class PhaseScore {
     return earned;
   }
 
-  /** Total points awarded so far: complete run seconds plus coincidence bonuses. */
+  /** Total points awarded so far: complete run seconds plus coincidence and destruction bonuses. */
   public int totalPoints() {
     return awardedBaseSeconds * BASE_POINTS_PER_SECOND
-        + awardedCoincidenceSeconds * COINCIDENCE_POINTS_PER_SECOND;
+        + awardedCoincidenceSeconds * COINCIDENCE_POINTS_PER_SECOND
+        + bonusPoints;
+  }
+
+  /**
+   * Adds the single bonus for destroying the Vesper Raider and returns the points granted, so the
+   * caller can publish them. Call exactly once per destruction; respawns, wrecks and isolated
+   * impacts must never call it.
+   */
+  public int awardRaiderDestroyed() {
+    bonusPoints += RAIDER_DESTROYED_BONUS;
+    return RAIDER_DESTROYED_BONUS;
   }
 
   private static int wholeSeconds(float seconds) {

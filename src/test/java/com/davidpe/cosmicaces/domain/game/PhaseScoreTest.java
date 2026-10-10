@@ -76,4 +76,16 @@ class PhaseScoreTest {
     // 5 complete run seconds (5 base) plus 3 complete coincidence seconds (30 bonus).
     assertEquals(35, score.totalPoints());
   }
+
+  @Test
+  void raiderDestructionAwardsTheBonusOnceAndAddsToTheTotal() {
+    PhaseScore score = new PhaseScore();
+    score.advance(5f, true);
+
+    assertEquals(55, score.totalPoints(), "5 complete seconds, all coincident");
+    assertEquals(1000, score.awardRaiderDestroyed());
+    assertEquals(1055, score.totalPoints());
+    assertEquals(1000, score.awardRaiderDestroyed(), "a second destruction awards another 1000");
+    assertEquals(2055, score.totalPoints());
+  }
 }

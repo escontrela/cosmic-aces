@@ -9,9 +9,13 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 /** Minimal fixed-screen flight readings drawn directly over the world. */
 final class FlightHud {
   private static final String[] DIRECTIONS = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+  private static final String WEAPON_LABEL = "M61 VULCAN";
   private static final Color SHADOW = new Color(0f, 0f, 0f, 0.85f);
   private static final Color HEADING_COLOR = new Color(0.44f, 0.86f, 0.96f, 1f);
+  private static final Color ENERGY_COLOR = new Color(0.52f, 0.95f, 0.62f, 1f);
   private final GlyphLayout scoreLayout = new GlyphLayout();
+  private final GlyphLayout weaponLayout = new GlyphLayout();
+  private final GlyphLayout energyLayout = new GlyphLayout();
 
   static String headingLabel(float yawDegrees) {
     int index = headingIndex(yawDegrees);
@@ -23,7 +27,19 @@ final class FlightHud {
     return degrees < 0 ? degrees + 360 : degrees;
   }
 
-  void draw(SpriteBatch batch, BitmapFont font, float yawDegrees, float speed) {
+  /** The active weapon shown while Astra's trigger is effective, empty otherwise. */
+  static String weaponLabel(boolean isFiring) {
+    return isFiring ? WEAPON_LABEL : "";
+  }
+
+  /** Astra's remaining energy as a readable percentage, clamped to the 0-100 domain range. */
+  static String energyLabel(int energyPercent) {
+    int clamped = Math.max(0, Math.min(100, energyPercent));
+    return "ENERGIA " + clamped + "%";
+  }
+
+  void draw(SpriteBatch batch, BitmapFont font, float yawDegrees, float speed,
+      boolean isFiring, int energyPercent) {
     String heading = headingLabel(yawDegrees) + " " + threeDigits(headingDegrees(yawDegrees));
     String velocity = Math.round(speed) + " km/h";
     batch.begin();
@@ -33,6 +49,8 @@ final class FlightHud {
     font.draw(batch, heading, 24f, 35f);
     font.setColor(Color.WHITE);
     font.draw(batch, velocity, 662f, 35f);
+    drawEnergy(batch, font, energyPercent);
+    drawWeapon(batch, font, isFiring);
     batch.end();
   }
 
@@ -47,6 +65,33 @@ final class FlightHud {
     font.setColor(Color.WHITE);
     font.draw(batch, scoreLayout, x, y);
     batch.end();
+  }
+
+  /** M61 Vulcan label in a free bottom row, centered so it never touches heading, speed or score. */
+  private void drawWeapon(SpriteBatch batch, BitmapFont font, boolean isFiring) {
+    String label = weaponLabel(isFiring);
+    if (label.isEmpty()) {
+      return;
+    }
+    weaponLayout.setText(font, label);
+    float x = (VirtualScreenSize.WIDTH - weaponLayout.width) / 2f;
+    float y = 58f;
+    drawShadow(font, batch, label, x, y);
+    font.setColor(Color.WHITE);
+    font.draw(batch, weaponLayout, x, y);
+  }
+
+  /**
+   * Astra's energy on the bottom-left row, below the heading and clear of the centered weapon.
+   * It stays visible at 0% while the ship waits and at 100% right after respawn.
+   */
+  private void drawEnergy(SpriteBatch batch, BitmapFont font, int energyPercent) {
+    String label = energyLabel(energyPercent);
+    energyLayout.setText(font, label);
+    float y = 58f;
+    drawShadow(font, batch, label, 24f, y);
+    font.setColor(ENERGY_COLOR);
+    font.draw(batch, energyLayout, 24f, y);
   }
 
   private static int headingIndex(float yawDegrees) {

@@ -7,10 +7,13 @@ import com.badlogic.gdx.utils.Disposable;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.ship.MovementIntent;
 import com.davidpe.cosmicaces.domain.ship.Ship;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * An autonomous enemy that flies by its own heading and wanders the finite world. Its heading uses
- * the descent convention (0 points down, positive turns right) so the v3 sheet keeps its orientation
+ * the descent convention (0 points down, positive turns right) so the v4 sheet keeps its orientation
  * when the sprite is rotated by the heading.
  */
 public final class VesperRaider extends Ship {
@@ -20,6 +23,7 @@ public final class VesperRaider extends Ship {
   private float headingDegrees;
   private int turnDirection;
   private int driftDirection;
+  private boolean muzzleFlashVisible;
   private Visuals visuals;
 
   public VesperRaider(float speed, float width, float height, float x, float y,
@@ -34,6 +38,11 @@ public final class VesperRaider extends Ship {
 
   public void setVisuals(Visuals visuals) {
     this.visuals = visuals;
+  }
+
+  /** Presentation flag driven by the cannon's own emission pulse; never independently timed. */
+  public void setMuzzleFlashVisible(boolean muzzleFlashVisible) {
+    this.muzzleFlashVisible = muzzleFlashVisible;
   }
 
   public float width() {
@@ -60,6 +69,26 @@ public final class VesperRaider extends Ship {
     }
     this.headingDegrees = normalizeYaw(headingDegrees);
     turnDirection = 0;
+  }
+
+  /** Places the raider centre at a world point while keeping it inside the finite world. */
+  public void placeAt(float x, float y, float headingDegrees, WorldBounds world) {
+    if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("Raider position and heading must be finite");
+    }
+    setPosition(world.clampX(x, drawWidth()), world.clampY(y, drawHeight()));
+    setHeadingDegrees(headingDegrees);
+    setDriftDirection(0);
+  }
+
+  /** World X of the ship's stable body centre. */
+  public float centerX() {
+    return x() + drawWidth() / 2f;
+  }
+
+  /** World Y of the ship's stable body centre. */
+  public float centerY() {
+    return y() + drawHeight() / 2f;
   }
 
   /** Records the side of the current drift so the banked pose can reflect it. */
@@ -100,6 +129,39 @@ public final class VesperRaider extends Ship {
     return VesperRaiderSheet.poseForBank(driftDirection);
   }
 
+  /**
+   * Builds a two-cannon emission snapshot from a box center and heading, freezing the direction and
+   * both measured {@link VesperRaiderSheet.CannonMouth} origins so later turns or movement cannot
+   * bend the shots. The descent heading uses {@code forward=(sin heading, -cos heading)} and
+   * {@code right=(cos heading, sin heading)}; the mouths are transformed with the current pose's
+   * lateral/forward offsets.
+   *
+   * @param centerX world X of the stable box center
+   * @param centerY world Y of the stable box center
+   * @param headingDegrees descent heading at the emission instant; zero points down
+   * @param range travel distance frozen into each projectile
+   */
+  public GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees, float range) {
+    if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("Shot center and heading must be finite");
+    }
+    double radians = Math.toRadians(headingDegrees);
+    float forwardX = (float) Math.sin(radians);
+    float forwardY = (float) -Math.cos(radians);
+    float rightX = (float) Math.cos(radians);
+    float rightY = (float) Math.sin(radians);
+    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose());
+    List<GunBurst.Muzzle> muzzles = new ArrayList<>(mouths.size());
+    for (VesperRaiderSheet.CannonMouth mouth : mouths) {
+      float lateral = mouth.lateral() * drawWidth();
+      float forward = mouth.forward() * drawHeight();
+      muzzles.add(new GunBurst.Muzzle(
+          centerX + rightX * lateral + forwardX * forward,
+          centerY + rightY * lateral + forwardY * forward));
+    }
+    return new GunBurst.Shot(muzzles, forwardX, forwardY, range);
+  }
+
   private static float normalizeYaw(float yaw) {
     float normalized = yaw % 360f;
     if (normalized > 180f) normalized -= 360f;
@@ -112,7 +174,25 @@ public final class VesperRaider extends Ship {
     if (visuals == null) {
       throw new IllegalStateException("Vesper Raider visuals have not been attached");
     }
-    return visuals.region(pose());
+    return visuals.region(pose(), muzzleFlashVisible);
+  }
+
+  /**
+   * Keeps the body anchored between the flight and firing variants: while the muzzle flash is
+   * visible the firing region is shifted by the per-pose correction measured on the sheets, with
+   * the same uniform scale and the rotation pivot unchanged (the draw origin stays on the box
+   * center). {@code orientedForDescent} is already applied once by {@link Visuals} and is never
+   * repeated per frame.
+   */
+  @Override
+  protected Ship.SpritePlacement spritePlacement(TextureRegion region) {
+    Ship.SpritePlacement centered = super.spritePlacement(region);
+    if (!muzzleFlashVisible) {
+      return centered;
+    }
+    VesperRaiderSheet.FiringPlacement firing = VesperRaiderSheet.firingPlacement(pose());
+    return new Ship.SpritePlacement(centered.scale(),
+        firing.offsetXPx() * centered.scale(), firing.offsetYPx() * centered.scale());
   }
 
   /** Flight and firing sheets shared by the single raider; owned by the phase screen. */

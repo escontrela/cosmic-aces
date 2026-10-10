@@ -117,6 +117,55 @@ class VesperRaiderSheetTest {
     }
   }
 
+  /**
+   * The firing placement metadata must keep the blue cockpit lens of each firing pose anchored on the
+   * flight pose, re-measured from the bundled PNGs with the blue-pixel rule.
+   */
+  @Test
+  void firingPlacementKeepsTheCockpitAnchoredOnTheFlightVariant() throws IOException {
+    BufferedImage flightImage = ImageIO.read(
+        getClass().getResource("/" + VesperRaiderSheet.internalPath()));
+    BufferedImage firingImage = ImageIO.read(
+        getClass().getResource("/" + VesperRaiderSheet.firingInternalPath()));
+    for (VesperRaiderSheet.Pose pose : VesperRaiderSheet.Pose.values()) {
+      VesperRaiderSheet.Slice flightSlice = VesperRaiderSheet.slice(pose);
+      VesperRaiderSheet.Slice firingSlice = VesperRaiderSheet.firingSlice(pose);
+      double[] flightHull = cockpitCenter(flightImage, flightSlice.x(), flightSlice.y(),
+          flightSlice.width(), flightSlice.height());
+      double[] firingHull = cockpitCenter(firingImage, firingSlice.x(), firingSlice.y(),
+          firingSlice.width(), firingSlice.height());
+      double expectedX = (firingHull[0] - firingSlice.width() / 2d)
+          - (flightHull[0] - flightSlice.width() / 2d);
+      double expectedY = (firingHull[1] - firingSlice.height() / 2d)
+          - (flightHull[1] - flightSlice.height() / 2d);
+      VesperRaiderSheet.FiringPlacement placement = VesperRaiderSheet.firingPlacement(pose);
+      assertEquals(expectedX, placement.offsetXPx(), 1f, "deltaX of " + pose);
+      assertEquals(expectedY, placement.offsetYPx(), 1f, "deltaY of " + pose);
+    }
+  }
+
+  /** Centroid of the blue cockpit lens in the top third, excluding the engine flames. */
+  private static double[] cockpitCenter(BufferedImage image, int sliceX, int sliceY,
+      int width, int height) {
+    double sumX = 0, sumY = 0;
+    int count = 0;
+    for (int y = 0; y < Math.min(100, height / 3); y++) {
+      for (int x = width / 4; x < width * 3 / 4; x++) {
+        int pixel = image.getRGB(sliceX + x, sliceY + y);
+        int red = (pixel >> 16) & 255;
+        int green = (pixel >> 8) & 255;
+        int blue = pixel & 255;
+        if ((pixel >>> 24) > 128 && blue > 150 && blue > red + 60 && green > 80) {
+          sumX += x;
+          sumY += y;
+          count++;
+        }
+      }
+    }
+    assertTrue(count > 0, "the slice must contain a blue cockpit lens");
+    return new double[] {sumX / count, sumY / count};
+  }
+
   @Test
   void lastPoseLeavesTheTransparentRightMargin() {
     VesperRaiderSheet.Slice last = VesperRaiderSheet.slice(VesperRaiderSheet.Pose.YAW_LEFT);
