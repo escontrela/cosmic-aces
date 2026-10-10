@@ -44,7 +44,9 @@ rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
 unidades. `FlightTuning` reúne las cifras
-de velocidad, aceleración, frenado y giro aprobadas; el borde anticipa el giro
+de velocidad, aceleración, frenado y giro aprobadas (crucero 230 u/s, turbo 550,
+Ultra 750, giro 130°/s; el desplazamiento lateral-solo conserva 300 u/s como
+`STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
 estrellas cubren todo el mapa y las isletas de bloques permanecen en las mismas
@@ -54,7 +56,20 @@ visible. `Starfield` conserva el scroll de la pantalla de bienvenida.
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
 La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
 0,10 s de retardo, para mantener la nave más abajo en pantalla; suaviza el yaw
-durante 0,25 s y usa zoom 1,00/1,08/1,15.
+durante 0,25 s y usa zoom 1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
+de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
+referencia** (centro de Astra, yaw suavizado, adelanto fijo 100 y zoom del modo de
+vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
+a zoom `max(modo de vuelo, 1,25)` y adelanto 30, interpolados con las mismas
+constantes (0,25 s zoom, 0,10 s posición). El cambio es un latch con umbrales
+distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
+más de 0,75 s más allá de un margen adicional de 120 unidades, de modo que los
+cruces breves del borde no alternan el modo. Sin enemigo activo (destruido, en
+espera de reaparecer o fase terminada) el objetivo se libera de inmediato y los
+valores vuelven suavemente; la referencia estable evita que el zoom de combate se
+active a sí mismo. `PhaseOneScreen` pasa el centro/caja del raider activo antes de
+dibujar; la visibilidad de armas, dibujo y minimapa sigue usando la cámara real ya
+actualizada y la puntuación conserva su muestreo previo al movimiento.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
 `FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
 el mundo, sin panel ni títulos, y el score acumulado en la esquina superior
@@ -168,14 +183,37 @@ Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige co
 `UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
 del punto de muerte, con fallback al mejor candidato y sin recrear texturas.
 
-`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, deriva
-±10° cada 4–6 s, giro 75°/s) y CA18: la sobrecarga
+`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, giro 75°/s)
+y CA18: la sobrecarga
 `advance(dt, world, targetX, targetY, targetVelX, targetVelY, targetRadius, selfRadius)`
 prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimiento
 relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
 contacto (radios + margen 70), gira perpendicular a la demora en un lado elegido por
 menor cambio de rumbo y lo mantiene ≥ 1,2 s para evitar oscilación; el vector de
-bordes interiores se mantiene. La sobrecarga de 4 argumentos conserva el
+bordes interiores se mantiene. Con COS-37 el combate añade fases explícitas
+(`Maneuver.APPROACH`, `ATTACK_PASS`, `REPOSITION`): en APPROACH se aproxima con un
+adelanto de intercepción acotado a 1 s (posición de Astra + velocidad × 1 s); al
+entrar en 350 unidades (ATTACK_PASS) compromete una pasada curva acotada que conserva
+la separación de disparo bajo 300 unidades, y termina al abrirse de nuevo o tras
+1,8 s; en REPOSITION se retira perpendicular por el lado de menor giro un mínimo de
+0,6 s (o hasta separarse) y un máximo de 2,5 s antes de volver a aproximarse. Con
+COS-40 la trayectoria deja de depender de `UnitRandom` después de la aparición: se
+retiró la deriva aleatoria y cada fase conserva una intención de vuelo persistente;
+el lado de órbita de la pasada y el de separación se fijan una sola vez al entrar en
+la maniobra con desempate determinista, de modo que no hay rectificaciones de lado por
+frame. `UnitRandom` queda solo para la espera inicial y para las posiciones de
+aparición/reaparición. El raider dispone además de un turbo táctico reproducible:
+`TURBO_SPEED_MULTIPLIER=1,5` sobre `RAIDER_SPEED`, ventana máxima
+`TURBO_MAX_SECONDS=1 s` y recuperación `TURBO_RECOVERY_SECONDS=4 s`, medidos con el
+mismo `delta`; se activa solo al cerrar distancia en APPROACH o REPOSITION (banda
+>350) y se corta ante un contacto previsto, un lado de evasión activo o una pasada
+firme. La predicción de contacto usa la velocidad efectiva para conservar la
+evitación. La evitación de choque y la respuesta de bordes siguen siendo la prioridad
+de seguridad sobre las tres fases. El plan (fase, lados y turbo) se reinicia en
+`spawn`, `destroyActive` y `respawnAt`, y `maneuver()`, `separationSide()`,
+`avoidanceSide()`, `isTurboActive()`, `turboSecondsRemaining()` y
+`turboRecoverySeconds()` (accesos de paquete) solo existen para las pruebas
+deterministas de dominio. La sobrecarga de 4 argumentos conserva el
 comportamiento de búsqueda pura para las pruebas deterministas. `PhaseOneScreen`
 llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainCombatPoints()`
 con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuando
@@ -377,13 +415,15 @@ alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
 rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
 instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
 ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
-salga de cámara. Con COS-32 la velocidad es 180 u/s, la deriva ±10° cada 4–6 s
+salga de cámara. Con COS-32 la velocidad es 180 u/s
 y `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
-tras la destrucción (véase «Combate determinista integrado (COS-32)»).
+tras la destrucción; con COS-37 alterna fases de aproximación, pasada acotada y
+reenganche (véase «Combate determinista integrado (COS-32)»), y con COS-40 esas
+fases usan rumbos deterministas sin deriva aleatoria y un turbo táctico acotado.
 `VesperRaider.steerTowards` gira el rumbo con un límite de
 velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
 girar o la de alabeo al derivar; el empuje acotado combina la aproximación al
-jugador con una deriva reproducible de `UnitRandom` y una respuesta suave en los
+jugador con una respuesta suave en los
 bordes. La posición se recorta al mundo solo como salvaguarda. `PhaseOneScreen`
 dibuja al raider cuando su círculo envolvente intersecta la vista real de la
 cámara, sin destruirlo al salir de cámara, y no pasa ninguna `PlayArea` al
@@ -391,6 +431,23 @@ controlador. `Starfield.draw(shapes)` y `WorldScenery.draw(shapes,...)`
 abren y cierran el dibujo con el ShapeRenderer recibido, que pertenece a la
 pantalla. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
+
+Con COS-39 `PhaseOneScreen` dibuja además un indicador de enemigo fuera de
+pantalla (`OffscreenEnemyIndicator`) en la pasada HUD, después de fijar
+`hudCamera`, entre sesiones de `SpriteBatch`/`ShapeRenderer` y sin anidar
+`begin`. La colocación es geometría pura: reutiliza
+`CameraVisibility.localFrame(...)` (el mismo marco de cámara con rotación y zoom
+que `shipVisible`) para orientar una flecha ámbar hacia el Vesper activo, se
+oculta con `CameraVisibility.shipVisible(...)` —una única regla de visibilidad,
+sin un segundo test discrepante— cuando el enemigo entra en la vista, y no
+escala con el zoom mundial. Solo se muestra si la fase sigue y
+`controller.isRaiderActive()`: muerto, esperando reaparecer, sin aparecer aún o
+con la fase terminada no hay indicador. El borde inferior del rectángulo
+interior se ancla en `MinimapProjection.BOTTOM_MARGIN` para no tapar las
+lecturas del HUD; mientras el minimapa está visible se le pasa su panel real
+como reserva y la flecha se desliza por el mismo borde conservando la dirección.
+No crea recursos nativos ni modifica el minimapa, las armas, el daño, la
+puntuación ni las cadencias.
 
 Consulta posición y pose en la nave: `controller.astra().x()`,
 `controller.activeRaider().y()`, `encounter.raider().headingDegrees()` y
@@ -550,10 +607,12 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
-            +-- FlightCameraState: seguimiento y zoom interpolados.
-            |   1. update()  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados.
+            |   1. update() [2 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            |   6. combatActive()  7. aheadDistance()
+            |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
-            |   1. shipVisible()
+            |   1. shipVisible()  2. localFrame() [marco de cámara compartido por el indicador]
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
@@ -562,7 +621,10 @@ com.davidpe.cosmicaces
             +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
                 1. toggle()  2. isVisible()  3. draw()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
-                1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
+            |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
+            |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
+                1. compute()  2. avoidReservations()  3. draw()
 ```
 
 ## Comportamiento provisional actual

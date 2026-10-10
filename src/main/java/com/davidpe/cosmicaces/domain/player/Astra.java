@@ -125,7 +125,7 @@ public final class Astra extends Ship {
     double radians = Math.toRadians(yawDegrees);
     float forwardX = (float) Math.sin(radians);
     float forwardY = (float) Math.cos(radians);
-    float strafe = controls.turning() ? 0f : lateral * FlightTuning.NORMAL_SPEED;
+    float strafe = controls.turning() ? 0f : lateral * FlightTuning.STRAFE_SPEED;
     float nextX = x() + (forwardX * flightSpeed + forwardY * strafe) * step;
     float nextY = y() + (forwardY * flightSpeed - forwardX * strafe) * step;
     setPosition(world.clampX(nextX, drawWidth()), world.clampY(nextY, drawHeight()));

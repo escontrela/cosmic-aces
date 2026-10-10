@@ -200,7 +200,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
-    flightCamera.update(controller.astra(), delta);
+    // The camera frames the exploration view and widens into combat framing while the live enemy is
+    // inside the reference exploration view; it never receives a stale target after destruction,
+    // respawn wait or the end of the run.
+    flightCamera.update(controller.astra(), delta, cameraCombatTarget());
     // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
     // encounter and the camera update) so Vesper fires only while both ships are really visible.
     // The pre-movement sample above stays the scoring input and is never reused for the weapons.
@@ -265,6 +268,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
+    // Off-screen Vesper indicator: drawn first so the minimap overlay never covers it, and only
+    // while a live raider stays outside the real camera view (destroyed, awaiting respawn, not yet
+    // appeared or a finished run produce no placement). The triangle stays above the fixed bottom
+    // band and slides off the minimap panel while the player keeps M open.
+    drawOffscreenIndicator();
     // Combat temporarily suppresses the overlay without changing the player's M preference.
     // Use the same current-camera visibility decision as the enemy drawing above.
     if (!enemyInViewport) {
@@ -333,12 +341,66 @@ public final class PhaseOneScreen extends ScreenAdapter {
             Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
   }
 
+  /**
+   * The centre and half box of the enemy the combat camera should frame, or an inactive target when
+   * there is no live raider (destroyed, awaiting respawn, or the run has finished). Passed to the
+   * camera before it draws, so the framing decision uses only the enemy's world geometry.
+   */
+  private FlightCameraState.CombatTarget cameraCombatTarget() {
+    if (runFinished || !controller.isRaiderActive()) {
+      return FlightCameraState.CombatTarget.none();
+    }
+    VesperRaider raider = controller.activeRaider();
+    return new FlightCameraState.CombatTarget(true,
+        raider.x() + raider.drawWidth() / 2f,
+        raider.y() + raider.drawHeight() / 2f,
+        Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+  }
+
   /** Exact rotated-rectangle test deciding whether the off-camera raider is drawn. */
   private boolean raiderVisible() {
     VesperRaider raider = controller.activeRaider();
     return shipVisible(raider.x() + raider.drawWidth() / 2f,
         raider.y() + raider.drawHeight() / 2f,
         Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+  }
+
+  /**
+   * Draws the HUD-edge arrow toward the live Vesper while it stays outside the camera view. The
+   * placement reuses the camera that actually drew this frame (position, up and zoom) and the same
+   * {@link CameraVisibility} rule as {@link #raiderVisible()}, so it never disagrees with the enemy
+   * drawing. It opens its own Filled session on the HUD projection; the minimap is drawn afterwards
+   * and remains untouched.
+   */
+  private void drawOffscreenIndicator() {
+    boolean enemyActive = !runFinished && controller.isRaiderActive();
+    if (!enemyActive) {
+      return;
+    }
+    VesperRaider raider = controller.activeRaider();
+    OffscreenEnemyIndicator.Placement placement = OffscreenEnemyIndicator.compute(enemyActive,
+        raider.x() + raider.drawWidth() / 2f,
+        raider.y() + raider.drawHeight() / 2f,
+        Math.max(raider.drawWidth(), raider.drawHeight()) / 2f,
+        camera.position.x, camera.position.y, camera.up.x, camera.up.y,
+        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera.zoom);
+    if (!placement.active()) {
+      return;
+    }
+    if (minimap.isVisible()) {
+      // The panel the minimap will draw this frame (same fit arguments), kept as a clean band that
+      // the triangle slides off without leaving its own edge.
+      MinimapProjection.Rectangle panel = MinimapProjection.fit(PhaseOneGameController.WORLD,
+          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT).panel();
+      placement = OffscreenEnemyIndicator.avoidReservations(placement,
+          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, panel);
+      if (!placement.active()) {
+        return;
+      }
+    }
+    shapes.begin(ShapeRenderer.ShapeType.Filled);
+    OffscreenEnemyIndicator.draw(shapes, placement);
+    shapes.end();
   }
 
   /**

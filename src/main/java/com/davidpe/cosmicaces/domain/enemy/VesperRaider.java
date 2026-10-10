@@ -122,6 +122,14 @@ public final class VesperRaider extends Ship {
     advance(MovementIntent.fromDownwardHeading(headingDegrees), deltaSeconds);
   }
 
+  /**
+   * Advances along the current heading at an explicit speed. The encounter uses it during its
+   * bounded tactical turbo window; turns stay limited by {@link #steerTowards(float, float)}.
+   */
+  public void advance(float deltaSeconds, float speed) {
+    advance(MovementIntent.fromDownwardHeading(headingDegrees), deltaSeconds, speed);
+  }
+
   VesperRaiderSheet.Pose pose() {
     if (turnDirection != 0) {
       return VesperRaiderSheet.poseForTurn(turnDirection);

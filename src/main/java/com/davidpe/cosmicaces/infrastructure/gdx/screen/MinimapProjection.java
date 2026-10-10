@@ -9,7 +9,12 @@ final class MinimapProjection {
   private static final float PANEL_PADDING = 8f;
   private static final float VIEWPORT_MARGIN = 12f;
   private static final float RIGHT_MARGIN = 24f;
-  private static final float BOTTOM_MARGIN = 76f;
+  /**
+   * Height of the fixed bottom HUD band: the minimap panel starts above it and the off-screen
+   * enemy indicator keeps its interior rectangle above it, so no overlay ever covers the flight
+   * readings (y≈34/58 plus font height). Shared by {@link OffscreenEnemyIndicator}.
+   */
+  static final float BOTTOM_MARGIN = 76f;
 
   record Point(float x, float y) {}
   record Rectangle(float x, float y, float width, float height) {}
