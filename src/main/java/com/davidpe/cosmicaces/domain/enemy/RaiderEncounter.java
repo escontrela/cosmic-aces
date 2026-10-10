@@ -11,6 +11,12 @@ import java.util.concurrent.ThreadLocalRandom;
  * turns perpendicular to the bearing on a retained side to avoid ramming while staying near enough
  * to fire.
  *
+ * <p>Its dogfight now has explicit phases: it closes in on an intercept course ({@code APPROACH}),
+ * commits to a bounded curved firing pass once it crosses the attack band ({@code ATTACK_PASS}), then
+ * disengages sideways for a limited time ({@code REPOSITION}) before lining up another pass. This
+ * gives the player a recognizable second pass instead of an endless chase; collision avoidance and
+ * the inward border response remain safety overrides on top of the phases.
+ *
  * <p>A destroyed raider keeps its instance (and its borrowed visuals) and stops moving until the
  * controller respawns it elsewhere. Timing, speed, drift and avoidance values are technical choices
  * configurable for the PO visual QA; they are not product criteria.
@@ -49,6 +55,16 @@ public final class RaiderEncounter {
   public static final float AVOID_MIN_HOLD_SECONDS = 1.2f;
   /** Distance below which the raider circles instead of driving straight at the player. */
   public static final float MIN_ATTACK_DISTANCE = 300f;
+  /** Bounded lead used to plot an intercept course toward the player's current motion. */
+  public static final float INTERCEPT_HORIZON_SECONDS = 1f;
+  /** Distance at or below which the raider commits to a firing pass instead of only closing in. */
+  public static final float ATTACK_PASS_ENTER_DISTANCE = 350f;
+  /** Longest a firing pass lasts before the raider breaks off to line up another one. */
+  public static final float ATTACK_PASS_MAX_SECONDS = 1.8f;
+  /** Shortest reposition loop, so a grazing pass is not immediately abandoned. */
+  public static final float REPOSITION_MIN_SECONDS = 0.6f;
+  /** Longest reposition loop before the raider forces a new approach. */
+  public static final float REPOSITION_MAX_SECONDS = 2.5f;
 
   /** Minimum centre separation from Astra when the raider respawns. */
   public static final float RESPAWN_MIN_DISTANCE_FROM_TARGET = 500f;
@@ -67,6 +83,16 @@ public final class RaiderEncounter {
   private float deathCenterY;
   private int avoidSide;
   private float avoidHoldSeconds;
+  private Maneuver maneuver = Maneuver.APPROACH;
+  private float maneuverSeconds;
+  private int repositionSide;
+
+  /** Coarse dogfight phases: close in, fire a pass, then disengage to line up the next pass. */
+  enum Maneuver {
+    APPROACH,
+    ATTACK_PASS,
+    REPOSITION
+  }
 
   public RaiderEncounter() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -95,6 +121,18 @@ public final class RaiderEncounter {
     return defeated;
   }
 
+  /** Current dogfight phase, exposed for deterministic domain tests only. */
+  Maneuver maneuver() {
+    return maneuver;
+  }
+
+  /** Clears the dogfight plan so a fresh life starts by closing in again. */
+  private void resetManeuver() {
+    maneuver = Maneuver.APPROACH;
+    maneuverSeconds = 0f;
+    repositionSide = 0;
+  }
+
   /** Gives the raider the phase's sprite sheet. */
   public void setVisuals(VesperRaider.Visuals visuals) {
     this.visuals = visuals;
@@ -116,6 +154,7 @@ public final class RaiderEncounter {
     deathCenterY = raider.centerY();
     avoidSide = 0;
     avoidHoldSeconds = 0f;
+    resetManeuver();
   }
 
   /**
@@ -163,6 +202,7 @@ public final class RaiderEncounter {
     driftSeconds = nextDriftSeconds();
     avoidSide = 0;
     avoidHoldSeconds = 0f;
+    resetManeuver();
   }
 
   /**
@@ -228,10 +268,48 @@ public final class RaiderEncounter {
       driftSeconds = nextDriftSeconds();
     }
     raider.setDriftDirection(Float.compare(driftDegrees, 0f));
+    updateManeuver(step, targetX, targetY);
     raider.steerTowards(desiredHeadingDegrees(world, targetX, targetY, targetVelocityX,
         targetVelocityY, targetRadius, selfRadius, step), MAX_TURN_RATE_DEGREES * step);
     raider.advance(step);
     raider.clampToWorld(world);
+  }
+
+  /**
+   * Advances the coarse dogfight phase from the current centre distance to the player. Crossing the
+   * attack band commits a bounded firing pass; once that pass ends the raider disengages sideways
+   * for a limited time and then closes in again, so the player gets a recognizable second pass
+   * instead of an endless chase. Collision avoidance stays a separate safety override.
+   */
+  private void updateManeuver(float step, float targetX, float targetY) {
+    double dx = targetX - raider.centerX();
+    double dy = targetY - raider.centerY();
+    double distance = Math.hypot(dx, dy);
+    maneuverSeconds += step;
+    switch (maneuver) {
+      case APPROACH -> {
+        if (distance <= ATTACK_PASS_ENTER_DISTANCE) {
+          maneuver = Maneuver.ATTACK_PASS;
+          maneuverSeconds = 0f;
+        }
+      }
+      case ATTACK_PASS -> {
+        if (distance > ATTACK_PASS_ENTER_DISTANCE
+            || maneuverSeconds >= ATTACK_PASS_MAX_SECONDS) {
+          maneuver = Maneuver.REPOSITION;
+          maneuverSeconds = 0f;
+          repositionSide = chooseSeparationSide(Math.atan2(dy, dx));
+        }
+      }
+      case REPOSITION -> {
+        boolean separated = maneuverSeconds >= REPOSITION_MIN_SECONDS
+            && distance >= ATTACK_PASS_ENTER_DISTANCE;
+        if (separated || maneuverSeconds >= REPOSITION_MAX_SECONDS) {
+          maneuver = Maneuver.APPROACH;
+          maneuverSeconds = 0f;
+        }
+      }
+    }
   }
 
   private void spawn(WorldBounds world, float targetX, float targetY) {
@@ -242,6 +320,7 @@ public final class RaiderEncounter {
     raider.setVisuals(visuals);
     driftDegrees = nextDriftDegrees();
     driftSeconds = nextDriftSeconds();
+    resetManeuver();
   }
 
   /**
@@ -272,7 +351,13 @@ public final class RaiderEncounter {
       double escape = bearing + avoidSide * Math.PI / 2d;
       desiredX = Math.cos(escape);
       desiredY = Math.sin(escape);
-    } else {
+    } else if (maneuver == Maneuver.REPOSITION) {
+      // Disengage sideways along the retained least-turn side to open up for the next pass.
+      double separation = bearing + repositionSide * Math.PI / 2d
+          + Math.toRadians(driftDegrees);
+      desiredX = Math.cos(separation);
+      desiredY = Math.sin(separation);
+    } else if (maneuver == Maneuver.ATTACK_PASS) {
       double angle = bearing + Math.toRadians(driftDegrees);
       desiredX = Math.cos(angle);
       desiredY = Math.sin(angle);
@@ -283,6 +368,19 @@ public final class RaiderEncounter {
         desiredX += Math.cos(orbit);
         desiredY += Math.sin(orbit);
       }
+    } else {
+      // APPROACH: lead the intercept by at most one second so a crossing player is met, not chased.
+      double leadX = targetX + targetVelocityX * INTERCEPT_HORIZON_SECONDS;
+      double leadY = targetY + targetVelocityY * INTERCEPT_HORIZON_SECONDS;
+      double interceptX = leadX - selfX;
+      double interceptY = leadY - selfY;
+      if (interceptX * interceptX + interceptY * interceptY < 1e-6d) {
+        interceptX = dx;
+        interceptY = dy;
+      }
+      double angle = Math.atan2(interceptY, interceptX) + Math.toRadians(driftDegrees);
+      desiredX = Math.cos(angle);
+      desiredY = Math.sin(angle);
     }
     double magnitude = Math.hypot(desiredX, desiredY);
     if (magnitude < 0.0001d) {
@@ -339,19 +437,34 @@ public final class RaiderEncounter {
     }
   }
 
-  /** Least-turn perpendicular side; a tie falls back to the drift side, then to the right. */
-  private int chooseAvoidSide(double bearing) {
+  /** Least-turn perpendicular side to a bearing: +1 left, -1 right, 0 when both cost the same. */
+  private int leastTurnSide(double bearing) {
     float heading = raider.headingDegrees();
     float left = normalizeYaw((float) Math.toDegrees(bearing + Math.PI / 2d));
     float right = normalizeYaw((float) Math.toDegrees(bearing - Math.PI / 2d));
     float leftCost = Math.abs(normalizeYaw(left - heading));
     float rightCost = Math.abs(normalizeYaw(right - heading));
     if (Math.abs(leftCost - rightCost) < 0.001f) {
-      if (driftDegrees > 0f) return 1;
-      if (driftDegrees < 0f) return -1;
-      return 1;
+      return 0;
     }
     return leftCost < rightCost ? 1 : -1;
+  }
+
+  /** Least-turn perpendicular side; a tie falls back to the drift side, then to the right. */
+  private int chooseAvoidSide(double bearing) {
+    int side = leastTurnSide(bearing);
+    if (side != 0) {
+      return side;
+    }
+    if (driftDegrees > 0f) return 1;
+    if (driftDegrees < 0f) return -1;
+    return 1;
+  }
+
+  /** Least-turn perpendicular side used to disengage; a tie falls back to the right. */
+  private int chooseSeparationSide(double bearing) {
+    int side = leastTurnSide(bearing);
+    return side != 0 ? side : 1;
   }
 
   private float inwardX(WorldBounds world) {

@@ -177,7 +177,17 @@ prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimie
 relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
 contacto (radios + margen 70), gira perpendicular a la demora en un lado elegido por
 menor cambio de rumbo y lo mantiene ≥ 1,2 s para evitar oscilación; el vector de
-bordes interiores se mantiene. La sobrecarga de 4 argumentos conserva el
+bordes interiores se mantiene. Con COS-37 el combate añade fases explícitas
+(`Maneuver.APPROACH`, `ATTACK_PASS`, `REPOSITION`): en APPROACH se aproxima con un
+adelanto de intercepción acotado a 1 s (posición de Astra + velocidad × 1 s); al
+entrar en 350 unidades (ATTACK_PASS) compromete una pasada curva acotada que conserva
+la separación de disparo bajo 300 unidades, y termina al abrirse de nuevo o tras
+1,8 s; en REPOSITION se retira perpendicular por el lado de menor giro un mínimo de
+0,6 s (o hasta separarse) y un máximo de 2,5 s antes de volver a aproximarse. La
+evitación de choque y la respuesta de bordes siguen siendo la prioridad de seguridad
+sobre las tres fases. El estado de maniobra se reinicia en `spawn`, `destroyActive`
+y `respawnAt`, y `maneuver()` (acceso de paquete) solo existe para las pruebas
+deterministas de dominio. La sobrecarga de 4 argumentos conserva el
 comportamiento de búsqueda pura para las pruebas deterministas. `PhaseOneScreen`
 llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainCombatPoints()`
 con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuando
@@ -381,7 +391,8 @@ instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
 ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
 salga de cámara. Con COS-32 la velocidad es 180 u/s, la deriva ±10° cada 4–6 s
 y `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
-tras la destrucción (véase «Combate determinista integrado (COS-32)»).
+tras la destrucción; con COS-37 alterna fases de aproximación, pasada acotada y
+reenganche (véase «Combate determinista integrado (COS-32)»).
 `VesperRaider.steerTowards` gira el rumbo con un límite de
 velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
 girar o la de alabeo al derivar; el empuje acotado combina la aproximación al

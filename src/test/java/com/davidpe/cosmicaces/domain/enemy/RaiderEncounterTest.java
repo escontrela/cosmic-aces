@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import java.util.EnumSet;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class RaiderEncounterTest {
@@ -235,6 +237,78 @@ class RaiderEncounterTest {
     assertTrue(blindClosest < contactDistance, "without avoidance the path crosses the target");
     assertTrue(evasiveClosest > contactDistance,
         "with avoidance the raider must keep its distance, closest was " + evasiveClosest);
+  }
+
+  @Test
+  void cyclesThroughApproachAttackPassAndRepositionWithAStationaryTarget() {
+    // A stationary target directly ahead exercises the whole dogfight loop: close in, fire a pass,
+    // disengage, then line up another pass. Body radii keep the real collision avoidance active.
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s, drift 0
+    encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
+
+    Set<RaiderEncounter.Maneuver> seen = EnumSet.noneOf(RaiderEncounter.Maneuver.class);
+    RaiderEncounter.Maneuver previous = encounter.maneuver();
+    seen.add(previous);
+    int attackPasses = 0;
+    for (int i = 0; i < 1800; i++) { // 30 s of deterministic 1/60 s frames
+      encounter.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      RaiderEncounter.Maneuver current = encounter.maneuver();
+      if (current == RaiderEncounter.Maneuver.ATTACK_PASS
+          && previous != RaiderEncounter.Maneuver.ATTACK_PASS) {
+        attackPasses++;
+      }
+      seen.add(current);
+      previous = current;
+    }
+
+    assertEquals(EnumSet.allOf(RaiderEncounter.Maneuver.class), seen,
+        "the raider must pass through approach, attack pass and reposition");
+    assertTrue(attackPasses >= 2,
+        "the raider must line up a recognizable second pass, saw " + attackPasses);
+  }
+
+  @Test
+  void respawnStartsAFreshApproachInsteadOfInheritingThePass() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+
+    // A target a hundred units below commits the current life to a firing pass.
+    encounter.advance(1f / 60f, WORLD, raider.centerX(), raider.centerY() - 100f);
+    assertEquals(RaiderEncounter.Maneuver.ATTACK_PASS, encounter.maneuver());
+
+    encounter.destroyActive();
+    encounter.respawnAt(WORLD, TARGET_X, TARGET_Y, 30f);
+    assertEquals(RaiderEncounter.Maneuver.APPROACH, encounter.maneuver(),
+        "a new life must not inherit the previous pass");
+  }
+
+  @Test
+  void headingTurnsStayBoundedAcrossEveryManeuver() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s, drift 0
+    encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
+    float maxStep = RaiderEncounter.MAX_TURN_RATE_DEGREES / 120f + 0.01f;
+    float previous = encounter.raider().headingDegrees();
+
+    for (int i = 0; i < 3600; i++) { // 30 s at one integration substep per call
+      encounter.advance(1f / 120f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      float current = encounter.raider().headingDegrees();
+      float turn = normalizeYaw(current - previous);
+      assertTrue(Math.abs(turn) <= maxStep,
+          "heading jumped from " + previous + " to " + current + " (" + turn + " deg)");
+      previous = current;
+    }
+  }
+
+  private static float normalizeYaw(float yaw) {
+    float normalized = yaw % 360f;
+    if (normalized > 180f) normalized -= 360f;
+    if (normalized <= -180f) normalized += 360f;
+    return normalized;
   }
 
   /** Deterministic unit-random source feeding a scripted queue; the last value repeats. */
