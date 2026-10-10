@@ -223,9 +223,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // One weapons update per frame, after the camera that this frame draws, using the world zoom as
     // the frozen range so a shot covers about two visible viewport heights. Impacts are resolved
     // inside this call and the single raider destruction bonus is published once, before the HUD.
+    long astraBurstsBefore = controller.astraGun().emissionCount();
+    long raiderBurstsBefore = controller.raiderGun().emissionCount();
     int weaponEarned = controller.advanceWeapons(delta, emissionSeconds,
         Gdx.input.isKeyPressed(Input.Keys.SPACE), weaponsCoincident,
         2f * VirtualScreenSize.HEIGHT * camera.zoom);
+    // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters, so
+    // a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays a shot
+    // that no burst actually produced. Astra and Vesper share the same short cue.
+    audio.playVulcanBursts(
+        PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
+            + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
     if (weaponEarned > 0) {
       publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
     }

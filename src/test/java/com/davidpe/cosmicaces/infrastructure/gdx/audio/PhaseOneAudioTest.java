@@ -1,14 +1,31 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.audio;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.weapon.GunTuning;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pure policy of the cabin ambience play/pause rule; no audio device or native backend is needed.
+ * Pure policy of the cabin ambience play/pause rule and of the M61 burst detection; no audio device
+ * or native backend is needed.
  */
 class PhaseOneAudioTest {
+
+  @Test
+  void burstCountIsThePositiveDeltaBetweenCounterSamples() {
+    assertEquals(1, PhaseOneAudio.burstsSince(0L, 1L));
+    assertEquals(3, PhaseOneAudio.burstsSince(5L, 8L));
+    assertEquals(0, PhaseOneAudio.burstsSince(8L, 8L));
+    assertEquals(0, PhaseOneAudio.burstsSince(8L, 5L), "a stale or reset sample yields no cue");
+  }
+
+  @Test
+  void vulcanCueIsShortEnoughForAstraCadence() {
+    assertTrue(PhaseOneAudio.VULCAN_BURST_SECONDS <= GunTuning.BURST_INTERVAL_SECONDS,
+        "the cue must not be longer than the fastest cadence, or bursts would stack");
+  }
 
   @Test
   void ambienceHeardWhileAstraAdvancesNormally() {

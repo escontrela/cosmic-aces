@@ -152,6 +152,30 @@ velocidad ya reflejan este frame: destrucción de Astra, velocidad cero, fin de 
 pantalla pausan/detienen el loop; el vuelo activo posterior reanuda la misma instancia. COS-43 y
 COS-44 extienden este mismo dueño con los efectos de ráfaga y explosión.
 
+### Audio de PhaseOne: cue M61 sincronizado (COS-43)
+
+La ráfaga audible se sincroniza con el reloj de emisión real del arma, no con el frame, la tecla ni
+el fogonazo. `domain.weapon.GunBurst` añade un contador monotónico `emissionCount()`: incrementa una
+vez por cada `emit(...)` que produce un `Shot` (nunca por boca/cañón, proyectil ni frame). Sigue
+determinista y sin dependencias de infraestructura; `clear()` no lo resetea para que los deltas entre
+muestras sigan siendo válidos.
+
+`PhaseOneScreen` toma una muestra del contador de `astraGun()` y `raiderGun()` antes y después de su
+única llamada por frame a `advanceWeapons(...)` y convierte cada delta con el helper puro
+`PhaseOneAudio.burstsSince(before, after)` (devuelve 0 ante muestras no crecientes). Como la
+autorización vive en `PhaseOneGameController` (`astraEnabled`, `raiderEnabled`), un delta cero
+significa «no hubo ráfaga»: SPACE sostenido sin emisión, nave destruida, Vesper sin coincidencia o
+fase terminada no reproducen sonido. Astra y Vesper comparten el mismo efecto.
+
+El asset es `assets/sounds/sound-machine-gun-burst-pcm16.wav`: un recorte de 0,08 s (a la cadencia de
+Astra) dentro del WAV original de 1,95 s, tomado de la ventana de mayor energía y con fades cortos
+de entrada/salida para evitar clics. El original `sound-machine-gun-2-8-bit.wav` queda intacto. El
+recorte se carga como `Sound` en memoria (efecto corto, baja latencia, voces solapadas acotadas por
+su propia duración) en el mismo `PhaseOneAudio` owner de COS-42, con volumen centralizado
+`VULCAN_BURST_VOLUME` y liberación única en `dispose()`. `VULCAN_BURST_SECONDS ≤
+GunTuning.BURST_INTERVAL_SECONDS` garantiza que una ráfaga no empiece antes de que acabe la anterior
+(y la prueba lo fija); la escucha y el ajuste perceptual de duración/volumen quedan para el PO.
+
 ### Detector de colisiones preparado para COS-32
 
 `domain.collision.CollisionDetector` es una utilidad sin estado ni LibGDX, utilizable
@@ -603,7 +627,7 @@ com.davidpe.cosmicaces
 |   |   |   10. travelled()
 |   |   +-- GunBurst: emisor visual con cadencia, fogonazo y colección de proyectiles.
 |   |   |   1. advance() [2 sobrecargas]  2. projectiles()  3. isFiring()
-|   |   |   4. flashVisible()  5. clear()
+|   |   |   4. flashVisible()  5. emissionCount() [contador monotónico por ráfaga real]  6. clear()
 |   |   |   +-- Muzzle(x,y): origen de un cañón congelado al disparar.
 |   |   |   +-- Shot(muzzles,forwardX,forwardY,range): instantánea de una emisión.
 |   |   |   +-- ShotSource: shotAt(offsetSeconds) entrega la instantánea.
@@ -630,8 +654,9 @@ com.davidpe.cosmicaces
         |   +-- Subscription: cancelacion de un listener.
         |       1. cancel()
         +-- audio
-        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne y loop de cabina.
-        |       1. updateCabinAmbience()  2. cabinAmbienceAudible()  3. dispose()
+        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne (cabina en bucle + cue M61).
+        |       1. updateCabinAmbience()  2. cabinAmbienceAudible()  3. playVulcanBursts()
+        |       4. burstsSince() [helper puro del delta de emisiones]  5. dispose()
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()

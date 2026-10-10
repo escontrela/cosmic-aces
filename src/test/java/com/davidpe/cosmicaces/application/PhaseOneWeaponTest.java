@@ -244,6 +244,70 @@ class PhaseOneWeaponTest {
   }
 
   @Test
+  void astraEmissionCountTracksOneEventPerRealBurstNotPerProjectile() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+    controller.start();
+
+    for (int frame = 0; frame < 60; frame++) {
+      frame(controller, 1f / 60f, true); // 1.0 s of sustained fire
+    }
+
+    long bursts = controller.astraGun().emissionCount();
+    assertTrue(bursts >= 12 && bursts <= 14,
+        "cadence of 0.08 s over one second, got " + bursts);
+    assertEquals(bursts * 2, controller.astraGun().projectiles().size(),
+        "one emission event per burst, two cannons per event");
+  }
+
+  @Test
+  void astraEmissionCountFreezesWhenTheTriggerIsReleasedOrTheRunEnds() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+    controller.placeAstra(1600f, 100f, 0f);
+    controller.start();
+    frame(controller, 1f / 60f, true);
+    long afterBurst = controller.astraGun().emissionCount();
+    assertTrue(afterBurst >= 1);
+
+    for (int frame = 0; frame < 60; frame++) {
+      frame(controller, 1f / 60f, false); // SPACE released
+    }
+    assertEquals(afterBurst, controller.astraGun().emissionCount(),
+        "a held key without a real emission must not produce cues");
+
+    controller.advanceRun(60f);
+    assertTrue(controller.isRunFinished());
+    for (int frame = 0; frame < 30; frame++) {
+      frame(controller, 1f / 60f, true); // trigger still held after the end
+    }
+    assertEquals(afterBurst, controller.astraGun().emissionCount(),
+        "the run end disables the weapon, so no new bursts");
+  }
+
+  @Test
+  void vesperEmissionCountOnlyAdvancesWhenTheControllerAuthorizes() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+
+    for (int frame = 0; frame < 60; frame++) {
+      vesperFrame(controller, 1f / 60f, false); // not coincident
+    }
+    assertEquals(0, controller.raiderGun().emissionCount(),
+        "no authorized burst, no event and therefore no audio cue");
+    assertTrue(controller.raiderGun().projectiles().isEmpty());
+
+    for (int frame = 0; frame < 72; frame++) {
+      vesperFrame(controller, 1f / 60f, true); // 1.2 s coincident
+    }
+    long bursts = controller.raiderGun().emissionCount();
+    assertTrue(bursts >= 2 && bursts <= 4, "Vesper cadence 0.4 s over 1.2 s, got " + bursts);
+    assertEquals(bursts * 2, controller.raiderGun().projectiles().size(),
+        "one event per burst, two side cannons per event");
+  }
+
+  @Test
   void vesperDoesNotFireAfterTheRunEnds() {
     PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
     controller.placeAstra(1600f, 6000f, 0f);
