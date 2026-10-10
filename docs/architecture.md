@@ -183,8 +183,8 @@ Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige co
 `UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
 del punto de muerte, con fallback al mejor candidato y sin recrear texturas.
 
-`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, deriva
-±10° cada 4–6 s, giro 75°/s) y CA18: la sobrecarga
+`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, giro 75°/s)
+y CA18: la sobrecarga
 `advance(dt, world, targetX, targetY, targetVelX, targetVelY, targetRadius, selfRadius)`
 prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimiento
 relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
@@ -196,10 +196,23 @@ adelanto de intercepción acotado a 1 s (posición de Astra + velocidad × 1 s);
 entrar en 350 unidades (ATTACK_PASS) compromete una pasada curva acotada que conserva
 la separación de disparo bajo 300 unidades, y termina al abrirse de nuevo o tras
 1,8 s; en REPOSITION se retira perpendicular por el lado de menor giro un mínimo de
-0,6 s (o hasta separarse) y un máximo de 2,5 s antes de volver a aproximarse. La
-evitación de choque y la respuesta de bordes siguen siendo la prioridad de seguridad
-sobre las tres fases. El estado de maniobra se reinicia en `spawn`, `destroyActive`
-y `respawnAt`, y `maneuver()` (acceso de paquete) solo existe para las pruebas
+0,6 s (o hasta separarse) y un máximo de 2,5 s antes de volver a aproximarse. Con
+COS-40 la trayectoria deja de depender de `UnitRandom` después de la aparición: se
+retiró la deriva aleatoria y cada fase conserva una intención de vuelo persistente;
+el lado de órbita de la pasada y el de separación se fijan una sola vez al entrar en
+la maniobra con desempate determinista, de modo que no hay rectificaciones de lado por
+frame. `UnitRandom` queda solo para la espera inicial y para las posiciones de
+aparición/reaparición. El raider dispone además de un turbo táctico reproducible:
+`TURBO_SPEED_MULTIPLIER=1,5` sobre `RAIDER_SPEED`, ventana máxima
+`TURBO_MAX_SECONDS=1 s` y recuperación `TURBO_RECOVERY_SECONDS=4 s`, medidos con el
+mismo `delta`; se activa solo al cerrar distancia en APPROACH o REPOSITION (banda
+>350) y se corta ante un contacto previsto, un lado de evasión activo o una pasada
+firme. La predicción de contacto usa la velocidad efectiva para conservar la
+evitación. La evitación de choque y la respuesta de bordes siguen siendo la prioridad
+de seguridad sobre las tres fases. El plan (fase, lados y turbo) se reinicia en
+`spawn`, `destroyActive` y `respawnAt`, y `maneuver()`, `separationSide()`,
+`avoidanceSide()`, `isTurboActive()`, `turboSecondsRemaining()` y
+`turboRecoverySeconds()` (accesos de paquete) solo existen para las pruebas
 deterministas de dominio. La sobrecarga de 4 argumentos conserva el
 comportamiento de búsqueda pura para las pruebas deterministas. `PhaseOneScreen`
 llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainCombatPoints()`
@@ -402,14 +415,15 @@ alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
 rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
 instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
 ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
-salga de cámara. Con COS-32 la velocidad es 180 u/s, la deriva ±10° cada 4–6 s
+salga de cámara. Con COS-32 la velocidad es 180 u/s
 y `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
 tras la destrucción; con COS-37 alterna fases de aproximación, pasada acotada y
-reenganche (véase «Combate determinista integrado (COS-32)»).
+reenganche (véase «Combate determinista integrado (COS-32)»), y con COS-40 esas
+fases usan rumbos deterministas sin deriva aleatoria y un turbo táctico acotado.
 `VesperRaider.steerTowards` gira el rumbo con un límite de
 velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
 girar o la de alabeo al derivar; el empuje acotado combina la aproximación al
-jugador con una deriva reproducible de `UnitRandom` y una respuesta suave en los
+jugador con una respuesta suave en los
 bordes. La posición se recorta al mundo solo como salvaguarda. `PhaseOneScreen`
 dibuja al raider cuando su círculo envolvente intersecta la vista real de la
 cámara, sin destruirlo al salir de cámara, y no pasa ninguna `PlayArea` al

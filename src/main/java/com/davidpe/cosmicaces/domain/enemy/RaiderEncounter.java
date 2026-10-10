@@ -5,20 +5,25 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Keeps the single Vesper Raider of a phase alive in world coordinates. After one random wait the
- * raider appears once ahead of the player's route, then seeks Astra with bounded turns and
- * occasional reproducible drift from {@link UnitRandom}. It is slower and steadier than the earlier
- * tuning and, when a collision is predicted within a short horizon and body radii are supplied, it
- * turns perpendicular to the bearing on a retained side to avoid ramming while staying near enough
- * to fire.
+ * raider appears once ahead of the player's route, then flies a fully deterministic dogfight:
+ * once it has spawned, no flight, heading, phase or maneuver-side decision depends on
+ * {@link UnitRandom}, which stays only for the initial wait and for spawn/respawn placement.
  *
- * <p>Its dogfight now has explicit phases: it closes in on an intercept course ({@code APPROACH}),
+ * <p>Its dogfight has explicit phases: it closes in on an intercept course ({@code APPROACH}),
  * commits to a bounded curved firing pass once it crosses the attack band ({@code ATTACK_PASS}), then
- * disengages sideways for a limited time ({@code REPOSITION}) before lining up another pass. This
- * gives the player a recognizable second pass instead of an endless chase; collision avoidance and
- * the inward border response remain safety overrides on top of the phases.
+ * disengages sideways for a limited time ({@code REPOSITION}) before lining up another pass. Each
+ * phase keeps one persistent flight intention that only changes at a maneuver transition, so the
+ * raider holds clean lines instead of rectifying from side to side every frame. Collision avoidance
+ * and the inward border response remain safety overrides on top of the phases.
+ *
+ * <p>While closing in or recovering a firing line the raider may fire a bounded tactical turbo: a
+ * short, reproducible speed boost (see {@link #TURBO_SPEED_MULTIPLIER}) with an active window and a
+ * recovery window, both measured in simulation time. Turbo never engages during a stable firing pass
+ * or while a collision-avoidance maneuver has priority, and it always resets to normal speed when the
+ * encounter restarts.
  *
  * <p>A destroyed raider keeps its instance (and its borrowed visuals) and stops moving until the
- * controller respawns it elsewhere. Timing, speed, drift and avoidance values are technical choices
+ * controller respawns it elsewhere. Timing, speed, turbo and avoidance values are technical choices
  * configurable for the PO visual QA; they are not product criteria.
  */
 public final class RaiderEncounter {
@@ -36,11 +41,6 @@ public final class RaiderEncounter {
   public static final float SPAWN_LATERAL_DISTANCE = 500f;
   /** Maximum heading change per second, in degrees. */
   public static final float MAX_TURN_RATE_DEGREES = 75f;
-  /** Random interval between drift changes, in seconds. */
-  public static final float MIN_DRIFT_INTERVAL_SECONDS = 4f;
-  public static final float MAX_DRIFT_INTERVAL_SECONDS = 6f;
-  /** Maximum deviation added to the bearing toward the player, in degrees. */
-  public static final float MAX_DRIFT_DEGREES = 10f;
   /** Distance from a world edge where the inward steering response starts fading in. */
   public static final float BORDER_ZONE = 1400f;
   /** Relative strength of the inward border response against the unit bearing to the player. */
@@ -66,6 +66,13 @@ public final class RaiderEncounter {
   /** Longest reposition loop before the raider forces a new approach. */
   public static final float REPOSITION_MAX_SECONDS = 2.5f;
 
+  /** Tactical turbo: speed multiplier applied while the boost window is active. */
+  public static final float TURBO_SPEED_MULTIPLIER = 1.5f;
+  /** Longest a turbo window stays active, in seconds. */
+  public static final float TURBO_MAX_SECONDS = 1f;
+  /** Recovery time before turbo may engage again, in seconds. */
+  public static final float TURBO_RECOVERY_SECONDS = 4f;
+
   /** Minimum centre separation from Astra when the raider respawns. */
   public static final float RESPAWN_MIN_DISTANCE_FROM_TARGET = 500f;
   /** Minimum centre separation from the previous death spot, so the respawn is a new point. */
@@ -76,8 +83,6 @@ public final class RaiderEncounter {
   private VesperRaider raider;
   private VesperRaider.Visuals visuals;
   private float waitSeconds;
-  private float driftSeconds;
-  private float driftDegrees;
   private boolean defeated;
   private float deathCenterX;
   private float deathCenterY;
@@ -86,6 +91,9 @@ public final class RaiderEncounter {
   private Maneuver maneuver = Maneuver.APPROACH;
   private float maneuverSeconds;
   private int repositionSide;
+  private int attackPassOrbitSide;
+  private float turboSeconds;
+  private float turboRecoverySeconds;
 
   /** Coarse dogfight phases: close in, fire a pass, then disengage to line up the next pass. */
   enum Maneuver {
@@ -126,11 +134,46 @@ public final class RaiderEncounter {
     return maneuver;
   }
 
-  /** Clears the dogfight plan so a fresh life starts by closing in again. */
-  private void resetManeuver() {
+  /** Current maneuver side: +1 left, -1 right, 0 when no side maneuver is active; for tests only. */
+  int separationSide() {
+    return switch (maneuver) {
+      case REPOSITION -> repositionSide;
+      case ATTACK_PASS -> attackPassOrbitSide;
+      case APPROACH -> 0;
+    };
+  }
+
+  /** Current avoidance side: 0 when not avoiding, otherwise +1 left / -1 right; for tests only. */
+  int avoidanceSide() {
+    return avoidSide;
+  }
+
+  /** Whether the tactical turbo window is currently active; for tests only. */
+  boolean isTurboActive() {
+    return turboSeconds > 0f;
+  }
+
+  /** Remaining turbo seconds, or zero when inactive; for tests only. */
+  float turboSecondsRemaining() {
+    return turboSeconds;
+  }
+
+  /** Remaining turbo recovery seconds before it may engage again; for tests only. */
+  float turboRecoverySeconds() {
+    return turboRecoverySeconds;
+  }
+
+  /**
+   * Clears the dogfight plan so a fresh life starts by closing in again at normal speed with no
+   * retained maneuver side or turbo window.
+   */
+  private void resetPlan() {
     maneuver = Maneuver.APPROACH;
     maneuverSeconds = 0f;
     repositionSide = 0;
+    attackPassOrbitSide = 0;
+    turboSeconds = 0f;
+    turboRecoverySeconds = 0f;
   }
 
   /** Gives the raider the phase's sprite sheet. */
@@ -154,7 +197,7 @@ public final class RaiderEncounter {
     deathCenterY = raider.centerY();
     avoidSide = 0;
     avoidHoldSeconds = 0f;
-    resetManeuver();
+    resetPlan();
   }
 
   /**
@@ -198,17 +241,15 @@ public final class RaiderEncounter {
     raider.placeAt(bestCenterX - half, bestCenterY - raider.drawHeight() / 2f,
         (float) Math.toDegrees(headingRadians), world);
     defeated = false;
-    driftDegrees = nextDriftDegrees();
-    driftSeconds = nextDriftSeconds();
     avoidSide = 0;
     avoidHoldSeconds = 0f;
-    resetManeuver();
+    resetPlan();
   }
 
   /**
    * Advances the encounter by {@code deltaSeconds} of game time toward {@code (targetX, targetY)}.
    * Non-positive or non-finite deltas are ignored; large deltas are integrated in bounded steps so
-   * turns and drift stay smooth and frame-rate independent.
+   * turns stay smooth and frame-rate independent.
    */
   public void advance(float deltaSeconds, WorldBounds world, float targetX, float targetY) {
     advance(deltaSeconds, world, targetX, targetY, 0f, 0f, 0f, 0f);
@@ -262,24 +303,33 @@ public final class RaiderEncounter {
 
   private void advanceStep(float step, WorldBounds world, float targetX, float targetY,
       float targetVelocityX, float targetVelocityY, float targetRadius, float selfRadius) {
-    driftSeconds -= step;
-    if (driftSeconds <= 0f) {
-      driftDegrees = nextDriftDegrees();
-      driftSeconds = nextDriftSeconds();
-    }
-    raider.setDriftDirection(Float.compare(driftDegrees, 0f));
     updateManeuver(step, targetX, targetY);
+
+    double selfX = raider.centerX();
+    double selfY = raider.centerY();
+    double dx = targetX - selfX;
+    double dy = targetY - selfY;
+    double distance = Math.hypot(dx, dy);
+    double bearing = Math.atan2(dy, dx);
+    boolean avoidanceAvailable = selfRadius + targetRadius > 0f && distance > 0.0001d;
+    boolean contactRisk = avoidanceAvailable
+        && predictsContact(targetX, targetY, targetVelocityX, targetVelocityY,
+            targetRadius, selfRadius, selfX, selfY, effectiveSpeed());
+    updateAvoidanceSide(step, contactRisk, bearing);
+    updateTurbo(step, distance, contactRisk);
+
     raider.steerTowards(desiredHeadingDegrees(world, targetX, targetY, targetVelocityX,
-        targetVelocityY, targetRadius, selfRadius, step), MAX_TURN_RATE_DEGREES * step);
-    raider.advance(step);
+        targetVelocityY, targetRadius, selfRadius), MAX_TURN_RATE_DEGREES * step);
+    raider.advance(step, effectiveSpeed());
     raider.clampToWorld(world);
   }
 
   /**
    * Advances the coarse dogfight phase from the current centre distance to the player. Crossing the
-   * attack band commits a bounded firing pass; once that pass ends the raider disengages sideways
-   * for a limited time and then closes in again, so the player gets a recognizable second pass
-   * instead of an endless chase. Collision avoidance stays a separate safety override.
+   * attack band commits a bounded firing pass and fixes its orbit side; once that pass ends the
+   * raider disengages sideways for a limited time and then closes in again, so the player gets a
+   * recognizable second pass instead of an endless chase. Collision avoidance stays a separate
+   * safety override.
    */
   private void updateManeuver(float step, float targetX, float targetY) {
     double dx = targetX - raider.centerX();
@@ -291,6 +341,7 @@ public final class RaiderEncounter {
         if (distance <= ATTACK_PASS_ENTER_DISTANCE) {
           maneuver = Maneuver.ATTACK_PASS;
           maneuverSeconds = 0f;
+          attackPassOrbitSide = chooseSeparationSide(Math.atan2(dy, dx));
         }
       }
       case ATTACK_PASS -> {
@@ -318,32 +369,23 @@ public final class RaiderEncounter {
     float y = world.clampY(targetY + SPAWN_AHEAD_DISTANCE, RAIDER_HEIGHT);
     raider = new VesperRaider(RAIDER_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, x, y, 0f);
     raider.setVisuals(visuals);
-    driftDegrees = nextDriftDegrees();
-    driftSeconds = nextDriftSeconds();
-    resetManeuver();
+    resetPlan();
   }
 
   /**
-   * Combines the unit bearing toward the player, the current drift, the retained avoidance side and
-   * any inward border response, then converts the resulting world vector to the raider's
-   * descent-relative heading.
+   * Combines the unit bearing toward the player, the retained avoidance side and any inward border
+   * response, then converts the resulting world vector to the raider's descent-relative heading. The
+   * per-phase intention is deterministic: APPROACH leads a bounded intercept, ATTACK_PASS keeps a
+   * stable line and circles on a fixed side when too close, and REPOSITION opens on a fixed side.
    */
   private float desiredHeadingDegrees(WorldBounds world, float targetX, float targetY,
-      float targetVelocityX, float targetVelocityY, float targetRadius, float selfRadius,
-      float step) {
+      float targetVelocityX, float targetVelocityY, float targetRadius, float selfRadius) {
     double selfX = raider.centerX();
     double selfY = raider.centerY();
     double dx = targetX - selfX;
     double dy = targetY - selfY;
     double distance = Math.hypot(dx, dy);
     double bearing = Math.atan2(dy, dx);
-
-    boolean avoidanceAvailable = selfRadius + targetRadius > 0f && distance > 0.0001d;
-    boolean contactRisk = avoidanceAvailable
-        && predictsContact(targetX, targetY, targetVelocityX, targetVelocityY,
-            targetRadius, selfRadius, selfX, selfY);
-    updateAvoidanceSide(step, contactRisk, bearing, targetX, targetY, targetVelocityX,
-        targetVelocityY, selfX, selfY);
 
     double desiredX;
     double desiredY;
@@ -353,17 +395,16 @@ public final class RaiderEncounter {
       desiredY = Math.sin(escape);
     } else if (maneuver == Maneuver.REPOSITION) {
       // Disengage sideways along the retained least-turn side to open up for the next pass.
-      double separation = bearing + repositionSide * Math.PI / 2d
-          + Math.toRadians(driftDegrees);
+      double separation = bearing + repositionSide * Math.PI / 2d;
       desiredX = Math.cos(separation);
       desiredY = Math.sin(separation);
     } else if (maneuver == Maneuver.ATTACK_PASS) {
-      double angle = bearing + Math.toRadians(driftDegrees);
-      desiredX = Math.cos(angle);
-      desiredY = Math.sin(angle);
+      desiredX = Math.cos(bearing);
+      desiredY = Math.sin(bearing);
+      boolean avoidanceAvailable = selfRadius + targetRadius > 0f;
       if (avoidanceAvailable && distance < MIN_ATTACK_DISTANCE) {
-        // Circle to keep a firing standoff instead of driving straight into the player.
-        double side = driftDegrees >= 0f ? 1d : -1d;
+        // Circle on the side fixed at pass entry instead of driving straight into the player.
+        int side = attackPassOrbitSide != 0 ? attackPassOrbitSide : 1;
         double orbit = bearing + side * Math.PI / 2d;
         desiredX += Math.cos(orbit);
         desiredY += Math.sin(orbit);
@@ -378,7 +419,7 @@ public final class RaiderEncounter {
         interceptX = dx;
         interceptY = dy;
       }
-      double angle = Math.atan2(interceptY, interceptX) + Math.toRadians(driftDegrees);
+      double angle = Math.atan2(interceptY, interceptX);
       desiredX = Math.cos(angle);
       desiredY = Math.sin(angle);
     }
@@ -394,12 +435,55 @@ public final class RaiderEncounter {
     return (float) Math.toDegrees(Math.atan2(desiredX, -desiredY));
   }
 
+  /**
+   * Updates the tactical turbo window deterministically. A predicted collision, a retained
+   * avoidance side or a stable firing pass all suppress it (and cut an active boost); otherwise it
+   * may engage while closing in during APPROACH or recovering a line during REPOSITION, lasting at
+   * most {@link #TURBO_MAX_SECONDS} and waiting {@link #TURBO_RECOVERY_SECONDS} before the next.
+   */
+  private void updateTurbo(float step, double distance, boolean contactRisk) {
+    boolean suppressed = contactRisk || avoidSide != 0 || maneuver == Maneuver.ATTACK_PASS;
+    if (suppressed) {
+      if (turboSeconds > 0f) {
+        turboSeconds = 0f;
+        turboRecoverySeconds = TURBO_RECOVERY_SECONDS;
+      } else {
+        turboRecoverySeconds = Math.max(0f, turboRecoverySeconds - step);
+      }
+      return;
+    }
+    if (turboSeconds > 0f) {
+      turboSeconds -= step;
+      if (turboSeconds <= 0f) {
+        turboSeconds = 0f;
+        turboRecoverySeconds = TURBO_RECOVERY_SECONDS;
+      }
+      return;
+    }
+    turboRecoverySeconds = Math.max(0f, turboRecoverySeconds - step);
+    if (turboRecoverySeconds <= 0f && tacticalTurboNeeded(distance)) {
+      turboSeconds = TURBO_MAX_SECONDS;
+    }
+  }
+
+  /** Whether the deterministic plan currently wants the turbo: closing in or recovering a line. */
+  private boolean tacticalTurboNeeded(double distance) {
+    boolean closingIn = maneuver == Maneuver.APPROACH || maneuver == Maneuver.REPOSITION;
+    return closingIn && distance > ATTACK_PASS_ENTER_DISTANCE;
+  }
+
+  /** Speed actually applied this step: normal unless the tactical turbo window is active. */
+  private float effectiveSpeed() {
+    return turboSeconds > 0f ? RAIDER_SPEED * TURBO_SPEED_MULTIPLIER : RAIDER_SPEED;
+  }
+
   /** Prediction of the closest approach within the avoidance horizon using relative motion. */
   private boolean predictsContact(float targetX, float targetY, float targetVelocityX,
-      float targetVelocityY, float targetRadius, float selfRadius, double selfX, double selfY) {
+      float targetVelocityY, float targetRadius, float selfRadius, double selfX, double selfY,
+      float selfSpeed) {
     double heading = Math.toRadians(raider.headingDegrees());
-    double selfVelocityX = Math.sin(heading) * RAIDER_SPEED;
-    double selfVelocityY = -Math.cos(heading) * RAIDER_SPEED;
+    double selfVelocityX = Math.sin(heading) * selfSpeed;
+    double selfVelocityY = -Math.cos(heading) * selfSpeed;
     double relativeX = selfX - targetX;
     double relativeY = selfY - targetY;
     double relativeVelocityX = selfVelocityX - targetVelocityX;
@@ -418,9 +502,7 @@ public final class RaiderEncounter {
   }
 
   /** Chooses and retains the avoidance side, picking the turn that costs the least heading change. */
-  private void updateAvoidanceSide(float step, boolean contactRisk, double bearing,
-      float targetX, float targetY, float targetVelocityX, float targetVelocityY,
-      double selfX, double selfY) {
+  private void updateAvoidanceSide(float step, boolean contactRisk, double bearing) {
     if (contactRisk) {
       if (avoidSide == 0) {
         avoidSide = chooseAvoidSide(bearing);
@@ -450,15 +532,10 @@ public final class RaiderEncounter {
     return leftCost < rightCost ? 1 : -1;
   }
 
-  /** Least-turn perpendicular side; a tie falls back to the drift side, then to the right. */
+  /** Least-turn perpendicular side for avoidance; a tie always breaks to the right. */
   private int chooseAvoidSide(double bearing) {
     int side = leastTurnSide(bearing);
-    if (side != 0) {
-      return side;
-    }
-    if (driftDegrees > 0f) return 1;
-    if (driftDegrees < 0f) return -1;
-    return 1;
+    return side != 0 ? side : 1;
   }
 
   /** Least-turn perpendicular side used to disengage; a tie falls back to the right. */
@@ -501,14 +578,5 @@ public final class RaiderEncounter {
   private float nextWaitSeconds() {
     return MIN_SPAWN_WAIT_SECONDS
         + random.nextUnit() * (MAX_SPAWN_WAIT_SECONDS - MIN_SPAWN_WAIT_SECONDS);
-  }
-
-  private float nextDriftSeconds() {
-    return MIN_DRIFT_INTERVAL_SECONDS
-        + random.nextUnit() * (MAX_DRIFT_INTERVAL_SECONDS - MIN_DRIFT_INTERVAL_SECONDS);
-  }
-
-  private float nextDriftDegrees() {
-    return (random.nextUnit() * 2f - 1f) * MAX_DRIFT_DEGREES;
   }
 }

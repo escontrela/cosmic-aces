@@ -2,7 +2,6 @@ package com.davidpe.cosmicaces.domain.enemy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -63,7 +62,7 @@ class RaiderEncounterTest {
 
   @Test
   void turnsTowardTheTargetWithBoundedSteps() {
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // drift = 0
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // no drift involved
     encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
     VesperRaider raider = encounter.raider();
     float previous = raider.headingDegrees();
@@ -82,19 +81,36 @@ class RaiderEncounterTest {
   }
 
   @Test
-  void differentRandomSourcesProduceDifferentSearchPaths() {
-    RaiderEncounter neutralDrift = new RaiderEncounter(new ScriptedRandom(0.5f)); // drift = 0
-    RaiderEncounter leftDrift = new RaiderEncounter(new ScriptedRandom(0f)); // drift = -35
-    neutralDrift.advance(5f, WORLD, TARGET_X, TARGET_Y);
-    leftDrift.advance(3f, WORLD, TARGET_X, TARGET_Y);
+  void identicalSpawnWithDifferentLaterRandomKeepsTheSameTrajectory() {
+    // Same wait and spawn placement, then divergent random values that must no longer steer the
+    // flight: the deterministic plan replaces the removed random drift.
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter a = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f, 0.05f, 0.95f));
+    RaiderEncounter b = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f, 0.95f, 0.05f));
+    a.advance(5f, WORLD, targetX, targetY);
+    b.advance(5f, WORLD, targetX, targetY);
+    assertEquals(a.raider().x(), b.raider().x(), EPSILON, "the spawn must be identical");
 
-    for (int i = 0; i < 120; i++) {
-      neutralDrift.advance(1f / 60f, WORLD, TARGET_X, TARGET_Y);
-      leftDrift.advance(1f / 60f, WORLD, TARGET_X, TARGET_Y);
+    int attackPasses = 0;
+    RaiderEncounter.Maneuver previous = a.maneuver();
+    for (int i = 0; i < 1800; i++) { // 30 s of deterministic 1/60 s frames
+      a.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      b.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      assertEquals(a.raider().x(), b.raider().x(), EPSILON);
+      assertEquals(a.raider().y(), b.raider().y(), EPSILON);
+      assertEquals(a.raider().headingDegrees(), b.raider().headingDegrees(), EPSILON);
+      assertEquals(a.maneuver(), b.maneuver());
+      assertEquals(a.isTurboActive(), b.isTurboActive(),
+          "turbo must not depend on post-spawn randomness");
+      if (a.maneuver() == RaiderEncounter.Maneuver.ATTACK_PASS
+          && previous != RaiderEncounter.Maneuver.ATTACK_PASS) {
+        attackPasses++;
+      }
+      previous = a.maneuver();
     }
-    assertNotEquals(neutralDrift.raider().headingDegrees(),
-        leftDrift.raider().headingDegrees(), 1f,
-        "the reproducible drift must make the search path imperfect");
+    assertTrue(attackPasses >= 2,
+        "the deterministic run must line up at least two passes, saw " + attackPasses);
   }
 
   @Test
@@ -126,6 +142,135 @@ class RaiderEncounterTest {
   }
 
   @Test
+  void largeDeltaMatchesManySmallSteps() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter coarse = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    RaiderEncounter fine = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    coarse.advance(5f, WORLD, targetX, targetY);
+    fine.advance(5f, WORLD, targetX, targetY);
+
+    coarse.advance(0.5f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+    for (int i = 0; i < 60; i++) { // the same 0.5 s as 60 bounded substeps
+      fine.advance(1f / 120f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+    }
+    assertEquals(coarse.raider().x(), fine.raider().x(), 0.01f,
+        "a large delta must match many small steps");
+    assertEquals(coarse.raider().y(), fine.raider().y(), 0.01f);
+    assertEquals(coarse.raider().headingDegrees(), fine.raider().headingDegrees(), 0.01f);
+  }
+
+  @Test
+  void meetsALaterallyMovingTargetWithABoundedIntercept() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    float velocityX = 100f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    encounter.advance(5f, WORLD, targetX, targetY);
+    float initial = distance(encounter, targetX, targetY);
+
+    for (int i = 0; i < 600; i++) { // 10 s of a target crossing to the right
+      encounter.advance(1f / 60f, WORLD, targetX, targetY, velocityX, 0f, 20f, 40f);
+      targetX += velocityX / 60f;
+    }
+    float finalDistance = distance(encounter, targetX, targetY);
+    assertTrue(Float.isFinite(finalDistance));
+    assertTrue(finalDistance < initial, "the raider must close on a crossing target");
+  }
+
+  @Test
+  void keepsOneSeparationSidePerManeuverWithoutPerFrameFlips() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    encounter.advance(5f, WORLD, targetX, targetY);
+    int repositionSide = 0;
+    boolean sawReposition = false;
+    for (int i = 0; i < 1800; i++) {
+      encounter.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      if (encounter.maneuver() == RaiderEncounter.Maneuver.REPOSITION) {
+        sawReposition = true;
+        if (repositionSide == 0) {
+          repositionSide = encounter.separationSide();
+          assertTrue(repositionSide != 0, "a reposition must retain a deterministic side");
+        } else {
+          assertEquals(repositionSide, encounter.separationSide(),
+              "the disengage side must not flip per frame");
+        }
+      } else {
+        repositionSide = 0;
+      }
+    }
+    assertTrue(sawReposition, "the deterministic run must reposition at least once");
+  }
+
+  @Test
+  void tacticalTurboEngagesWhileClosingInAndRespectsWindowAndRecovery() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
+    assertEquals(RaiderEncounter.Maneuver.APPROACH, encounter.maneuver());
+
+    float before = distance(encounter, targetX, targetY);
+    encounter.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 0f, 0f);
+    assertTrue(encounter.isTurboActive(), "turbo must engage while closing in");
+    float after = distance(encounter, targetX, targetY);
+    assertEquals(RaiderEncounter.RAIDER_SPEED * RaiderEncounter.TURBO_SPEED_MULTIPLIER / 60f,
+        before - after, 0.05f, "turbo must apply the proposed multiplier");
+
+    // Over 30 s of 1/60 s frames the window stays bounded and the recovery is respected.
+    RaiderEncounter run = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    run.advance(5f, WORLD, targetX, targetY);
+    int maxConsecutive = 0;
+    int consecutive = 0;
+    int lastActiveFrame = -1;
+    int minGapFrames = Integer.MAX_VALUE;
+    boolean sawTurbo = false;
+    for (int frame = 0; frame < 1800; frame++) {
+      run.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 0f, 0f);
+      if (run.isTurboActive()) {
+        sawTurbo = true;
+        if (consecutive == 0 && lastActiveFrame >= 0) {
+          minGapFrames = Math.min(minGapFrames, frame - lastActiveFrame - 1);
+        }
+        consecutive++;
+        maxConsecutive = Math.max(maxConsecutive, consecutive);
+        lastActiveFrame = frame;
+      } else {
+        consecutive = 0;
+      }
+    }
+    assertTrue(sawTurbo, "turbo must engage at least once while closing in");
+    assertTrue(maxConsecutive / 60f <= RaiderEncounter.TURBO_MAX_SECONDS + 0.05f,
+        "turbo window must not exceed the maximum, saw " + maxConsecutive / 60f + " s");
+    if (minGapFrames != Integer.MAX_VALUE) {
+      assertTrue(minGapFrames / 60f >= RaiderEncounter.TURBO_RECOVERY_SECONDS - 0.05f,
+          "turbo recovery must be respected, saw " + minGapFrames / 60f + " s");
+    }
+  }
+
+  @Test
+  void turboIsSuppressedDuringAttackPassAndCollisionAvoidance() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    encounter.advance(5f, WORLD, targetX, targetY);
+    boolean sawPass = false;
+    for (int i = 0; i < 1800; i++) {
+      encounter.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      if (encounter.maneuver() == RaiderEncounter.Maneuver.ATTACK_PASS) {
+        sawPass = true;
+        assertFalse(encounter.isTurboActive(), "no turbo during a stable firing pass");
+      }
+      if (encounter.avoidanceSide() != 0) {
+        assertFalse(encounter.isTurboActive(), "turbo must yield to collision avoidance");
+      }
+    }
+    assertTrue(sawPass, "the run must reach a firing pass");
+  }
+
+  @Test
   void ignoresNonPositiveOrNonFiniteDeltas() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3s
     encounter.advance(-1f, WORLD, TARGET_X, TARGET_Y);
@@ -151,12 +296,12 @@ class RaiderEncounterTest {
   }
 
   @Test
-  void usesTheSlowerSteadierTuningApprovedByThePO() {
+  void keepsTheApprovedRaiderTuningAndBoundedTurbo() {
     assertEquals(180f, RaiderEncounter.RAIDER_SPEED, "was 240, now 180");
-    assertEquals(10f, RaiderEncounter.MAX_DRIFT_DEGREES, "was 35, now 10");
-    assertEquals(4f, RaiderEncounter.MIN_DRIFT_INTERVAL_SECONDS, "was 1.3");
-    assertEquals(6f, RaiderEncounter.MAX_DRIFT_INTERVAL_SECONDS, "was 2.7");
     assertEquals(75f, RaiderEncounter.MAX_TURN_RATE_DEGREES, "bounded turns are kept");
+    assertEquals(1.5f, RaiderEncounter.TURBO_SPEED_MULTIPLIER, "proposed turbo multiplier");
+    assertEquals(1f, RaiderEncounter.TURBO_MAX_SECONDS, "the turbo window is bounded");
+    assertEquals(4f, RaiderEncounter.TURBO_RECOVERY_SECONDS, "the turbo recovery is bounded");
   }
 
   @Test
@@ -212,7 +357,7 @@ class RaiderEncounterTest {
     RaiderEncounter blind = new RaiderEncounter(random.copy());
     RaiderEncounter evasive = new RaiderEncounter(random.copy());
     for (RaiderEncounter encounter : new RaiderEncounter[] {blind, evasive}) {
-      encounter.advance(5f, WORLD, 2040f, 9400f); // spawn wait = 5 s, drift = 0
+      encounter.advance(5f, WORLD, 2040f, 9400f); // spawn wait = 5 s
     }
     float targetCenterX = 2080f;
     float targetCenterY = 10840f;
@@ -245,7 +390,7 @@ class RaiderEncounterTest {
     // disengage, then line up another pass. Body radii keep the real collision avoidance active.
     float targetX = 2000f;
     float targetY = 9000f;
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s, drift 0
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
     encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
 
     Set<RaiderEncounter.Maneuver> seen = EnumSet.noneOf(RaiderEncounter.Maneuver.class);
@@ -283,13 +428,15 @@ class RaiderEncounterTest {
     encounter.respawnAt(WORLD, TARGET_X, TARGET_Y, 30f);
     assertEquals(RaiderEncounter.Maneuver.APPROACH, encounter.maneuver(),
         "a new life must not inherit the previous pass");
+    assertFalse(encounter.isTurboActive(), "respawn must restore normal speed");
+    assertEquals(0f, encounter.turboRecoverySeconds(), EPSILON, "respawn clears the turbo clock");
   }
 
   @Test
   void headingTurnsStayBoundedAcrossEveryManeuver() {
     float targetX = 2000f;
     float targetY = 9000f;
-    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s, drift 0
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
     encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
     float maxStep = RaiderEncounter.MAX_TURN_RATE_DEGREES / 120f + 0.01f;
     float previous = encounter.raider().headingDegrees();
@@ -302,6 +449,11 @@ class RaiderEncounterTest {
           "heading jumped from " + previous + " to " + current + " (" + turn + " deg)");
       previous = current;
     }
+  }
+
+  private static float distance(RaiderEncounter encounter, float targetX, float targetY) {
+    return (float) Math.hypot(encounter.raider().centerX() - targetX,
+        encounter.raider().centerY() - targetY);
   }
 
   private static float normalizeYaw(float yaw) {

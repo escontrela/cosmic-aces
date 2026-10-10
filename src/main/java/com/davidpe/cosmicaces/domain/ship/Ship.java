@@ -60,8 +60,17 @@ public abstract class Ship {
     this.y = y;
   }
 
-  /** Advances at the same speed in every direction, including diagonals. */
+  /** Advances at the ship's own speed in every direction, including diagonals. */
   protected final void advance(MovementIntent intent, float deltaSeconds) {
+    advance(intent, deltaSeconds, speed);
+  }
+
+  /**
+   * Advances at an explicit speed instead of the ship's own. Used by the enemy AI for its bounded
+   * tactical turbo window; the player never calls it. The direction handling is identical to
+   * {@link #advance(MovementIntent, float)}.
+   */
+  protected final void advance(MovementIntent intent, float deltaSeconds, float speed) {
     if (deltaSeconds <= 0f || !Float.isFinite(deltaSeconds)) {
       return;
     }
