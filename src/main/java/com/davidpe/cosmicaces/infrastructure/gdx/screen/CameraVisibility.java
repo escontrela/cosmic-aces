@@ -32,12 +32,25 @@ public final class CameraVisibility {
   public static boolean shipVisible(float centerX, float centerY, float halfBox,
       float cameraX, float cameraY, float upX, float upY,
       float viewWidth, float viewHeight, float zoom) {
-    float dx = centerX - cameraX;
-    float dy = centerY - cameraY;
-    float localRight = dx * upY - dy * upX;
-    float localUp = dx * upX + dy * upY;
+    LocalFrame frame = localFrame(centerX, centerY, cameraX, cameraY, upX, upY);
     float halfWidth = viewWidth / 2f * zoom + halfBox;
     float halfHeight = viewHeight / 2f * zoom + halfBox;
-    return Math.abs(localRight) <= halfWidth && Math.abs(localUp) <= halfHeight;
+    return Math.abs(frame.right()) <= halfWidth && Math.abs(frame.up()) <= halfHeight;
   }
+
+  /**
+   * Projects a world point into the camera's rotated view frame. {@code right} grows along the
+   * camera's right vector and {@code up} along its {@code up} vector; the same signed distances are
+   * what {@link #shipVisible} compares against the visible half extents, so the off-screen
+   * indicator can orient itself with exactly the same geometry.
+   */
+  static LocalFrame localFrame(float worldX, float worldY,
+      float cameraX, float cameraY, float upX, float upY) {
+    float dx = worldX - cameraX;
+    float dy = worldY - cameraY;
+    return new LocalFrame(dx * upY - dy * upX, dx * upX + dy * upY);
+  }
+
+  /** Signed distances of a world point along the camera's right and up axes. */
+  record LocalFrame(float right, float up) {}
 }

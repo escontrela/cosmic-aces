@@ -418,6 +418,23 @@ abren y cierran el dibujo con el ShapeRenderer recibido, que pertenece a la
 pantalla. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
 
+Con COS-39 `PhaseOneScreen` dibuja además un indicador de enemigo fuera de
+pantalla (`OffscreenEnemyIndicator`) en la pasada HUD, después de fijar
+`hudCamera`, entre sesiones de `SpriteBatch`/`ShapeRenderer` y sin anidar
+`begin`. La colocación es geometría pura: reutiliza
+`CameraVisibility.localFrame(...)` (el mismo marco de cámara con rotación y zoom
+que `shipVisible`) para orientar una flecha ámbar hacia el Vesper activo, se
+oculta con `CameraVisibility.shipVisible(...)` —una única regla de visibilidad,
+sin un segundo test discrepante— cuando el enemigo entra en la vista, y no
+escala con el zoom mundial. Solo se muestra si la fase sigue y
+`controller.isRaiderActive()`: muerto, esperando reaparecer, sin aparecer aún o
+con la fase terminada no hay indicador. El borde inferior del rectángulo
+interior se ancla en `MinimapProjection.BOTTOM_MARGIN` para no tapar las
+lecturas del HUD; mientras el minimapa está visible se le pasa su panel real
+como reserva y la flecha se desliza por el mismo borde conservando la dirección.
+No crea recursos nativos ni modifica el minimapa, las armas, el daño, la
+puntuación ni las cadencias.
+
 Consulta posición y pose en la nave: `controller.astra().x()`,
 `controller.activeRaider().y()`, `encounter.raider().headingDegrees()` y
 `encounter.raider().turnDirection()`. No añadas métodos intermedios que solo
@@ -581,7 +598,7 @@ com.davidpe.cosmicaces
             |   6. combatActive()  7. aheadDistance()
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
-            |   1. shipVisible()
+            |   1. shipVisible()  2. localFrame() [marco de cámara compartido por el indicador]
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
@@ -590,7 +607,10 @@ com.davidpe.cosmicaces
             +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
                 1. toggle()  2. isVisible()  3. draw()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
-                1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
+            |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
+            |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
+                1. compute()  2. avoidReservations()  3. draw()
 ```
 
 ## Comportamiento provisional actual
