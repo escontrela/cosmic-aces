@@ -1,5 +1,7 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
+import com.davidpe.cosmicaces.domain.player.AstraVariant;
+
 /** Persistent presentation preferences shared by the welcome and playable screens. */
 public final class GamePresentationSettings {
 
@@ -9,11 +11,13 @@ public final class GamePresentationSettings {
   public static final float ASTRA_BOTTOM_STEP = 0.01f;
 
   private float astraBottomFraction = DEFAULT_ASTRA_BOTTOM_FRACTION;
+  private AstraVariant astraVariant = AstraVariant.ORIGINAL;
   private GameSettingsStore settingsStore;
 
   void loadFrom(GameSettingsStore settingsStore) {
     this.settingsStore = settingsStore;
     setAstraBottomFraction(settingsStore.astraBottomFraction());
+    setAstraVariant(settingsStore.astraVariant());
   }
 
   public float astraBottomFraction() {
@@ -34,5 +38,18 @@ public final class GamePresentationSettings {
 
   public void adjustAstraBottomFraction(float delta) {
     setAstraBottomFraction(astraBottomFraction + delta);
+  }
+
+  /** Selected Astra appearance; defaults to the original ship. */
+  public AstraVariant astraVariant() {
+    return astraVariant;
+  }
+
+  /** Persists Astra's appearance; a null selection falls back to the original ship. */
+  public void setAstraVariant(AstraVariant variant) {
+    astraVariant = variant == null ? AstraVariant.ORIGINAL : variant;
+    if (settingsStore != null) {
+      settingsStore.saveAstraVariant(astraVariant);
+    }
   }
 }

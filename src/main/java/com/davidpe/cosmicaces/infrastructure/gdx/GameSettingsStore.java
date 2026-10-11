@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Preferences;
+import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 
 /** File-backed, device-local storage for user-selected game settings. */
@@ -18,6 +19,7 @@ public final class GameSettingsStore {
   private static final String ASTRA_NORMAL_SPEED = "astra.speed.normal";
   private static final String ASTRA_TURBO_SPEED = "astra.speed.turbo";
   private static final String ASTRA_ULTRA_SPEED = "astra.speed.ultra";
+  private static final String ASTRA_VARIANT = "astra.variant";
 
   private Preferences preferences;
 
@@ -50,6 +52,16 @@ public final class GameSettingsStore {
     preferences().putInteger(ASTRA_NORMAL_SPEED, speeds.normal())
         .putInteger(ASTRA_TURBO_SPEED, speeds.turbo())
         .putInteger(ASTRA_ULTRA_SPEED, speeds.ultra()).flush();
+  }
+
+  /** Saved Astra appearance; a missing or unknown value resolves to the original ship. */
+  public AstraVariant astraVariant() {
+    return AstraVariant.fromId(
+        preferences().getString(ASTRA_VARIANT, AstraVariant.ORIGINAL.id()));
+  }
+
+  public void saveAstraVariant(AstraVariant variant) {
+    preferences().putString(ASTRA_VARIANT, variant.id()).flush();
   }
 
   public SavedVideoPreference savedVideoPreference() {
