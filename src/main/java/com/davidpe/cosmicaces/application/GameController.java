@@ -2,12 +2,21 @@ package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.game.PlayableRun;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 
 /** Common run clock and hero state shared by playable phase controllers. */
 public abstract class GameController {
 
   private final PlayableRun run = new PlayableRun();
-  private final Astra astra = new Astra();
+  private final Astra astra;
+
+  protected GameController() {
+    this(FlightSpeeds.DEFAULTS);
+  }
+
+  protected GameController(FlightSpeeds speeds) {
+    astra = new Astra(speeds);
+  }
 
   public final void start() {
     run.start();

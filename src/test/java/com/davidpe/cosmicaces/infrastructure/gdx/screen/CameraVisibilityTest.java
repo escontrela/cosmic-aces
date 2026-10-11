@@ -65,4 +65,12 @@ class CameraVisibilityTest {
     assertFalse(raiderVisible);
     assertFalse(astraVisible && raiderVisible, "only one ship intersects the view");
   }
+
+  @Test
+  void widerViewportMakesMoreWorldVisibleWithoutChangingObjectSize() {
+    assertFalse(CameraVisibility.shipVisible(700f, 0f, 40f, 0f, 0f, 0f, 1f,
+        1024f, 768f, 1f));
+    assertTrue(CameraVisibility.shipVisible(700f, 0f, 40f, 0f, 0f, 0f, 1f,
+        1920f, 1080f, 1f));
+  }
 }

@@ -4,7 +4,6 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
 /** Minimal fixed-screen flight readings drawn directly over the world. */
 final class FlightHud {
@@ -13,7 +12,11 @@ final class FlightHud {
   private static final Color SHADOW = new Color(0f, 0f, 0f, 0.85f);
   private static final Color HEADING_COLOR = new Color(0.44f, 0.86f, 0.96f, 1f);
   private static final Color ENERGY_COLOR = new Color(0.52f, 0.95f, 0.62f, 1f);
-  private final GlyphLayout scoreLayout = new GlyphLayout();
+  private static final float EDGE_MARGIN = 24f;
+  private static final float SCORE_VALUE_GAP = 12f;
+  private static final float SCORE_TOP_MARGIN = 24f;
+  private final GlyphLayout scoreLabelLayout = new GlyphLayout();
+  private final GlyphLayout scoreValueLayout = new GlyphLayout();
   private final GlyphLayout weaponLayout = new GlyphLayout();
   private final GlyphLayout energyLayout = new GlyphLayout();
 
@@ -38,43 +41,61 @@ final class FlightHud {
     return "ENERGIA " + clamped + "%";
   }
 
+  static float rightAlignedX(float viewportWidth, float contentWidth) {
+    return Math.max(EDGE_MARGIN, viewportWidth - EDGE_MARGIN - contentWidth);
+  }
+
+  static float centeredX(float viewportWidth, float contentWidth) {
+    return Math.max(EDGE_MARGIN, (viewportWidth - contentWidth) / 2f);
+  }
+
   void draw(SpriteBatch batch, BitmapFont font, float yawDegrees, float speed,
-      boolean isFiring, int energyPercent) {
+      boolean isFiring, int energyPercent, float viewportWidth) {
     String heading = headingLabel(yawDegrees) + " " + threeDigits(headingDegrees(yawDegrees));
     String velocity = Math.round(speed) + " km/h";
+    GlyphLayout velocityLayout = new GlyphLayout(font, velocity);
+    float velocityX = rightAlignedX(viewportWidth, velocityLayout.width);
     batch.begin();
     drawShadow(font, batch, heading, 24f, 34f);
-    drawShadow(font, batch, velocity, 662f, 34f);
+    drawShadow(font, batch, velocity, velocityX, 34f);
     font.setColor(HEADING_COLOR);
     font.draw(batch, heading, 24f, 35f);
     font.setColor(Color.WHITE);
-    font.draw(batch, velocity, 662f, 35f);
+    font.draw(batch, velocity, velocityX, 35f);
     drawEnergy(batch, font, energyPercent);
-    drawWeapon(batch, font, isFiring);
+    drawWeapon(batch, font, isFiring, viewportWidth);
     batch.end();
   }
 
-  /** Draws the current score in the top-right corner, separate from the bottom flight HUD. */
-  void drawScore(SpriteBatch batch, BitmapFont font, int points) {
-    String text = "SCORE " + points;
-    scoreLayout.setText(font, text);
-    float x = VirtualScreenSize.WIDTH - 24f - scoreLayout.width;
-    float y = 34f;
+  /** Draws a separated label and value in the top-right, clear of the bottom-right speed. */
+  void drawScore(SpriteBatch batch, BitmapFont font, int points, float viewportWidth,
+      float viewportHeight) {
+    String label = "SCORE";
+    String value = Integer.toString(points);
+    scoreLabelLayout.setText(font, label);
+    scoreValueLayout.setText(font, value);
+    float groupWidth = scoreLabelLayout.width + SCORE_VALUE_GAP + scoreValueLayout.width;
+    float labelX = rightAlignedX(viewportWidth, groupWidth);
+    float valueX = labelX + scoreLabelLayout.width + SCORE_VALUE_GAP;
+    float y = viewportHeight - SCORE_TOP_MARGIN;
     batch.begin();
-    drawShadow(font, batch, text, x, y);
+    drawShadow(font, batch, label, labelX, y);
+    drawShadow(font, batch, value, valueX, y);
     font.setColor(Color.WHITE);
-    font.draw(batch, scoreLayout, x, y);
+    font.draw(batch, scoreLabelLayout, labelX, y);
+    font.draw(batch, scoreValueLayout, valueX, y);
     batch.end();
   }
 
   /** M61 Vulcan label in a free bottom row, centered so it never touches heading, speed or score. */
-  private void drawWeapon(SpriteBatch batch, BitmapFont font, boolean isFiring) {
+  private void drawWeapon(SpriteBatch batch, BitmapFont font, boolean isFiring,
+      float viewportWidth) {
     String label = weaponLabel(isFiring);
     if (label.isEmpty()) {
       return;
     }
     weaponLayout.setText(font, label);
-    float x = (VirtualScreenSize.WIDTH - weaponLayout.width) / 2f;
+    float x = centeredX(viewportWidth, weaponLayout.width);
     float y = 58f;
     drawShadow(font, batch, label, x, y);
     font.setColor(Color.WHITE);

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
+import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import org.junit.jupiter.api.Test;
 
 class FlightCameraStateTest {
@@ -44,7 +46,7 @@ class FlightCameraStateTest {
     state.update(astra, Float.NaN, targetAt(refX(astra, 0f), refY(astra, 0f)));
     assertFalse(state.combatActive());
     assertEquals(1f, state.zoom(), 1e-4f);
-    assertEquals(100f, state.aheadDistance(), 1e-4f);
+    assertEquals(defaultExplorationAhead(), state.aheadDistance(), 1e-4f);
   }
 
   @Test void entersCombatWhenEnemyIntersectsTheExplorationView() {
@@ -72,10 +74,40 @@ class FlightCameraStateTest {
     state.update(astra, 0.25f, targetAt(refX(astra, 0f) + 8000f, refY(astra, 0f)));
     assertFalse(state.combatActive());
     assertEquals(1f, state.zoom(), 1e-4f);
-    assertEquals(100f, state.aheadDistance(), 1e-4f);
+    assertEquals(defaultExplorationAhead(), state.aheadDistance(), 1e-4f);
   }
 
-  @Test void combatConvergesToWiderZoomAndSmallerAhead() {
+  @Test void combatLatchUsesTheEffectiveViewportDimensions() {
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 0f, WORLD);
+    float targetX = refX(astra, 0f) + 700f;
+    float targetY = refY(astra, 0f);
+
+    FlightCameraState reference = new FlightCameraState(astra);
+    reference.update(astra, 0.25f, targetAt(targetX, targetY), 1024f, 768f);
+    assertFalse(reference.combatActive());
+
+    FlightCameraState fullHd = new FlightCameraState(astra);
+    fullHd.update(astra, 0.25f, targetAt(targetX, targetY), 1920f, 1080f);
+    assertTrue(fullHd.combatActive());
+  }
+
+  @Test void explorationKeepsAstraNearTheBottomAcrossEffectiveViewportHeights() {
+    for (float[] viewport : new float[][] {
+        {1024f, 768f}, {1920f, 1080f}, {1440f, 900f}}) {
+      Astra astra = new Astra();
+      astra.placeAt(1600f, 6000f, 0f, WORLD);
+      FlightCameraState state = new FlightCameraState(astra);
+
+      state.update(astra, 1f, FlightCameraState.CombatTarget.none(), viewport[0], viewport[1]);
+
+      float astraCenterAboveBottom = viewport[1] * state.zoom() / 2f - state.aheadDistance();
+      float bottomFraction = astraCenterAboveBottom / (viewport[1] * state.zoom());
+      assertEquals(FlightCameraState.ASTRA_BOTTOM_FRACTION, bottomFraction, 0.001f);
+    }
+  }
+
+  @Test void combatConvergesToWiderZoomAndKeepsAstraAtTheExplorationViewportPosition() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     FlightCameraState state = new FlightCameraState(astra);
@@ -86,7 +118,32 @@ class FlightCameraStateTest {
     }
     assertTrue(state.combatActive());
     assertEquals(1.25f, state.zoom(), 0.005f);
-    assertEquals(30f, state.aheadDistance(), 0.5f);
+    float astraCenterAboveBottom = VirtualScreenSize.HEIGHT * state.zoom() / 2f
+        - state.aheadDistance();
+    float bottomFraction = astraCenterAboveBottom / (VirtualScreenSize.HEIGHT * state.zoom());
+    assertEquals(FlightCameraState.ASTRA_BOTTOM_FRACTION, bottomFraction, 0.001f);
+  }
+
+  @Test void selectedAstraBottomPositionSurvivesCombatZoomAndViewportResize() {
+    float selectedFraction = 0.30f;
+    for (float[] viewport : new float[][] {{1024f, 768f}, {1920f, 1080f}, {1440f, 900f}}) {
+      Astra astra = new Astra();
+      astra.placeAt(1600f, 6000f, 0f, WORLD);
+      FlightCameraState state = new FlightCameraState(astra, selectedFraction);
+      float ahead = FlightCameraState.explorationAheadDistance(
+          viewport[1], 1f, selectedFraction);
+      float targetX = astra.x() + astra.drawWidth() / 2f;
+      float targetY = astra.y() + astra.drawHeight() / 2f + ahead;
+
+      for (int frame = 0; frame < 240; frame++) {
+        state.update(astra, 1f / 60f, targetAt(targetX, targetY), viewport[0], viewport[1]);
+      }
+
+      float astraCenterAboveBottom = viewport[1] * state.zoom() / 2f - state.aheadDistance();
+      float bottomFraction = astraCenterAboveBottom / (viewport[1] * state.zoom());
+      assertTrue(state.combatActive());
+      assertEquals(selectedFraction, bottomFraction, 0.001f);
+    }
   }
 
   @Test void combatHoldsThroughEdgeCrossingsAndReleasesAfterSustainedExit() {
@@ -133,7 +190,7 @@ class FlightCameraStateTest {
     }
     assertFalse(state.combatActive());
     assertEquals(1f, state.zoom(), 0.005f);
-    assertEquals(100f, state.aheadDistance(), 0.5f);
+    assertEquals(defaultExplorationAhead(), state.aheadDistance(), 0.5f);
   }
 
   private static FlightCameraState.CombatTarget targetAt(float centerX, float centerY) {
@@ -143,11 +200,15 @@ class FlightCameraStateTest {
   /** Reference view centre used by the state for the exploration framing at the given yaw. */
   private static float refX(Astra astra, float yawDegrees) {
     return astra.x() + astra.drawWidth() / 2f
-        + (float) Math.sin(Math.toRadians(yawDegrees)) * 100f;
+        + (float) Math.sin(Math.toRadians(yawDegrees)) * defaultExplorationAhead();
   }
 
   private static float refY(Astra astra, float yawDegrees) {
     return astra.y() + astra.drawHeight() / 2f
-        + (float) Math.cos(Math.toRadians(yawDegrees)) * 100f;
+        + (float) Math.cos(Math.toRadians(yawDegrees)) * defaultExplorationAhead();
+  }
+
+  private static float defaultExplorationAhead() {
+    return FlightCameraState.explorationAheadDistance(VirtualScreenSize.HEIGHT, 1f);
   }
 }

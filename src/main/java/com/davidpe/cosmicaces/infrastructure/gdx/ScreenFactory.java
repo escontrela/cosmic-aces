@@ -19,16 +19,28 @@ public final class ScreenFactory {
 
   private final GameCoordinator coordinator;
   private final GameEventPublisher publisher;
+  private final GameSettingsStore settingsStore = new GameSettingsStore();
+  private final VideoDisplaySettings videoSettings = new VideoDisplaySettings();
+  private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher) {
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
     this.publisher = Objects.requireNonNull(publisher, "publisher");
   }
 
+  /** Loads file-backed preferences after LibGDX creates its application context. */
+  public void loadSettings() {
+    settingsStore.initialize();
+    presentationSettings.loadFrom(settingsStore);
+    videoSettings.useSettingsStore(settingsStore);
+    videoSettings.restoreSavedPreference();
+  }
+
   /** Creates the welcome screen for the current welcome state. */
   public Screen createWelcomeScreen() {
     GameState state = coordinator.state();
-    return new WelcomeScreen(publisher, state.gameId(), state.phase());
+    return new WelcomeScreen(
+        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore);
   }
 
   /**
@@ -38,9 +50,10 @@ public final class ScreenFactory {
    */
   public Screen createPhaseOneScreen() {
     GameState state = coordinator.state();
-    PhaseOneGameController controller = new PhaseOneGameController();
+    PhaseOneGameController controller = new PhaseOneGameController(settingsStore.flightSpeeds());
     controller.start();
     return new PhaseOneScreen(
-        publisher, controller, state.gameId(), state.phase(), coordinator::snapshot);
+        publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
+        presentationSettings);
   }
 }

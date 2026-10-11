@@ -60,14 +60,14 @@ class AstraTest {
     ship.fly(new FlightControls(true,true,true,false,false), 1.1f, WORLD);
     assertEquals(0f, ship.yawDegrees(), 0.01f);
     assertEquals(1600f, ship.x(), EPS);
-    assertEquals(550f, ship.flightSpeed(), EPS);
+    assertEquals(480f, ship.flightSpeed(), EPS);
   }
 
   @Test void neutralFlightRecoversFromTurboAndBrakeToTheNewCruiseSpeed() {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     ship.fly(new FlightControls(false,false,true,false,false), 1.1f, WORLD);
-    assertEquals(550f, ship.flightSpeed(), EPS);
+    assertEquals(480f, ship.flightSpeed(), EPS);
     ship.fly(FlightControls.neutral(), 2f, WORLD);
     assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS);
 
@@ -118,11 +118,11 @@ class AstraTest {
     assertEquals(300f, ship.flightSpeed(), EPS);
     ship.fly(new FlightControls(false,false,true,false,false), 4f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
-    assertEquals(550f, ship.flightSpeed(), EPS);
+    assertEquals(FlightTuning.TURBO_SPEED, ship.flightSpeed(), EPS);
     ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
     assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS,
-        "a spent Ultra recovers to cruise");
+        "a spent Ultra cannot reactivate and recovers to cruise");
   }
 
   @Test void shotAtFiresFromTwoDistinctMeasuredCannonMouths() {
