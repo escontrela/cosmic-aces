@@ -102,6 +102,11 @@ ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
 Las pantallas crean y liberan sus recursos gráficos. Astra.Visuals y
 VesperRaider.Visuals cargan sus texturas y las liberan mediante dispose(); la pantalla
 es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantalla.
+`GhostwingDroneSheet` contiene solo metadatos de la lámina Ghostwing existente:
+2172×724 píxeles, tres fotogramas cuadrados de 724×724 y morro hacia +Y.
+`internalPath()`, `frameSlices()` y `frameSlice(int)` exponen recortes sin cargar
+texturas; el futuro objeto visual de Ghostwing deberá compartir una textura por
+pantalla y liberarla allí.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
@@ -606,6 +611,8 @@ com.davidpe.cosmicaces
 |   |   |   +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
 |   |   |   +-- FiringPlacement(offsetXPx, offsetYPx): ancla del fogonazo por pose/familia.
 |   +-- enemy
+|   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
+|   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
 |   |   |   4. placeAt()  5. centerX()  6. centerY()  7. setDriftDirection()
