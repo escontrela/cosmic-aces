@@ -176,6 +176,23 @@ su propia duración) en el mismo `PhaseOneAudio` owner de COS-42, con volumen ce
 GunTuning.BURST_INTERVAL_SECONDS` garantiza que una ráfaga no empiece antes de que acabe la anterior
 (y la prueba lo fija); la escucha y el ajuste perceptual de duración/volumen quedan para el PO.
 
+### Audio de PhaseOne: explosión por destrucción (COS-44)
+
+La explosión se sincroniza con la transición «nave viva → destruida», no con el frame ni con la
+animación. `PhaseOneScreen.updateExplosions(...)` ya es el único punto que detecta esa transición por
+nave (banderas `astraExplosionSpawned`/`raiderExplosionSpawned`, que solo se reinician cuando la nave
+vuelve a estar viva); antes de mutarlas, la pantalla consulta el helper puro
+`PhaseOneAudio.explosionCues(astraDestroyed, astraSpawned, raiderDestroyed, raiderSpawned)` y envía el
+total a `PhaseOneAudio.playExplosions(int)`. Así una destrucción reproduce un cue exacto, una nave que
+sigue destruida en frames posteriores no añade voces, y un choque mutuo que destruye ambas produce una
+transición por nave (dos cues, independientes de la causa: proyectil, energía agotada o colisión).
+
+El asset es `assets/sounds/sound-crunchy-explosion1.wav`, un WAV **mono PCM 16-bit 44,1 kHz** de
+1,731 s. Al ser PCM de 16 bits el decoder `Wav` de LWJGL3 1.12.1 lo acepta tal cual, sin derivado (a
+diferencia del ambiente Float32 de COS-42); se carga como `Sound` en memoria y se libera en el
+`dispose()` único de `PhaseOneAudio`, con volumen centralizado `EXPLOSION_VOLUME`. El dominio sigue
+sin dependencias de audio: solo la pantalla traduce su estado de destrucción en reproducción.
+
 ### Detector de colisiones preparado para COS-32
 
 `domain.collision.CollisionDetector` es una utilidad sin estado ni LibGDX, utilizable
@@ -654,9 +671,10 @@ com.davidpe.cosmicaces
         |   +-- Subscription: cancelacion de un listener.
         |       1. cancel()
         +-- audio
-        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne (cabina en bucle + cue M61).
+        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne (cabina, cue M61, explosión).
         |       1. updateCabinAmbience()  2. cabinAmbienceAudible()  3. playVulcanBursts()
-        |       4. burstsSince() [helper puro del delta de emisiones]  5. dispose()
+        |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
+        |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()

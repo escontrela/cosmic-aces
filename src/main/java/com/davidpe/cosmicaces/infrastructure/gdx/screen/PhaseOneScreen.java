@@ -451,8 +451,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * animations. The {@code spawned} flag is only cleared when the ship is alive again, so a still
    * destroyed ship whose animation already ended does not restart it. Independent per ship, so a
    * simultaneous hull-to-hull destruction produces two animations.
+   *
+   * <p>The same fresh transition drives the explosion cue: both destruction flags are sampled before
+   * this frame mutates them, so one destruction plays exactly one cue, a still-destroyed ship in the
+   * following frames adds nothing, and a mutual collision plays one voice per ship.
    */
   private void updateExplosions(float delta) {
+    int explosionCues = PhaseOneAudio.explosionCues(
+        controller.astraCombat().isDestroyed(), astraExplosionSpawned,
+        controller.raiderCombat().isDestroyed(), raiderExplosionSpawned);
     if (!controller.astraCombat().isDestroyed()) {
       astraExplosion = null;
       astraExplosionSpawned = false;
@@ -486,6 +493,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         raiderExplosion = null;
       }
     }
+
+    audio.playExplosions(explosionCues);
   }
 
   /** Draws every running explosion into the open world-space batch, anchored at its death centre. */

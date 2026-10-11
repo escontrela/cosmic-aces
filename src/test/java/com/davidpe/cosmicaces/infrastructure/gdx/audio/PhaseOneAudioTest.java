@@ -28,6 +28,40 @@ class PhaseOneAudioTest {
   }
 
   @Test
+  void freshAstraDestructionPlaysOneExplosionCue() {
+    assertEquals(1, PhaseOneAudio.explosionCues(true, false, false, false));
+  }
+
+  @Test
+  void freshRaiderDestructionPlaysOneExplosionCue() {
+    assertEquals(1, PhaseOneAudio.explosionCues(false, false, true, false));
+  }
+
+  @Test
+  void stillDestroyedShipsPlayNoFurtherCues() {
+    assertEquals(0, PhaseOneAudio.explosionCues(true, true, false, false),
+        "Astra already signalled stays silent while destroyed");
+    assertEquals(0, PhaseOneAudio.explosionCues(false, false, true, true),
+        "Vesper already signalled stays silent while destroyed");
+    assertEquals(0, PhaseOneAudio.explosionCues(true, true, true, true),
+        "both still destroyed produce no additional voices");
+  }
+
+  @Test
+  void simultaneousMutualDestructionPlaysTwoExplosionCues() {
+    assertEquals(2, PhaseOneAudio.explosionCues(true, false, true, false));
+    assertEquals(1, PhaseOneAudio.explosionCues(true, false, true, true),
+        "a raider that already signalled does not add a second voice");
+  }
+
+  @Test
+  void respecifiedLiveStateKeepsFlagsReadyForTheNextDestruction() {
+    // The screen clears both flags while a ship is alive, so the next destruction is fresh again.
+    assertEquals(0, PhaseOneAudio.explosionCues(false, false, false, false));
+    assertEquals(1, PhaseOneAudio.explosionCues(true, false, false, false));
+  }
+
+  @Test
   void ambienceHeardWhileAstraAdvancesNormally() {
     assertTrue(PhaseOneAudio.cabinAmbienceAudible(true, false, 150f));
     assertTrue(PhaseOneAudio.cabinAmbienceAudible(true, false, 650f));
