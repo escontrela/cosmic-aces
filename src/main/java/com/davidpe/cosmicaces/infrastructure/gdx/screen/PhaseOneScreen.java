@@ -29,6 +29,7 @@ import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
+import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
@@ -72,6 +73,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final VesperRaider.Visuals raiderVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
+  private final PhaseOneAudio audio;
   private final BitmapFont font;
   private final BitmapFont hudFont;
   private final GlyphLayout endLayout;
@@ -110,6 +112,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     VesperRaider.Visuals loadedRaider = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
+    PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
     GlyphLayout loadedLayout;
@@ -120,6 +123,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedRaider = new VesperRaider.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
+      loadedAudio = new PhaseOneAudio();
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -131,6 +135,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       if (loadedFont != null) {
         loadedFont.dispose();
+      }
+      if (loadedAudio != null) {
+        loadedAudio.dispose();
       }
       if (loadedExplosion != null) {
         loadedExplosion.dispose();
@@ -158,6 +165,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     raiderVisuals = loadedRaider;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
+    audio = loadedAudio;
     font = loadedFont;
     hudFont = loadedHudFont;
     endLayout = loadedLayout;
@@ -215,9 +223,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // One weapons update per frame, after the camera that this frame draws, using the world zoom as
     // the frozen range so a shot covers about two visible viewport heights. Impacts are resolved
     // inside this call and the single raider destruction bonus is published once, before the HUD.
+    long astraBurstsBefore = controller.astraGun().emissionCount();
+    long raiderBurstsBefore = controller.raiderGun().emissionCount();
     int weaponEarned = controller.advanceWeapons(delta, emissionSeconds,
         Gdx.input.isKeyPressed(Input.Keys.SPACE), weaponsCoincident,
         2f * VirtualScreenSize.HEIGHT * camera.zoom);
+    // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters, so
+    // a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays a shot
+    // that no burst actually produced. Astra and Vesper share the same short cue.
+    audio.playVulcanBursts(
+        PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
+            + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
     if (weaponEarned > 0) {
       publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
     }
@@ -225,6 +241,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only
     // converts the destroyed state into a world-anchored animation.
     updateExplosions(delta);
+    // Keep the single cabin ambience stream aligned with the real flight/run state of this frame
+    // (Astra active, run not finished, forward speed above zero). The adapter is idempotent, so the
+    // loop never restarts or stacks just because this method runs once per frame.
+    audio.updateCabinAmbience(PhaseOneAudio.cabinAmbienceAudible(controller.isAstraActive(),
+        runFinished, controller.astra().flightSpeed()));
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
@@ -297,6 +318,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
   @Override
   public void dispose() {
+    audio.dispose();
     batch.dispose();
     shapes.dispose();
     astraVisuals.dispose();
@@ -429,8 +451,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * animations. The {@code spawned} flag is only cleared when the ship is alive again, so a still
    * destroyed ship whose animation already ended does not restart it. Independent per ship, so a
    * simultaneous hull-to-hull destruction produces two animations.
+   *
+   * <p>The same fresh transition drives the explosion cue: both destruction flags are sampled before
+   * this frame mutates them, so one destruction plays exactly one cue, a still-destroyed ship in the
+   * following frames adds nothing, and a mutual collision plays one voice per ship.
    */
   private void updateExplosions(float delta) {
+    int explosionCues = PhaseOneAudio.explosionCues(
+        controller.astraCombat().isDestroyed(), astraExplosionSpawned,
+        controller.raiderCombat().isDestroyed(), raiderExplosionSpawned);
     if (!controller.astraCombat().isDestroyed()) {
       astraExplosion = null;
       astraExplosionSpawned = false;
@@ -464,6 +493,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         raiderExplosion = null;
       }
     }
+
+    audio.playExplosions(explosionCues);
   }
 
   /** Draws every running explosion into the open world-space batch, anchored at its death centre. */

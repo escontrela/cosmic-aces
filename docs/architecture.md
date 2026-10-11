@@ -20,6 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
+| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
@@ -122,6 +123,75 @@ fogonazo, input, proyectiles y HUD pertenecen a COS-27. Al integrarlos, conserva
 la escala y ancla del cuerpo entre variantes: las imágenes fuente de disparo
 tienen diferencias de geometría y margen respecto a las originales; no estirar
 cada pose para rellenar la caja ni aumentar la caja de vuelo por el fogonazo.
+
+### Audio de PhaseOne y loop de cabina (COS-42)
+
+`infrastructure.gdx.audio.PhaseOneAudio` es el adaptador de audio de la fase, propietario de los
+recursos nativos de sonido: encapsula `Gdx.audio`/`Gdx.files` para que el dominio y
+`PhaseOneGameController` no importen clases de audio y centraliza los volúmenes (sin UI de mezcla
+por alcance de COS-41). `PhaseOneScreen` lo construye junto con los demás recursos (con limpieza
+parcial en el constructor) y lo libera exactamente una vez en `dispose()`, de modo que cambiar de
+pantalla o cerrar el juego detiene y libera la música; WelcomeScreen no crea audio de combate.
+
+El ambiente de cabina se reproduce como `Music` en bucle desde
+`assets/sounds/sound-airplane-cabin-near-ground-pcm16.wav`, un WAV PCM 16-bit estéreo 44,1 kHz de
+120 s derivado del original Float32 de 42 MB (que permanece intacto). La conversión es obligatoria:
+el decoder `Wav` del backend LWJGL3 1.12.1 solo admite PCM (tipo 1) de 16 bits y rechaza IEEE float
+y otros bits con `GdxRuntimeException`. El derivado se generó con
+`afconvert -f WAVE -d LEI16@44100 -c 2` preservando canales, sample rate y duración. `Music` se
+reproduce como stream sin cargar el clip entero como efecto corto.
+
+La política de loop es un helper puro y testeable sin dispositivo de audio:
+`PhaseOneAudio.cabinAmbienceAudible(astraActive, runFinished, flightSpeed)` — audible solo con
+Astra activa, fase sin terminar y velocidad de avance finita > 0 (estado real de la nave, nunca una
+tecla sostenida). `updateCabinAmbience(boolean)` es idempotente: solo llama `play()`/`pause()` en el
+cambio de estado, de modo que un frame nunca reinicia, copia ni apila el stream (`Music.play()` de
+OpenALMusic ya es no-op si está sonando y `pause()` conserva la posición). La pantalla evalúa la
+política una vez por frame después de `updateExplosions(...)`, cuando `runFinished`, vida de Astra y
+velocidad ya reflejan este frame: destrucción de Astra, velocidad cero, fin de fase o salida de
+pantalla pausan/detienen el loop; el vuelo activo posterior reanuda la misma instancia. COS-43 y
+COS-44 extienden este mismo dueño con los efectos de ráfaga y explosión.
+
+### Audio de PhaseOne: cue M61 sincronizado (COS-43)
+
+La ráfaga audible se sincroniza con el reloj de emisión real del arma, no con el frame, la tecla ni
+el fogonazo. `domain.weapon.GunBurst` añade un contador monotónico `emissionCount()`: incrementa una
+vez por cada `emit(...)` que produce un `Shot` (nunca por boca/cañón, proyectil ni frame). Sigue
+determinista y sin dependencias de infraestructura; `clear()` no lo resetea para que los deltas entre
+muestras sigan siendo válidos.
+
+`PhaseOneScreen` toma una muestra del contador de `astraGun()` y `raiderGun()` antes y después de su
+única llamada por frame a `advanceWeapons(...)` y convierte cada delta con el helper puro
+`PhaseOneAudio.burstsSince(before, after)` (devuelve 0 ante muestras no crecientes). Como la
+autorización vive en `PhaseOneGameController` (`astraEnabled`, `raiderEnabled`), un delta cero
+significa «no hubo ráfaga»: SPACE sostenido sin emisión, nave destruida, Vesper sin coincidencia o
+fase terminada no reproducen sonido. Astra y Vesper comparten el mismo efecto.
+
+El asset es `assets/sounds/sound-machine-gun-burst-pcm16.wav`: un recorte de 0,08 s (a la cadencia de
+Astra) dentro del WAV original de 1,95 s, tomado de la ventana de mayor energía y con fades cortos
+de entrada/salida para evitar clics. El original `sound-machine-gun-2-8-bit.wav` queda intacto. El
+recorte se carga como `Sound` en memoria (efecto corto, baja latencia, voces solapadas acotadas por
+su propia duración) en el mismo `PhaseOneAudio` owner de COS-42, con volumen centralizado
+`VULCAN_BURST_VOLUME` y liberación única en `dispose()`. `VULCAN_BURST_SECONDS ≤
+GunTuning.BURST_INTERVAL_SECONDS` garantiza que una ráfaga no empiece antes de que acabe la anterior
+(y la prueba lo fija); la escucha y el ajuste perceptual de duración/volumen quedan para el PO.
+
+### Audio de PhaseOne: explosión por destrucción (COS-44)
+
+La explosión se sincroniza con la transición «nave viva → destruida», no con el frame ni con la
+animación. `PhaseOneScreen.updateExplosions(...)` ya es el único punto que detecta esa transición por
+nave (banderas `astraExplosionSpawned`/`raiderExplosionSpawned`, que solo se reinician cuando la nave
+vuelve a estar viva); antes de mutarlas, la pantalla consulta el helper puro
+`PhaseOneAudio.explosionCues(astraDestroyed, astraSpawned, raiderDestroyed, raiderSpawned)` y envía el
+total a `PhaseOneAudio.playExplosions(int)`. Así una destrucción reproduce un cue exacto, una nave que
+sigue destruida en frames posteriores no añade voces, y un choque mutuo que destruye ambas produce una
+transición por nave (dos cues, independientes de la causa: proyectil, energía agotada o colisión).
+
+El asset es `assets/sounds/sound-crunchy-explosion1.wav`, un WAV **mono PCM 16-bit 44,1 kHz** de
+1,731 s. Al ser PCM de 16 bits el decoder `Wav` de LWJGL3 1.12.1 lo acepta tal cual, sin derivado (a
+diferencia del ambiente Float32 de COS-42); se carga como `Sound` en memoria y se libera en el
+`dispose()` único de `PhaseOneAudio`, con volumen centralizado `EXPLOSION_VOLUME`. El dominio sigue
+sin dependencias de audio: solo la pantalla traduce su estado de destrucción en reproducción.
 
 ### Detector de colisiones preparado para COS-32
 
@@ -574,7 +644,7 @@ com.davidpe.cosmicaces
 |   |   |   10. travelled()
 |   |   +-- GunBurst: emisor visual con cadencia, fogonazo y colección de proyectiles.
 |   |   |   1. advance() [2 sobrecargas]  2. projectiles()  3. isFiring()
-|   |   |   4. flashVisible()  5. clear()
+|   |   |   4. flashVisible()  5. emissionCount() [contador monotónico por ráfaga real]  6. clear()
 |   |   |   +-- Muzzle(x,y): origen de un cañón congelado al disparar.
 |   |   |   +-- Shot(muzzles,forwardX,forwardY,range): instantánea de una emisión.
 |   |   |   +-- ShotSource: shotAt(offsetSeconds) entrega la instantánea.
@@ -600,6 +670,11 @@ com.davidpe.cosmicaces
         |   |   1. publish()
         |   +-- Subscription: cancelacion de un listener.
         |       1. cancel()
+        +-- audio
+        |   +-- PhaseOneAudio: dueño de los recursos de audio de PhaseOne (cabina, cue M61, explosión).
+        |       1. updateCabinAmbience()  2. cabinAmbienceAudible()  3. playVulcanBursts()
+        |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
+        |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
             +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
             |   1. render()  2. resize()  3. dispose()

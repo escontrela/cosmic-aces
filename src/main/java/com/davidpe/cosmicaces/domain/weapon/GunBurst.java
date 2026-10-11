@@ -20,6 +20,7 @@ public final class GunBurst {
   private final double burstIntervalSeconds;
   private double sinceLastEmission;
   private boolean firing;
+  private long emissionCount;
 
   /** Creates a weapon with Astra's standard cadence. */
   public GunBurst() {
@@ -145,6 +146,7 @@ public final class GunBurst {
     if (shot == null) {
       return;
     }
+    emissionCount++;
     float remainingLife = (float) Math.max(0d, frameDelta - eventLocal);
     for (Muzzle muzzle : shot.muzzles()) {
       GunProjectile projectile = new GunProjectile(muzzle.x(), muzzle.y(),
@@ -171,6 +173,17 @@ public final class GunBurst {
   /** True while the trigger is held inside its allowed emission window, including between pulses. */
   public boolean isFiring() {
     return firing;
+  }
+
+  /**
+   * Monotonic number of real emission events produced by this weapon: one per {@link #advance}
+   * emission that yielded a {@link Shot}, never one per muzzle, projectile or frame. Callers take
+   * two samples around an {@code advance} to detect the bursts that happened in that frame (for
+   * example, to trigger audio) without relying on the trigger state or the muzzle flash. It is not
+   * reset by {@link #clear()} so deltas stay valid across a reset.
+   */
+  public long emissionCount() {
+    return emissionCount;
   }
 
   /** True during the short muzzle-flash pulse that follows the last emission event. */

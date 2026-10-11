@@ -290,6 +290,69 @@ class GunBurstTest {
         () -> new GunBurst.Muzzle(Float.NaN, 0f));
   }
 
+  @Test
+  void emissionCountCountsOnePerBurstNotPerMuzzle() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(twoCannonShot(0f, 1f, HUGE_RANGE));
+
+    gun.advance(0.001f, 0.001f, true, counter);
+
+    assertEquals(1, counter.events);
+    assertEquals(1L, gun.emissionCount(), "two muzzles are still one emission event");
+    assertEquals(2, gun.projectiles().size());
+  }
+
+  @Test
+  void emissionCountReportsEveryEmissionInsideOneDelta() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(oneCannonShot(0f, 1f, HUGE_RANGE));
+
+    // 0.25 s at 0.08 s cadence: events at 0.00, 0.08, 0.16 and 0.24.
+    gun.advance(0.25f, 0.25f, true, counter);
+
+    assertEquals(4, counter.events);
+    assertEquals(4L, gun.emissionCount());
+  }
+
+  @Test
+  void emissionCountStaysAtZeroWhenEmissionIsNotAllowed() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(oneCannonShot(0f, 1f, HUGE_RANGE));
+
+    gun.advance(0.01f, 0.01f, false, counter); // trigger not held
+    gun.advance(0.01f, 0f, true, counter); // no active emission window
+    gun.advance(0.01f, 0.01f, true, null); // no source
+
+    assertEquals(0, counter.events);
+    assertEquals(0L, gun.emissionCount());
+    assertTrue(gun.projectiles().isEmpty());
+  }
+
+  @Test
+  void emissionCountIgnoresADeclinedShot() {
+    GunBurst gun = new GunBurst();
+    GunBurst.ShotSource declined = offsetSeconds -> null;
+
+    gun.advance(0.25f, 0.25f, true, declined);
+
+    assertEquals(0L, gun.emissionCount(), "a source that returns no shot produces no event");
+    assertTrue(gun.projectiles().isEmpty());
+  }
+
+  @Test
+  void emissionCountIsMonotonicAcrossFrames() {
+    GunBurst gun = new GunBurst();
+    Counter counter = new Counter(twoCannonShot(0f, 1f, HUGE_RANGE));
+
+    for (int frame = 0; frame < 30; frame++) {
+      gun.advance(0.01f, 0.01f, true, counter); // 0.30 s -> 4 events
+    }
+
+    assertEquals(4, counter.events);
+    assertEquals(4L, gun.emissionCount());
+    assertEquals(8, gun.projectiles().size(), "still two projectiles per event");
+  }
+
   private static int eventsOverOneSecond(int framesPerSecond) {
     GunBurst gun = new GunBurst();
     Counter counter = new Counter(oneCannonShot(0f, 1f, HUGE_RANGE));
