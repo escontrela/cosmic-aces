@@ -16,6 +16,7 @@ import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
+import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 import com.davidpe.cosmicaces.infrastructure.gdx.GameSettingsStore;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
@@ -64,6 +65,10 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static final float BLINK_PERIOD = 0.45f;
   private static final float SETTINGS_ROW_HEIGHT = 27f;
   private static final int MAX_VISIBLE_VIDEO_MODES = 10;
+  private static final String[] ROOT_OPTIONS_NO_STORE = {"Vídeo", "Encuadre de Astra"};
+  private static final String[] ROOT_OPTIONS = {
+    "Vídeo", "Encuadre de Astra", "Velocidades de Astra", "Nave de Astra"
+  };
   private static final float CELL_WIDTH = 15.36f;
   private static final float LINE_HEIGHT = 26.88f;
   private static final String[] ASCII_GLYPHS = new String[128];
@@ -238,6 +243,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ROOT -> handleRootInput();
       case VIDEO -> handleVideoInput();
       case ASTRA -> handleAstraInput();
+      case ASTRA_MODEL -> handleAstraModelInput();
       case SPEEDS -> handleSpeedInput();
       case CLOSED -> { }
     }
@@ -250,12 +256,11 @@ public final class WelcomeScreen extends ScreenAdapter {
           + (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : -1), settingsRootOptionCount());
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
-      if (rootSelection == 0) {
-        openVideoSettings();
-      } else if (rootSelection == 1) {
-        settingsPage = SettingsPage.ASTRA;
-      } else {
-        settingsPage = SettingsPage.SPEEDS;
+      switch (rootSelection) {
+        case 0 -> openVideoSettings();
+        case 1 -> settingsPage = SettingsPage.ASTRA;
+        case 2 -> settingsPage = SettingsPage.SPEEDS;
+        default -> settingsPage = SettingsPage.ASTRA_MODEL;
       }
     }
   }
@@ -307,8 +312,21 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
+  private void handleAstraModelInput() {
+    if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+      presentationSettings.cycleAstraVariant(-1);
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+      presentationSettings.cycleAstraVariant(1);
+    }
+  }
+
   private int settingsRootOptionCount() {
-    return settingsStore == null ? 2 : 3;
+    return rootOptions().length;
+  }
+
+  private String[] rootOptions() {
+    return settingsStore == null ? ROOT_OPTIONS_NO_STORE : ROOT_OPTIONS;
   }
 
   private void handleSpeedInput() {
@@ -391,6 +409,8 @@ public final class WelcomeScreen extends ScreenAdapter {
       drawRootSettings(left, top - 112f);
     } else if (settingsPage == SettingsPage.ASTRA) {
       drawAstraSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.ASTRA_MODEL) {
+      drawAstraModelSettings(left, top - 112f);
     } else if (settingsPage == SettingsPage.VIDEO) {
       drawVideoSettings(left, top - 112f, panelY);
     } else if (settingsPage == SettingsPage.SPEEDS) {
@@ -404,24 +424,21 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ROOT -> "AJUSTES";
       case VIDEO -> "AJUSTES  >  VIDEO";
       case ASTRA -> "AJUSTES  >  ENCUADRE DE ASTRA";
+      case ASTRA_MODEL -> "AJUSTES  >  NAVE DE ASTRA";
       case SPEEDS -> "AJUSTES  >  VELOCIDADES DE ASTRA";
       case CLOSED -> "";
     };
   }
 
   private void drawRootSettings(float left, float top) {
-    settingsFont.setColor(rootSelection == 0 ? Color.GOLD : Color.WHITE);
-    settingsFont.draw(batch, (rootSelection == 0 ? ">  " : "   ") + "Vídeo", left, top);
-    settingsFont.setColor(rootSelection == 1 ? Color.GOLD : Color.WHITE);
-    settingsFont.draw(batch, (rootSelection == 1 ? ">  " : "   ") + "Encuadre de Astra", left,
-        top - 42f);
-    if (settingsRootOptionCount() > 2) {
-      settingsFont.setColor(rootSelection == 2 ? Color.GOLD : Color.WHITE);
-      settingsFont.draw(batch, (rootSelection == 2 ? ">  " : "   ") + "Velocidades de Astra",
-          left, top - 84f);
+    String[] options = rootOptions();
+    for (int index = 0; index < options.length; index++) {
+      settingsFont.setColor(rootSelection == index ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (rootSelection == index ? ">  " : "   ") + options[index], left,
+          top - index * 42f);
     }
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - 105f);
+    settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - options.length * 42f - 21f);
   }
 
   private void drawSpeedSettings(float left, float top) {
@@ -458,6 +475,28 @@ public final class WelcomeScreen extends ScreenAdapter {
     int filled = Math.round((percent - 10f) / 25f * 20f);
     return "[" + "#".repeat(Math.max(0, Math.min(20, filled)))
         + "-".repeat(Math.max(0, 20 - filled)) + "]";
+  }
+
+  private void drawAstraModelSettings(float left, float top) {
+    AstraVariant active = presentationSettings.astraVariant();
+    AstraVariant[] variants = AstraVariant.values();
+    for (int index = 0; index < variants.length; index++) {
+      boolean selected = variants[index] == active;
+      settingsFont.setColor(selected ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (selected ? ">  " : "   ") + astraModelLabel(variants[index])
+          + (selected ? "   (activa)" : ""), left, top - index * 38f);
+    }
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "←/→ cambiar el modelo de Astra", left, top - 142f);
+    settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar una fase nueva.",
+        left, top - 174f);
+  }
+
+  private static String astraModelLabel(AstraVariant variant) {
+    return switch (variant) {
+      case ORIGINAL -> "Astra original";
+      case F16_MLU_755 -> "F-16 MLU 755";
+    };
   }
 
   private void drawVideoSettings(float left, float top, float panelY) {
@@ -506,7 +545,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
   }
 
-  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, SPEEDS }
+  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS }
 
   private void drawAsciiLines(String[] lines, float top, int accentRow) {
     for (int row = 0; row < lines.length; row++) {

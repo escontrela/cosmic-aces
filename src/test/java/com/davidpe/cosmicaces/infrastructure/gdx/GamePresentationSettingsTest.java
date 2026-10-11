@@ -47,4 +47,14 @@ class GamePresentationSettingsTest {
     settings.setAstraVariant(null);
     assertEquals(AstraVariant.ORIGINAL, settings.astraVariant());
   }
+
+  @Test
+  void cyclesAstraVariantInBothDirectionsAndWrapsAround() {
+    GamePresentationSettings settings = new GamePresentationSettings();
+
+    assertEquals(AstraVariant.F16_MLU_755, settings.cycleAstraVariant(1));
+    assertEquals(AstraVariant.ORIGINAL, settings.cycleAstraVariant(1));
+    assertEquals(AstraVariant.F16_MLU_755, settings.cycleAstraVariant(-1));
+    assertEquals(AstraVariant.ORIGINAL, settings.cycleAstraVariant(-1));
+  }
 }

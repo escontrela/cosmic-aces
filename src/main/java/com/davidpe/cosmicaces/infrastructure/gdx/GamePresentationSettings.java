@@ -52,4 +52,15 @@ public final class GamePresentationSettings {
       settingsStore.saveAstraVariant(astraVariant);
     }
   }
+
+  /**
+   * Moves Astra's appearance forward ({@code delta > 0}) or backward ({@code delta < 0}) through
+   * the available variants, wrapping around, and persists the result immediately.
+   */
+  public AstraVariant cycleAstraVariant(int delta) {
+    AstraVariant[] variants = AstraVariant.values();
+    int next = Math.floorMod(astraVariant.ordinal() + delta, variants.length);
+    setAstraVariant(variants[next]);
+    return astraVariant;
+  }
 }
