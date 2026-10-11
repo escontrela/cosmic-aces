@@ -39,6 +39,13 @@ aplicar esas transiciones. Infraestructura puede depender de application y domai
 boot ensambla y arranca la aplicación.
 
 Las pantallas traducen el input en llamadas al controlador y publican eventos.
+La presentación de bienvenida y PhaseOne usa `ScreenViewport` con una unidad por
+píxel lógico: la ventana maximizada/redimensionable cambia el rectángulo visible
+sin escalar sprites ni añadir bandas de aspecto. Las cámaras de mundo conservan
+su posición y zoom al redimensionar; la cámara HUD se recentra en el tamaño lógico
+efectivo. `VirtualScreenSize` (1024×768) sigue siendo la referencia para valores
+de juego y tamaño restaurado de ventana, no el límite del viewport. En HiDPI, las
+dimensiones del viewport provienen del callback lógico `resize`, no del backbuffer.
 En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 `MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
 rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
@@ -798,7 +805,7 @@ com.davidpe.cosmicaces
     +-- gdx
         +-- ScreenFactory: construye pantallas y conecta dependencias.
         |   1. createWelcomeScreen()  2. createPhaseOneScreen()
-        +-- VirtualScreenSize: resolucion virtual compartida, 800 x 600.
+        +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
         +-- event
         |   +-- GameEventBus: bus sincrono por tipo concreto de evento.
         |   |   1. subscribe()  2. publish()

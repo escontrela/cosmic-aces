@@ -10,7 +10,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
-import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
@@ -106,9 +106,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     this.phase = phase;
     this.phaseSnapshot = phaseSnapshot;
     camera = new OrthographicCamera();
-    viewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera);
+    // Keep world units at logical-pixel scale so wider/taller windows expose more world.
+    viewport = new ScreenViewport(camera);
     hudCamera = new OrthographicCamera();
-    hudViewport = new FitViewport(VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, hudCamera);
+    hudViewport = new ScreenViewport(hudCamera);
     hudCamera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
     hudCamera.update();
     scenery = new WorldScenery(PhaseOneGameController.WORLD,
@@ -337,6 +338,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
   public void resize(int width, int height) {
     viewport.update(width, height, false);
     hudViewport.update(width, height, true);
+    hudCamera.position.set(hudViewport.getWorldWidth() / 2f,
+        hudViewport.getWorldHeight() / 2f, 0f);
+    hudCamera.update();
   }
 
   @Override

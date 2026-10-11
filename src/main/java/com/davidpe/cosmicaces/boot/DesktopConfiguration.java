@@ -21,6 +21,7 @@ public final class DesktopConfiguration {
     config.setTitle("Cosmic Aces");
     config.setWindowedMode((int) VirtualScreenSize.WIDTH, (int) VirtualScreenSize.HEIGHT);
     config.setResizable(true);
+    config.setMaximized(true);
     config.useVsync(true);
     config.setForegroundFPS(60);
     return config;

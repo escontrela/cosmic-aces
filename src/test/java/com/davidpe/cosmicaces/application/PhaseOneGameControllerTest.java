@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.domain.player.FlightTuning;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ class PhaseOneGameControllerTest {
     controller.advanceFlight(FlightControls.neutral(), 5f, false);
     assertTrue(controller.isRunFinished());
     assertEquals(0f, controller.remainingRunSeconds());
-    assertEquals(before + 115f, controller.astra().y(), 0.2f);
+    assertEquals(before + FlightTuning.NORMAL_SPEED * 0.5f, controller.astra().y(), 0.2f);
     before = controller.astra().y();
     controller.advanceFlight(FlightControls.neutral(), 1f, false);
     assertEquals(before, controller.astra().y());
