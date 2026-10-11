@@ -150,6 +150,42 @@ encuentro para presentación y pruebas. `PhaseOneScreen` llama a
 `advanceGhostwing(delta)` una vez por frame dentro del recorrido, junto a
 `advanceEncounter`; dibujar sprites, explosiones y marcador de minimapa pertenece a
 la hija de presentación.
+
+### Combate Ghostwing en PhaseOne (COS-47)
+
+El controlador integra a los drones vivos en el combate sin mezclarlos con las reglas
+de Vesper. `astraProjectileStep` barre cada proyectil de Astra contra todas las formas
+de casco de la fase —el círculo del Raider (activo o protector) y el círculo inscrito
+de cada dron activo (`BODY_RADIUS_FACTOR`, radio 36 u para la caja 72×72)— y elige el
+blanco de **menor fracción de entrada** sobre el segmento; los empates se resuelven por
+`ProjectileTarget(fraction, kind, droneId)` (dron < blindaje Raider < casco Raider y
+menor id de dron), de modo que el resultado no depende del orden de iteración. Un
+proyectil se consume una vez y destruye como máximo un blanco: el dron elegido se
+retira al instante con `markDestroyed`, así un segundo proyectil del mismo frame no lo
+re-impacta, y el Raider conserva exactamente su paso de daño de diez impactos y su
+bonus de 1000 puntos. `destroyGhostwingDrone(id, cause)` elimina el dron vivo, emite
+`GhostwingDeath` una única vez y suma el bonus solo cuando la causa es disparo.
+
+`resolveGhostwingContact`, invocado en `advanceCombat` después del contacto Vesper
+existente y solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de
+ambos círculos traslatorios sobre el mismo frame (`CollisionDetector.sweep`): Astra
+barre su `AstraMotion` recién capturada por `advanceFlight` y cada dron se reconstruye
+restando su vector cardinal fijo × `DRONE_SPEED` × los mismos segundos activos que usó
+`advanceGhostwing`, por lo que ni la velocidad ni los frames largos atraviesan el casco.
+En un contacto válido se destruye solo el dron implicado (causa `COLLISION`, cero
+puntos) y se llama al `destroyAstra()` existente; `handleRespawns()` mantiene la
+reaparición de 3 s con 2 s de inmunidad. Un Astra destruido o protegido nunca colisiona,
+igual que con el Raider, y no hay daño en área ni reacción en cadena: los drones
+próximos a una explosión no se ven afectados.
+
+`PhaseScore` añade `GHOSTWING_DESTROYED_BONUS = 100` y `awardGhostwingDestroyed()`,
+llamado solo en la transición activa→destruido por disparo; el bonus se drena por
+`pendingCombatPoints`/`drainCombatPoints()` y se publica con `PointsEarned`, de modo
+que un choque, una fuga o repetir impacto sobre un dron ya muerto nunca puntúan.
+`drainGhostwingDeaths()` devuelve y limpia los `GhostwingDeath(droneId, centerX,
+centerY, cause)` pendientes (causa `SHOT` o `COLLISION`), que la presentación (hija
+COS-48) convertirá en explosiones ancladas exactamente una vez por dron; los drones
+que completan el cruce se retiran sin evento.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
@@ -601,10 +637,11 @@ com.davidpe.cosmicaces
 |   +-- PhaseOneGameController extends GameController: encuentros, armas y combate de PhaseOne.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
-|       8. isRaiderActive()  9. activeRaider()  10. ghostwingEncounter()
-|       11. setRaiderVisuals()  12. astraCombat()  13. raiderCombat()  14. isAstraActive()
-|       15. scorePoints()  16. astraGun()  17. raiderGun()
-|       18. advanceHitFeedback()  19. astraHitFlashIntensity()  20. raiderHitFlashIntensity()
+|       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
+|       11. ghostwingEncounter()  12. setRaiderVisuals()  13. astraCombat()
+|       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
+|       18. raiderGun()  19. advanceHitFeedback()
+|       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
 |
 +-- domain
 |   +-- game
@@ -616,6 +653,7 @@ com.davidpe.cosmicaces
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
 |   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
 |   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
+|   |   |   4. awardGhostwingDestroyed()
 |   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
 |   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
@@ -626,6 +664,8 @@ com.davidpe.cosmicaces
 |   |       +-- LifeLost: comunica una vida perdida.
 |   |       +-- PhaseCompleted: comunica el resultado de la fase.
 |   |       +-- GameAbandoned: solicita abandonar.
+|   |   +-- GhostwingDeath(droneId, centerX, centerY, cause): destrucción de un dron,
+|   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]

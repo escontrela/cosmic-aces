@@ -88,4 +88,17 @@ class PhaseScoreTest {
     assertEquals(1000, score.awardRaiderDestroyed(), "a second destruction awards another 1000");
     assertEquals(2055, score.totalPoints());
   }
+
+  @Test
+  void ghostwingDestructionAwardsHundredPointsPerDroneAndAddsToTheTotal() {
+    PhaseScore score = new PhaseScore();
+    score.advance(5f, true);
+
+    assertEquals(100, score.awardGhostwingDestroyed());
+    assertEquals(155, score.totalPoints());
+    assertEquals(100, score.awardGhostwingDestroyed(), "each destroyed drone awards its own bonus");
+    assertEquals(255, score.totalPoints());
+    assertEquals(1000, score.awardRaiderDestroyed());
+    assertEquals(1255, score.totalPoints(), "drone and raider bonuses accumulate independently");
+  }
 }

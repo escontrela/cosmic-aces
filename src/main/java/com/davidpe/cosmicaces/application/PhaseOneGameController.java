@@ -2,10 +2,12 @@ package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
 import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
+import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
+import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.PhaseScore;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
@@ -14,6 +16,8 @@ import com.davidpe.cosmicaces.domain.ship.ShipCombatState;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Rules specific to phase one: timed run, autonomous Raider, scoring and the Astra cannon. */
@@ -26,6 +30,10 @@ public final class PhaseOneGameController extends GameController {
    */
   private static final float BODY_RADIUS_FACTOR = 0.5f;
   private static final float RAIDER_BODY_RADIUS = 0.5f * RaiderEncounter.RAIDER_WIDTH;
+  /** Stable ordering of projectile targets used when two hulls share the same entry fraction. */
+  private static final int TARGET_GHOSTWING = 0;
+  private static final int TARGET_RAIDER_SHIELD = 1;
+  private static final int TARGET_RAIDER = 2;
 
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
@@ -48,6 +56,7 @@ public final class PhaseOneGameController extends GameController {
   private float raiderDeathCenterX;
   private float raiderDeathCenterY;
   private int pendingCombatPoints;
+  private final List<GhostwingDeath> pendingGhostwingDeaths = new ArrayList<>();
 
   public PhaseOneGameController() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -170,6 +179,7 @@ public final class PhaseOneGameController extends GameController {
     raiderCombat.advance(deltaSeconds);
     handleRespawns();
     resolveShipContact();
+    resolveGhostwingContact(deltaSeconds);
     return drainCombatPoints();
   }
 
@@ -178,6 +188,17 @@ public final class PhaseOneGameController extends GameController {
     int points = pendingCombatPoints;
     pendingCombatPoints = 0;
     return points;
+  }
+
+  /**
+   * Returns and clears the Ghostwing drone destructions recorded since the last drain, so the
+   * presentation can convert each one into a world-anchored explosion exactly once. Each drone is
+   * reported at most once; drones that finish their world crossing produce no event.
+   */
+  public List<GhostwingDeath> drainGhostwingDeaths() {
+    List<GhostwingDeath> deaths = List.copyOf(pendingGhostwingDeaths);
+    pendingGhostwingDeaths.clear();
+    return deaths;
   }
 
   /**
@@ -213,6 +234,52 @@ public final class PhaseOneGameController extends GameController {
     if (CollisionDetector.overlaps(bodyCircle(astra()), bodyCircle(raider))) {
       destroyAstra();
       destroyRaider();
+    }
+  }
+
+  /**
+   * Resolves hull-to-hull contact between Astra and every active Ghostwing drone, using the exact
+   * relative sweep of both translating circles over the same frame so fast ships and long frames do
+   * not pass through each other. Astra sweeps the motion captured this frame by {@code advanceFlight}
+   * ({@link AstraMotion}); each drone sweeps its fixed cardinal travel for the same active-seconds
+   * clamp that {@code advanceGhostwing} used this frame (the run clock does not advance between both
+   * calls, so the reconstruction is exact). A destroyed or protected Astra never collides; on a
+   * valid contact only the involved drone is removed, {@code destroyAstra()} runs once (idempotent)
+   * and {@link #handleRespawns()} keeps the existing 3 s respawn with its 2 s invulnerability. Other
+   * drones are not dragged by the explosion: each contacting drone is destroyed on its own and
+   * nothing else receives area damage.
+   */
+  private void resolveGhostwingContact(float frameDelta) {
+    if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
+      return;
+    }
+    float activeSeconds = Math.min(frameDelta, remainingRunSeconds());
+    CollisionDetector.Circle astraFrom;
+    CollisionDetector.Circle astraTo;
+    AstraMotion motion = astraMotion;
+    if (motion == null) {
+      astraFrom = bodyCircle(astra());
+      astraTo = astraFrom;
+    } else {
+      astraFrom = new CollisionDetector.Circle(
+          motion.beforeX() + astra().drawWidth() / 2f,
+          motion.beforeY() + astra().drawHeight() / 2f,
+          bodyRadius(astra()));
+      astraTo = bodyCircle(astra());
+    }
+    float droneSpeed = GhostwingEncounter.DRONE_SPEED;
+    for (GhostwingDrone drone : List.copyOf(ghostwingEncounter.activeDrones())) {
+      float radius = bodyRadius(drone);
+      CollisionDetector.Circle droneTo =
+          new CollisionDetector.Circle(drone.centerX(), drone.centerY(), radius);
+      CollisionDetector.Circle droneFrom = new CollisionDetector.Circle(
+          drone.centerX() - drone.direction().horizontal() * droneSpeed * activeSeconds,
+          drone.centerY() - drone.direction().vertical() * droneSpeed * activeSeconds,
+          radius);
+      if (CollisionDetector.sweep(astraFrom, astraTo, droneFrom, droneTo).isPresent()) {
+        destroyGhostwingDrone(drone.id(), GhostwingDeath.Cause.COLLISION);
+        destroyAstra();
+      }
     }
   }
 
@@ -257,26 +324,92 @@ public final class PhaseOneGameController extends GameController {
     pendingCombatPoints += score.awardRaiderDestroyed();
   }
 
+  /**
+   * Destroys exactly the live drone with the given id and records its death exactly once. The drone
+   * leaves {@code activeDrones()}, movement, collision and the group marker immediately, never
+   * respawns and never re-emits. Only a shot destruction awards the 100-point bonus; collisions
+   * award nothing. A destroyed or already-retired id is a no-op, so duplicate projectiles of one
+   * frame or a contact after a shot can never double-reward.
+   */
+  private void destroyGhostwingDrone(long droneId, GhostwingDeath.Cause cause) {
+    GhostwingDrone drone = activeDrone(droneId);
+    if (drone == null) {
+      return;
+    }
+    ghostwingEncounter.markDestroyed(droneId);
+    pendingGhostwingDeaths.add(
+        new GhostwingDeath(droneId, drone.centerX(), drone.centerY(), cause));
+    if (cause == GhostwingDeath.Cause.SHOT) {
+      pendingCombatPoints += score.awardGhostwingDestroyed();
+    }
+  }
+
+  /** The live drone with the given stable id, or {@code null} once it is destroyed or retired. */
+  private GhostwingDrone activeDrone(long droneId) {
+    for (GhostwingDrone drone : ghostwingEncounter.activeDrones()) {
+      if (drone.id() == droneId) {
+        return drone;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Resolves one Astra projectile segment against every live target it crosses. All candidate hulls
+   * (the Vesper Raider and each active Ghostwing drone) compete on the first entry fraction of the
+   * swept segment; ties break by target kind and then drone id, so the winner is stable and
+   * independent of iteration order. One projectile impacts at most one target. A Ghostwing drone is
+   * destroyed by the single impact (weak one-shot target), a hit Raider keeps its existing
+   * ten-impact damage step, and a protected (invulnerable) hull absorbs the projectile without
+   * damage. A drone already removed by {@link GhostwingEncounter#markDestroyed} is never a target.
+   */
   private void astraProjectileStep(GunProjectile projectile, float fromX, float fromY,
       float toX, float toY) {
     if (projectile.isConsumed()) {
       return;
     }
+    CollisionDetector.Segment segment = new CollisionDetector.Segment(fromX, fromY, toX, toY);
+    ProjectileTarget best = null;
+    GhostwingDrone bestDrone = null;
     VesperRaider raider = activeRaider();
-    if (raider == null || raiderCombat.isDestroyed()) {
-      return;
-    }
-    if (!raiderCombat.canBeHit()) {
-      // Protected hull: the projectile is spent on contact but deals no damage.
-      if (raiderCombat.isInvulnerable() && hitsShip(fromX, fromY, toX, toY, raider)) {
-        projectile.consume();
+    if (raider != null && !raiderCombat.isDestroyed()) {
+      double fraction = CollisionDetector.firstHit(segment, bodyCircle(raider))
+          .orElse(Double.POSITIVE_INFINITY);
+      if (Double.isFinite(fraction)) {
+        ProjectileTarget candidate = raiderCombat.canBeHit()
+            ? ProjectileTarget.raider(fraction)
+            : ProjectileTarget.raiderShield(fraction);
+        if (candidate.precedes(best)) {
+          best = candidate;
+        }
       }
-      return;
     }
-    if (!hitsShip(fromX, fromY, toX, toY, raider)) {
+    for (GhostwingDrone drone : ghostwingEncounter.activeDrones()) {
+      double fraction = CollisionDetector.firstHit(segment, bodyCircle(drone))
+          .orElse(Double.POSITIVE_INFINITY);
+      if (!Double.isFinite(fraction)) {
+        continue;
+      }
+      ProjectileTarget candidate = ProjectileTarget.drone(fraction, drone.id());
+      if (candidate.precedes(best)) {
+        best = candidate;
+        bestDrone = drone;
+      }
+    }
+    if (best == null) {
       return;
     }
     projectile.consume();
+    if (bestDrone != null) {
+      // The winner is a drone that was live when chosen; destroying it removes it from
+      // activeDrones() immediately, so a second projectile of the same frame never re-hits it.
+      destroyGhostwingDrone(bestDrone.id(), GhostwingDeath.Cause.SHOT);
+      return;
+    }
+    if (best.kind() == TARGET_RAIDER_SHIELD) {
+      // Protected hull: the projectile is spent on contact but deals no damage.
+      return;
+    }
     // Every counted impact flashes the ship actually hit, even the first nine that do not yet
     // complete a damage step; the pulse is presentation only and never decides damage (CA20-21).
     raiderHitFlash.trigger();
@@ -373,6 +506,39 @@ public final class PhaseOneGameController extends GameController {
   /** Astra's box position and heading before and after this frame's bounded flight. */
   private record AstraMotion(float beforeX, float beforeY, float beforeYaw,
       float afterX, float afterY, float afterYaw, float duration) {}
+
+  /**
+   * One candidate hull struck by an Astra projectile segment, ordered by first-entry fraction and
+   * then by a stable priority so ties never depend on iteration order: a Ghostwing drone wins a tie
+   * against a protected or vulnerable Raider, and the smaller drone id wins between two drones.
+   */
+  private record ProjectileTarget(double fraction, int kind, long droneId) {
+
+    static ProjectileTarget drone(double fraction, long droneId) {
+      return new ProjectileTarget(fraction, TARGET_GHOSTWING, droneId);
+    }
+
+    static ProjectileTarget raider(double fraction) {
+      return new ProjectileTarget(fraction, TARGET_RAIDER, 0L);
+    }
+
+    static ProjectileTarget raiderShield(double fraction) {
+      return new ProjectileTarget(fraction, TARGET_RAIDER_SHIELD, 0L);
+    }
+
+    boolean precedes(ProjectileTarget other) {
+      if (other == null) {
+        return true;
+      }
+      if (fraction != other.fraction) {
+        return fraction < other.fraction;
+      }
+      if (kind != other.kind) {
+        return kind < other.kind;
+      }
+      return droneId < other.droneId;
+    }
+  }
 
   /** Total points this run has awarded so far, including destruction bonuses. */
   public int scorePoints() {
