@@ -189,6 +189,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!runFinished) {
       int earned = applyMovementInput(delta, shipsCoincidentVisible());
       controller.advanceEncounter(delta);
+      // Ghostwing groups are simulated in world coordinates during the active run only; their
+      // presentation (sprites, explosions, minimap marker) belongs to the presentation child.
+      controller.advanceGhostwing(delta);
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
       earned += controller.advanceCombat(delta);

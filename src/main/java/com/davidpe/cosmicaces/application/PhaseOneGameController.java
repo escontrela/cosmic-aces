@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
 import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
+import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
@@ -27,6 +28,7 @@ public final class PhaseOneGameController extends GameController {
   private static final float RAIDER_BODY_RADIUS = 0.5f * RaiderEncounter.RAIDER_WIDTH;
 
   private final RaiderEncounter raiderEncounter;
+  private final GhostwingEncounter ghostwingEncounter;
   private final PhaseScore score = new PhaseScore();
   private final GunBurst astraGun = new GunBurst();
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
@@ -52,7 +54,12 @@ public final class PhaseOneGameController extends GameController {
   }
 
   public PhaseOneGameController(UnitRandom raiderRandom) {
+    this(raiderRandom, ThreadLocalRandom.current()::nextFloat);
+  }
+
+  public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom) {
     raiderEncounter = new RaiderEncounter(raiderRandom);
+    ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
   }
 
   public void setRaiderVisuals(VesperRaider.Visuals visuals) {
@@ -392,6 +399,26 @@ public final class PhaseOneGameController extends GameController {
     }
     raiderEncounter.advance(deltaSeconds, WORLD, targetCenterX, targetCenterY,
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
+  }
+
+  /**
+   * Advances the Ghostwing drone groups using only the portion of this frame that still belongs to
+   * the active run, independently of the Raider encounter. Groups are scheduled and flown entirely
+   * in world coordinates; weapons, scoring, camera and the Vesper behaviour stay untouched. Non-
+   * positive or non-finite deltas are ignored, like every other phase-advance method.
+   */
+  public void advanceGhostwing(float deltaSeconds) {
+    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
+        || deltaSeconds <= 0f) {
+      return;
+    }
+    float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    ghostwingEncounter.advance(activeSeconds, WORLD);
+  }
+
+  /** The Ghostwing group encounter owned by this controller, for presentation and tests. */
+  public GhostwingEncounter ghostwingEncounter() {
+    return ghostwingEncounter;
   }
 
   public boolean isRaiderActive() {
