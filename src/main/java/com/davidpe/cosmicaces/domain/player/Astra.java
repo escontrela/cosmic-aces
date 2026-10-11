@@ -66,6 +66,11 @@ public final class Astra extends Ship {
     return yawDegrees;
   }
 
+  /** True while the current flight input is yawing Astra rather than strafing. */
+  public boolean isTurning() {
+    return pose == HeroShipSheet.Pose.YAW_LEFT || pose == HeroShipSheet.Pose.YAW_RIGHT;
+  }
+
   public float flightSpeed() {
     return flightSpeed;
   }

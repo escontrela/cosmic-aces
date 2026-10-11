@@ -288,6 +288,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // loop never restarts or stacks just because this method runs once per frame.
     audio.updateCabinAmbience(PhaseOneAudio.cabinAmbienceAudible(controller.isAstraActive(),
         runFinished, controller.astra().flightSpeed()));
+    astraLightEffect.update(controller.astra(), delta,
+        !runFinished && controller.isAstraActive());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(viewport.getWorldWidth() / 2f,

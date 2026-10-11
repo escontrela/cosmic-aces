@@ -14,6 +14,9 @@ final class AstraLightEffect implements Disposable {
   private static final int TEXTURE_SIZE = 64;
   private final Texture glow;
   private final TextureRegion glowRegion;
+  private float turnAngleDegrees;
+  private float previousYawDegrees;
+  private boolean yawInitialized;
 
   AstraLightEffect() {
     Pixmap pixels = new Pixmap(TEXTURE_SIZE, TEXTURE_SIZE, Pixmap.Format.RGBA8888);
@@ -38,7 +41,25 @@ final class AstraLightEffect implements Disposable {
     }
   }
 
-  /** Draws a speed-reactive halo and a short aft plume using additive blending. */
+  /** Tracks sustained camera-changing yaw so wing halos reflect the turn's accumulated angle. */
+  void update(Astra astra, float deltaSeconds, boolean flightActive) {
+    if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) return;
+    float yaw = astra.yawDegrees();
+    if (!yawInitialized) {
+      previousYawDegrees = yaw;
+      yawInitialized = true;
+      return;
+    }
+    float deltaYaw = normalizeAngle(yaw - previousYawDegrees);
+    previousYawDegrees = yaw;
+    if (flightActive && astra.isTurning()) {
+      turnAngleDegrees = Math.min(150f, turnAngleDegrees + Math.abs(deltaYaw));
+    } else {
+      turnAngleDegrees = Math.max(0f, turnAngleDegrees - 280f * deltaSeconds);
+    }
+  }
+
+  /** Draws a speed-reactive engine glow and turn-scaled wing halos with additive blending. */
   void draw(SpriteBatch batch, Astra astra) {
     float centerX = astra.x() + astra.drawWidth() / 2f;
     float centerY = astra.y() + astra.drawHeight() / 2f;
@@ -65,10 +86,30 @@ final class AstraLightEffect implements Disposable {
     batch.setColor(0.12f, 0.55f, 1f, intensity * (0.72f + speedRatio * 0.28f));
     drawGlow(batch, plumeX, plumeY, width * (0.68f + speedRatio * 0.2f),
         height * (1.1f + speedRatio * 0.9f), -astra.yawDegrees());
+    float turnIntensity = Math.max(0f, Math.min(1f, (turnAngleDegrees - 24f) / 96f));
+    if (turnIntensity > 0f) {
+      float rightX = (float) Math.cos(radians);
+      float rightY = (float) -Math.sin(radians);
+      float wingOffset = width * 0.31f;
+      float haloDiameter = width * (0.32f + 0.34f * turnIntensity);
+      float haloAlpha = 0.12f + 0.2f * turnIntensity;
+      batch.setColor(0.35f, 0.88f, 1f, haloAlpha);
+      drawGlow(batch, centerX - rightX * wingOffset, centerY - rightY * wingOffset,
+          haloDiameter, haloDiameter, 0f);
+      drawGlow(batch, centerX + rightX * wingOffset, centerY + rightY * wingOffset,
+          haloDiameter, haloDiameter, 0f);
+    }
     batch.flush();
     batch.setColor(com.badlogic.gdx.graphics.Color.WHITE);
     batch.setBlendFunction(sourceBlend, destinationBlend);
     batch.setShader(shader);
+  }
+
+  private static float normalizeAngle(float angle) {
+    float normalized = angle % 360f;
+    if (normalized > 180f) normalized -= 360f;
+    if (normalized < -180f) normalized += 360f;
+    return normalized;
   }
 
   private void drawGlow(SpriteBatch batch, float centerX, float centerY, float width, float height,

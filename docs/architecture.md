@@ -523,7 +523,9 @@ cambio de daño, cadencia, puntuación o controles.
 en `dispose()`. Antes de dibujar el sprite coloca un halo cian y una estela azul detrás de Astra con
 blending aditivo; la intensidad y longitud suben con la velocidad y alcanzan un pulso azul intenso
 durante Ultra. La pasada respeta el yaw mundial y restaura color/blending del `SpriteBatch` antes de
-continuar con la nave, efectos y explosiones. No modifica el sprite, su tamaño, movimiento ni reglas.
+continuar con la nave, efectos y explosiones. En guiñadas sostenidas, acumula el ángulo realmente
+girado y dibuja halos suaves en ambas alas con radio proporcional, que se desvanecen al soltar el
+giro, morir Astra o terminar la fase. No modifica el sprite, su tamaño, movimiento ni reglas.
 
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
@@ -869,8 +871,8 @@ com.davidpe.cosmicaces
             |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
-            +-- AstraLightEffect: halo y estela de motor generados para la prueba de iluminación.
-                1. draw()  2. dispose()
+            +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
+                1. update()  2. draw()  3. dispose()
             +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
             |   6. combatActive()  7. aheadDistance()
