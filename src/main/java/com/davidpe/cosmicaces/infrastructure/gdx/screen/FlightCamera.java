@@ -9,8 +9,12 @@ final class FlightCamera {
   private final FlightCameraState state;
 
   FlightCamera(OrthographicCamera camera, Astra astra) {
+    this(camera, astra, FlightCameraState.ASTRA_BOTTOM_FRACTION);
+  }
+
+  FlightCamera(OrthographicCamera camera, Astra astra, float astraBottomFraction) {
     this.camera = camera;
-    state = new FlightCameraState(astra);
+    state = new FlightCameraState(astra, astraBottomFraction);
     apply();
   }
 

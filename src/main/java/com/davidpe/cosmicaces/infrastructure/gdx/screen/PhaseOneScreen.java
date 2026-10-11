@@ -32,6 +32,7 @@ import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
+import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
@@ -100,6 +101,16 @@ public final class PhaseOneScreen extends ScreenAdapter {
       GameId gameId,
       GamePhase phase,
       Supplier<PhaseResult> phaseSnapshot) {
+    this(publisher, controller, gameId, phase, phaseSnapshot, new GamePresentationSettings());
+  }
+
+  public PhaseOneScreen(
+      GameEventPublisher publisher,
+      PhaseOneGameController controller,
+      GameId gameId,
+      GamePhase phase,
+      Supplier<PhaseResult> phaseSnapshot,
+      GamePresentationSettings presentationSettings) {
     this.publisher = publisher;
     this.controller = controller;
     this.gameId = gameId;
@@ -116,7 +127,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         ThreadLocalRandom.current().nextLong());
     float startX = (PhaseOneGameController.WORLD.width() - controller.astra().drawWidth()) / 2f;
     controller.placeAstra(startX, INITIAL_Y, 0f);
-    flightCamera = new FlightCamera(camera, controller.astra());
+    flightCamera = new FlightCamera(camera, controller.astra(),
+        presentationSettings.astraBottomFraction());
 
     SpriteBatch loadedBatch = null;
     ShapeRenderer loadedShapes = null;

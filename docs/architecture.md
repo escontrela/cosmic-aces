@@ -17,7 +17,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
-| `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory y resolución virtual. |
+| `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias de presentación de sesión. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
@@ -63,16 +63,27 @@ visible. `Starfield` conserva el scroll de la pantalla de bienvenida y redistrib
 estrellas dentro del tamaño lógico nuevo cuando `WelcomeScreen.resize` cambia el
 viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
 dimensiones efectivas; el arte y la tipografía mantienen su escala.
+`ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
+y las fases durante la sesión de aplicación. `WelcomeScreen` abre Ajustes con ESC; sus secciones
+Vídeo y Encuadre de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+de PhaseOne. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
+aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
+`GamePresentationSettings` mantiene en memoria el encuadre de Astra (18 % inicial, 10–35 %, pasos
+de 1 %); `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva ese porcentaje en exploración
+y combate. El ajuste se reinicia al cerrar la aplicación.
 `FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
-La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
-0,10 s de retardo, para mantener la nave más abajo en pantalla; suaviza el yaw
-durante 0,25 s y usa zoom 1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
+En exploración, el centro de Astra queda al 18 % de la altura visible desde el
+borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
+zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
+el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
+1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
-referencia** (centro de Astra, yaw suavizado, adelanto fijo 100 y zoom del modo de
-vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y adelanto 30, interpolados con las mismas
-constantes (0,25 s zoom, 0,10 s posición). El cambio es un latch con umbrales
+referencia** (foco derivado de Astra, yaw suavizado y adelanto del alto visible con
+zoom del modo de vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
+a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para mantener Astra
+al 18 % desde el borde inferior, interpolados con las mismas constantes (0,25 s zoom,
+0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
 más de 0,75 s más allá de un margen adicional de 120 unidades, de modo que los
 cruces breves del borde no alternan el modo. Sin enemigo activo (destruido, en
@@ -809,9 +820,11 @@ com.davidpe.cosmicaces
 |
 +-- infrastructure
     +-- gdx
-        +-- ScreenFactory: construye pantallas y conecta dependencias.
+        +-- ScreenFactory: construye pantallas y comparte configuración de presentación de sesión.
         |   1. createWelcomeScreen()  2. createPhaseOneScreen()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
+        +-- GamePresentationSettings: encuadre de Astra en memoria; ajustable entre 10–35 %.
+        |   1. astraBottomFraction()  2. setAstraBottomFraction()  3. adjustAstraBottomFraction()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()
@@ -830,8 +843,8 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas e input de la tecla Y.
-            |   1. render()  2. resize()  3. dispose()
+            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre e input de bienvenida.
+            |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
             |   1. render()  2. resize()  3. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()

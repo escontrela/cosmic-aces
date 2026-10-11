@@ -19,6 +19,8 @@ public final class ScreenFactory {
 
   private final GameCoordinator coordinator;
   private final GameEventPublisher publisher;
+  private final VideoDisplaySettings videoSettings = new VideoDisplaySettings();
+  private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher) {
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
@@ -28,7 +30,8 @@ public final class ScreenFactory {
   /** Creates the welcome screen for the current welcome state. */
   public Screen createWelcomeScreen() {
     GameState state = coordinator.state();
-    return new WelcomeScreen(publisher, state.gameId(), state.phase());
+    return new WelcomeScreen(
+        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings);
   }
 
   /**
@@ -41,6 +44,7 @@ public final class ScreenFactory {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.start();
     return new PhaseOneScreen(
-        publisher, controller, state.gameId(), state.phase(), coordinator::snapshot);
+        publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
+        presentationSettings);
   }
 }

@@ -271,6 +271,7 @@ public final class VideoDisplaySettings {
     WindowSize safe = restoredWindowSize(desktopWidth, desktopHeight,
         rememberedWindowWidth, rememberedWindowHeight);
     Gdx.graphics.setWindowedMode(safe.width(), safe.height());
+    Gdx.graphics.setResizable(true);
     rememberWindowSize(safe.width(), safe.height());
   }
 

@@ -16,8 +16,11 @@ import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
+import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
+import com.davidpe.cosmicaces.infrastructure.gdx.VideoDisplaySettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import java.util.List;
 
 /**
  * Welcome screen, including its artwork, star field, input and all owned LibGDX resources.
@@ -57,6 +60,8 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static final float STAR_MAX_RADIUS = 2.32f;
   private static final float STAR_WRAP_MARGIN = 3.84f;
   private static final float BLINK_PERIOD = 0.45f;
+  private static final float SETTINGS_ROW_HEIGHT = 27f;
+  private static final int MAX_VISIBLE_VIDEO_MODES = 10;
   private static final float CELL_WIDTH = 15.36f;
   private static final float LINE_HEIGHT = 26.88f;
   private static final String[] ASCII_GLYPHS = new String[128];
@@ -76,15 +81,31 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final ShapeRenderer shapes;
   private final BitmapFont logoFont;
   private final BitmapFont promptFont;
+  private final BitmapFont settingsFont;
   private final GlyphLayout promptLayout;
   private final Starfield starfield;
+  private final VideoDisplaySettings videoSettings;
+  private final GamePresentationSettings presentationSettings;
+  private SettingsPage settingsPage = SettingsPage.CLOSED;
+  private VideoDisplaySettings.DisplayCatalog videoCatalog;
+  private int rootSelection;
+  private int selectedVideoMode;
+  private boolean targetFullscreen;
+  private String settingsMessage = "";
   private float blinkTimer;
   private boolean startRequested;
 
   public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase) {
+    this(publisher, gameId, phase, new VideoDisplaySettings(), new GamePresentationSettings());
+  }
+
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings) {
     this.publisher = publisher;
     this.gameId = gameId;
     this.phase = phase;
+    this.videoSettings = videoSettings;
+    this.presentationSettings = presentationSettings;
     camera = new OrthographicCamera();
     // One world unit remains one logical screen pixel; a larger window reveals more world
     // instead of scaling the existing 4:3 composition to fit.
@@ -98,6 +119,8 @@ public final class WelcomeScreen extends ScreenAdapter {
     logoFont.getData().setScale(1.536f);
     promptFont = new BitmapFont();
     promptFont.getData().setScale(1.536f);
+    settingsFont = new BitmapFont();
+    settingsFont.getData().setScale(1.05f);
     promptLayout = new GlyphLayout(promptFont, COIN_PROMPT);
     starfield =
         new Starfield(
@@ -114,7 +137,9 @@ public final class WelcomeScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
-    if (!startRequested && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+    handleSettingsInput();
+    if (settingsPage == SettingsPage.CLOSED && !startRequested
+        && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
       startRequested = true;
       publisher.publish(new StartRequested(gameId, phase));
       return;
@@ -125,7 +150,11 @@ public final class WelcomeScreen extends ScreenAdapter {
     shapes.setProjectionMatrix(camera.combined);
     starfield.update(delta);
     starfield.draw(shapes);
-    drawWelcome(delta);
+    if (settingsPage == SettingsPage.CLOSED) {
+      drawWelcome(delta);
+    } else {
+      drawSettings();
+    }
   }
 
   @Override
@@ -141,6 +170,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     shapes.dispose();
     logoFont.dispose();
     promptFont.dispose();
+    settingsFont.dispose();
   }
 
   private void drawWelcome(float delta) {
@@ -171,8 +201,247 @@ public final class WelcomeScreen extends ScreenAdapter {
       float promptX = Math.max(16f, (viewportWidth - promptLayout.width) / 2f);
       promptFont.draw(batch, promptLayout, promptX, titleBottom - 56f);
     }
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "ESC: AJUSTES", 18f, 28f);
     batch.end();
   }
+
+  private void handleSettingsInput() {
+    if (settingsPage == SettingsPage.CLOSED) {
+      if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        settingsPage = SettingsPage.ROOT;
+      }
+      return;
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+      if (settingsPage == SettingsPage.ROOT) {
+        settingsPage = SettingsPage.CLOSED;
+      } else {
+        settingsPage = SettingsPage.ROOT;
+      }
+      return;
+    }
+    switch (settingsPage) {
+      case ROOT -> handleRootInput();
+      case VIDEO -> handleVideoInput();
+      case ASTRA -> handleAstraInput();
+      case CLOSED -> { }
+    }
+  }
+
+  private void handleRootInput() {
+    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)
+        || Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+      rootSelection = 1 - rootSelection;
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+      if (rootSelection == 0) {
+        openVideoSettings();
+      } else {
+        settingsPage = SettingsPage.ASTRA;
+      }
+    }
+  }
+
+  private void openVideoSettings() {
+    refreshVideoCatalog();
+    VideoDisplaySettings.VideoState current = videoSettings.currentState();
+    targetFullscreen = current.fullscreen();
+    selectedVideoMode = findCurrentMode(current.displayMode());
+    settingsPage = SettingsPage.VIDEO;
+  }
+
+  private void handleVideoInput() {
+    List<VideoDisplaySettings.VideoMode> modes = currentModes();
+    if (Gdx.input.isKeyJustPressed(Input.Keys.UP) && !modes.isEmpty()) {
+      selectedVideoMode = Math.floorMod(selectedVideoMode - 1, modes.size());
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) && !modes.isEmpty()) {
+      selectedVideoMode = Math.floorMod(selectedVideoMode + 1, modes.size());
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+      targetFullscreen = !targetFullscreen;
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.W)) {
+      showApplyResult(videoSettings.applyWindowed());
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+      refreshVideoCatalog();
+      selectedVideoMode = Math.min(selectedVideoMode, Math.max(0, currentModes().size() - 1));
+      settingsMessage = "Lista de modos actualizada para el monitor actual.";
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+      if (targetFullscreen) {
+        VideoDisplaySettings.VideoMode requested = modes.isEmpty()
+            ? null : modes.get(selectedVideoMode);
+        showApplyResult(videoSettings.applyFullscreen(requested));
+      } else {
+        showApplyResult(videoSettings.applyWindowed());
+      }
+    }
+  }
+
+  private void handleAstraInput() {
+    if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+      presentationSettings.adjustAstraBottomFraction(-GamePresentationSettings.ASTRA_BOTTOM_STEP);
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+      presentationSettings.adjustAstraBottomFraction(GamePresentationSettings.ASTRA_BOTTOM_STEP);
+    }
+  }
+
+  private void refreshVideoCatalog() {
+    try {
+      videoCatalog = videoSettings.catalog();
+      settingsMessage = "";
+    } catch (RuntimeException failure) {
+      videoCatalog = new VideoDisplaySettings.DisplayCatalog("Monitor actual", List.of());
+      settingsMessage = "No se pudo consultar el monitor actual.";
+    }
+  }
+
+  private void showApplyResult(VideoDisplaySettings.ApplyResult result) {
+    targetFullscreen = result.state().fullscreen();
+    settingsMessage = result.message();
+    if (!result.success()) {
+      refreshVideoCatalog();
+      settingsMessage = result.message();
+      selectedVideoMode = Math.min(selectedVideoMode, Math.max(0, currentModes().size() - 1));
+    }
+  }
+
+  private int findCurrentMode(VideoDisplaySettings.VideoMode current) {
+    List<VideoDisplaySettings.VideoMode> modes = currentModes();
+    if (current != null) {
+      for (int i = 0; i < modes.size(); i++) {
+        VideoDisplaySettings.VideoMode candidate = modes.get(i);
+        if (candidate.width() == current.width() && candidate.height() == current.height()) {
+          return i;
+        }
+      }
+    }
+    return 0;
+  }
+
+  private List<VideoDisplaySettings.VideoMode> currentModes() {
+    return videoCatalog == null ? List.of() : videoCatalog.modes();
+  }
+
+  private void drawSettings() {
+    float width = viewport.getWorldWidth();
+    float height = viewport.getWorldHeight();
+    float panelWidth = Math.min(width - 32f, 920f);
+    float panelHeight = Math.min(height - 32f, 720f);
+    float panelX = (width - panelWidth) / 2f;
+    float panelY = (height - panelHeight) / 2f;
+    shapes.begin(ShapeRenderer.ShapeType.Filled);
+    shapes.setColor(0.015f, 0.025f, 0.07f, 0.96f);
+    shapes.rect(panelX, panelY, panelWidth, panelHeight);
+    shapes.end();
+
+    batch.begin();
+    float left = panelX + 28f;
+    float top = panelY + panelHeight - 34f;
+    settingsFont.setColor(Color.CYAN);
+    settingsFont.draw(batch, settingsTitle(), left, top);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "ESC: volver    Flechas: seleccionar/ajustar    ENTER: abrir o aplicar",
+        left, top - 34f);
+    if (settingsPage == SettingsPage.ROOT) {
+      drawRootSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.ASTRA) {
+      drawAstraSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.VIDEO) {
+      drawVideoSettings(left, top - 112f, panelY);
+    }
+    batch.end();
+  }
+
+  private String settingsTitle() {
+    return switch (settingsPage) {
+      case ROOT -> "AJUSTES";
+      case VIDEO -> "AJUSTES  >  VIDEO";
+      case ASTRA -> "AJUSTES  >  ENCUADRE DE ASTRA";
+      case CLOSED -> "";
+    };
+  }
+
+  private void drawRootSettings(float left, float top) {
+    settingsFont.setColor(rootSelection == 0 ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (rootSelection == 0 ? ">  " : "   ") + "Vídeo", left, top);
+    settingsFont.setColor(rootSelection == 1 ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (rootSelection == 1 ? ">  " : "   ") + "Encuadre de Astra", left,
+        top - 42f);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - 105f);
+  }
+
+  private void drawAstraSettings(float left, float top) {
+    float percent = presentationSettings.astraBottomFraction() * 100f;
+    settingsFont.setColor(Color.WHITE);
+    settingsFont.draw(batch, "Altura de Astra desde el borde inferior: "
+        + Math.round(percent) + "%", left, top);
+    settingsFont.setColor(Color.CYAN);
+    settingsFont.draw(batch, "10%  " + slider(percent) + "  35%", left, top - 45f);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "←/→ ajustar en pasos de 1%. Valor inicial: 18%.", left, top - 94f);
+    settingsFont.draw(batch, "El cambio dura durante esta sesión y se aplica al iniciar la fase.",
+        left, top - 124f);
+  }
+
+  private String slider(float percent) {
+    int filled = Math.round((percent - 10f) / 25f * 20f);
+    return "[" + "#".repeat(Math.max(0, Math.min(20, filled)))
+        + "-".repeat(Math.max(0, 20 - filled)) + "]";
+  }
+
+  private void drawVideoSettings(float left, float top, float panelY) {
+    VideoDisplaySettings.VideoState current = videoSettings.currentState();
+    settingsFont.setColor(Color.WHITE);
+    settingsFont.draw(batch, "Monitor: " + videoCatalog.monitorName(), left, top);
+    String activeDisplay = current.displayMode() == null
+        ? "no disponible" : current.displayMode().label();
+    String activeWindow = current.fullscreen() ? "pantalla completa"
+        : "ventana " + current.windowWidth() + " × " + current.windowHeight();
+    settingsFont.draw(batch, "Modo activo: " + activeDisplay + " | " + activeWindow,
+        left, top - 28f);
+    settingsFont.setColor(targetFullscreen ? Color.GOLD : Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "Destino: " + (targetFullscreen ? "Pantalla completa" : "Ventana"),
+        left, top - 58f);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "F cambiar destino | R actualizar modos del monitor",
+        left, top - 88f);
+
+    if (targetFullscreen) {
+      List<VideoDisplaySettings.VideoMode> modes = currentModes();
+      int visibleRows = Math.max(1, Math.min(MAX_VISIBLE_VIDEO_MODES,
+          (int) ((top - panelY - 220f) / SETTINGS_ROW_HEIGHT)));
+      int first = Math.max(0, Math.min(selectedVideoMode - visibleRows / 2,
+          modes.size() - visibleRows));
+      first = Math.max(0, first);
+      settingsFont.setColor(Color.CYAN);
+      settingsFont.draw(batch, "ENTER aplicar | W volver a ventana | Modos anunciados (↑/↓):",
+          left, top - 126f);
+      for (int row = 0; row < visibleRows && first + row < modes.size(); row++) {
+        int index = first + row;
+        settingsFont.setColor(index == selectedVideoMode ? Color.GOLD : Color.WHITE);
+        settingsFont.draw(batch, (index == selectedVideoMode ? ">  " : "   ")
+            + modes.get(index).label(), left, top - 158f - row * SETTINGS_ROW_HEIGHT);
+      }
+      if (modes.isEmpty()) {
+        settingsFont.setColor(Color.LIGHT_GRAY);
+        settingsFont.draw(batch, "El monitor no comunica modos disponibles.", left, top - 160f);
+      }
+    } else {
+      settingsFont.setColor(Color.CYAN);
+      settingsFont.draw(batch, "ENTER o W restaurar la ventana redimensionable anterior.",
+          left, top - 126f);
+    }
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
+  }
+
+  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA }
 
   private void drawAsciiLines(String[] lines, float top, int accentRow) {
     for (int row = 0; row < lines.length; row++) {
