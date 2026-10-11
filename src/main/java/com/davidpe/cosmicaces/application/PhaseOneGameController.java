@@ -11,6 +11,7 @@ import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.PhaseScore;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 import com.davidpe.cosmicaces.domain.ship.Ship;
 import com.davidpe.cosmicaces.domain.ship.ShipCombatState;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
@@ -67,6 +68,16 @@ public final class PhaseOneGameController extends GameController {
   }
 
   public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom) {
+    this(raiderRandom, ghostwingRandom, FlightSpeeds.DEFAULTS);
+  }
+
+  public PhaseOneGameController(FlightSpeeds speeds) {
+    this(ThreadLocalRandom.current()::nextFloat, ThreadLocalRandom.current()::nextFloat, speeds);
+  }
+
+  public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
+      FlightSpeeds speeds) {
+    super(speeds);
     raiderEncounter = new RaiderEncounter(raiderRandom);
     ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
   }

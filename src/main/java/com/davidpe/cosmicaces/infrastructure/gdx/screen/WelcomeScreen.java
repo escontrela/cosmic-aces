@@ -16,6 +16,8 @@ import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
+import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
+import com.davidpe.cosmicaces.infrastructure.gdx.GameSettingsStore;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.VideoDisplaySettings;
@@ -86,9 +88,12 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final Starfield starfield;
   private final VideoDisplaySettings videoSettings;
   private final GamePresentationSettings presentationSettings;
+  private final GameSettingsStore settingsStore;
   private SettingsPage settingsPage = SettingsPage.CLOSED;
   private VideoDisplaySettings.DisplayCatalog videoCatalog;
   private int rootSelection;
+  private int speedSelection;
+  private FlightSpeeds flightSpeeds = FlightSpeeds.DEFAULTS;
   private int selectedVideoMode;
   private boolean targetFullscreen;
   private String settingsMessage = "";
@@ -101,11 +106,19 @@ public final class WelcomeScreen extends ScreenAdapter {
 
   public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
       VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings) {
+    this(publisher, gameId, phase, videoSettings, presentationSettings, null);
+  }
+
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
+      GameSettingsStore settingsStore) {
     this.publisher = publisher;
     this.gameId = gameId;
     this.phase = phase;
     this.videoSettings = videoSettings;
     this.presentationSettings = presentationSettings;
+    this.settingsStore = settingsStore;
+    if (settingsStore != null) flightSpeeds = settingsStore.flightSpeeds();
     camera = new OrthographicCamera();
     // One world unit remains one logical screen pixel; a larger window reveals more world
     // instead of scaling the existing 4:3 composition to fit.
@@ -225,6 +238,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ROOT -> handleRootInput();
       case VIDEO -> handleVideoInput();
       case ASTRA -> handleAstraInput();
+      case SPEEDS -> handleSpeedInput();
       case CLOSED -> { }
     }
   }
@@ -232,13 +246,16 @@ public final class WelcomeScreen extends ScreenAdapter {
   private void handleRootInput() {
     if (Gdx.input.isKeyJustPressed(Input.Keys.UP)
         || Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
-      rootSelection = 1 - rootSelection;
+      rootSelection = Math.floorMod(rootSelection
+          + (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : -1), settingsRootOptionCount());
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
       if (rootSelection == 0) {
         openVideoSettings();
-      } else {
+      } else if (rootSelection == 1) {
         settingsPage = SettingsPage.ASTRA;
+      } else {
+        settingsPage = SettingsPage.SPEEDS;
       }
     }
   }
@@ -288,6 +305,29 @@ public final class WelcomeScreen extends ScreenAdapter {
     if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
       presentationSettings.adjustAstraBottomFraction(GamePresentationSettings.ASTRA_BOTTOM_STEP);
     }
+  }
+
+  private int settingsRootOptionCount() {
+    return settingsStore == null ? 2 : 3;
+  }
+
+  private void handleSpeedInput() {
+    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+      speedSelection = Math.floorMod(speedSelection - 1, 3);
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+      speedSelection = Math.floorMod(speedSelection + 1, 3);
+    }
+    int adjustment = Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)
+        ? FlightSpeeds.ADJUSTMENT_STEP
+        : Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -FlightSpeeds.ADJUSTMENT_STEP : 0;
+    if (adjustment == 0) return;
+    flightSpeeds = switch (speedSelection) {
+      case 0 -> flightSpeeds.withNormal(flightSpeeds.normal() + adjustment);
+      case 1 -> flightSpeeds.withTurbo(flightSpeeds.turbo() + adjustment);
+      default -> flightSpeeds.withUltra(flightSpeeds.ultra() + adjustment);
+    };
+    if (settingsStore != null) settingsStore.saveFlightSpeeds(flightSpeeds);
   }
 
   private void refreshVideoCatalog() {
@@ -353,6 +393,8 @@ public final class WelcomeScreen extends ScreenAdapter {
       drawAstraSettings(left, top - 112f);
     } else if (settingsPage == SettingsPage.VIDEO) {
       drawVideoSettings(left, top - 112f, panelY);
+    } else if (settingsPage == SettingsPage.SPEEDS) {
+      drawSpeedSettings(left, top - 112f);
     }
     batch.end();
   }
@@ -362,6 +404,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ROOT -> "AJUSTES";
       case VIDEO -> "AJUSTES  >  VIDEO";
       case ASTRA -> "AJUSTES  >  ENCUADRE DE ASTRA";
+      case SPEEDS -> "AJUSTES  >  VELOCIDADES DE ASTRA";
       case CLOSED -> "";
     };
   }
@@ -372,8 +415,30 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.setColor(rootSelection == 1 ? Color.GOLD : Color.WHITE);
     settingsFont.draw(batch, (rootSelection == 1 ? ">  " : "   ") + "Encuadre de Astra", left,
         top - 42f);
+    if (settingsRootOptionCount() > 2) {
+      settingsFont.setColor(rootSelection == 2 ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (rootSelection == 2 ? ">  " : "   ") + "Velocidades de Astra",
+          left, top - 84f);
+    }
     settingsFont.setColor(Color.LIGHT_GRAY);
     settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - 105f);
+  }
+
+  private void drawSpeedSettings(float left, float top) {
+    String[] labels = {"Normal", "Turbo", "Ultra"};
+    int[] values = {flightSpeeds.normal(), flightSpeeds.turbo(), flightSpeeds.ultra()};
+    for (int index = 0; index < labels.length; index++) {
+      settingsFont.setColor(index == speedSelection ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (index == speedSelection ? ">  " : "   ")
+          + labels[index] + ": " + values[index] + " u/s", left, top - index * 38f);
+    }
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "↑/↓ elegir velocidad   ←/→ ajustar en pasos de 10 u/s",
+        left, top - 142f);
+    settingsFont.draw(batch, "Rango compartido: 50–1000 u/s. Valores independientes.",
+        left, top - 174f);
+    settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar la siguiente fase.",
+        left, top - 206f);
   }
 
   private void drawAstraSettings(float left, float top) {
@@ -385,7 +450,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, "10%  " + slider(percent) + "  35%", left, top - 45f);
     settingsFont.setColor(Color.LIGHT_GRAY);
     settingsFont.draw(batch, "←/→ ajustar en pasos de 1%. Valor inicial: 18%.", left, top - 94f);
-    settingsFont.draw(batch, "El cambio dura durante esta sesión y se aplica al iniciar la fase.",
+    settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar la fase.",
         left, top - 124f);
   }
 
@@ -441,7 +506,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
   }
 
-  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA }
+  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, SPEEDS }
 
   private void drawAsciiLines(String[] lines, float top, int accentRow) {
     for (int row = 0; row < lines.length; row++) {

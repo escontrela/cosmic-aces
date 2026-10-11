@@ -1,7 +1,6 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.davidpe.cosmicaces.domain.player.Astra;
-import com.davidpe.cosmicaces.domain.player.FlightTuning;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
@@ -188,7 +187,7 @@ final class FlightCameraState {
 
   private static float desiredFlightZoom(Astra astra) {
     if (astra.ultraRemainingSeconds() > 0f) return 1.15f;
-    return astra.flightSpeed() > FlightTuning.NORMAL_SPEED + 0.5f ? 1.08f : 1f;
+    return astra.flightSpeed() > astra.speeds().normal() + 0.5f ? 1.08f : 1f;
   }
 
   private static float normalize(float angle) {

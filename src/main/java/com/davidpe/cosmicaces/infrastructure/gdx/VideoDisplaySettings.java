@@ -63,6 +63,43 @@ public final class VideoDisplaySettings {
 
   private int rememberedWindowWidth;
   private int rememberedWindowHeight;
+  private GameSettingsStore settingsStore;
+
+  void useSettingsStore(GameSettingsStore settingsStore) {
+    this.settingsStore = settingsStore;
+  }
+
+  /** Reapplies the saved fullscreen choice only when the current monitor still advertises it. */
+  void restoreSavedPreference() {
+    if (settingsStore == null) {
+      return;
+    }
+    GameSettingsStore.SavedVideoPreference saved = settingsStore.savedVideoPreference();
+    if (saved == null) {
+      return;
+    }
+    if (!saved.fullscreen()) {
+      if (saved.windowWidth() >= MIN_WINDOW_WIDTH
+          && saved.windowHeight() >= MIN_WINDOW_HEIGHT
+          && (Gdx.graphics.getWidth() != saved.windowWidth()
+              || Gdx.graphics.getHeight() != saved.windowHeight())) {
+        try {
+          if (Gdx.graphics.setWindowedMode(saved.windowWidth(), saved.windowHeight())) {
+            Gdx.graphics.setResizable(true);
+            rememberWindowSize(saved.windowWidth(), saved.windowHeight());
+          }
+        } catch (RuntimeException ignored) {
+          // A rejected saved size leaves the maximized startup window usable.
+        }
+      }
+      return;
+    }
+    VideoMode mode = saved.mode();
+    ApplyResult result = applyFullscreen(mode);
+    if (!result.success()) {
+      settingsStore.saveVideoPreference(result.state());
+    }
+  }
 
   /** Queries the current monitor every time so a window moved to another display is reflected. */
   public DisplayCatalog catalog() {
@@ -140,7 +177,7 @@ public final class VideoDisplaySettings {
     Graphics graphics = Gdx.graphics;
     VideoState before = currentState();
     if (!before.fullscreen()) {
-      return new ApplyResult(true, "La aplicación ya está en ventana.", before);
+      return success("La aplicación ya está en ventana.");
     }
     Monitor monitor = graphics.getMonitor();
     DisplayMode desktop = monitor == null ? graphics.getDisplayMode()
@@ -211,7 +248,11 @@ public final class VideoDisplaySettings {
   record WindowSize(int width, int height) {}
 
   private ApplyResult success(String message) {
-    return new ApplyResult(true, message, currentState());
+    VideoState state = currentState();
+    if (settingsStore != null) {
+      settingsStore.saveVideoPreference(state);
+    }
+    return new ApplyResult(true, message, state);
   }
 
   private ApplyResult failure(String message) {

@@ -24,17 +24,33 @@ public final class Astra extends Ship {
   private boolean accelerating;
   private boolean muzzleFlashVisible;
   private float yawDegrees;
-  private float flightSpeed = FlightTuning.NORMAL_SPEED;
+  private final FlightSpeeds speeds;
+  private float flightSpeed;
   private float ultraRemainingSeconds;
   private boolean ultraUsed;
 
   public Astra() {
-    this(0f, 0f);
+    this(0f, 0f, FlightSpeeds.DEFAULTS);
   }
 
   public Astra(float x, float y) {
+    this(x, y, FlightSpeeds.DEFAULTS);
+  }
+
+  public Astra(FlightSpeeds speeds) {
+    this(0f, 0f, speeds);
+  }
+
+  public Astra(float x, float y, FlightSpeeds speeds) {
     super(DEFAULT_SPEED, x, y, MAX_REGION_WIDTH * SPRITE_SCALE, MAX_REGION_HEIGHT * SPRITE_SCALE,
         MAX_REGION_WIDTH, MAX_REGION_HEIGHT);
+    if (speeds == null) throw new IllegalArgumentException("Flight speeds are required");
+    this.speeds = speeds;
+    flightSpeed = speeds.normal();
+  }
+
+  public FlightSpeeds speeds() {
+    return speeds;
   }
 
   public void setVisuals(Visuals visuals) {
@@ -109,8 +125,8 @@ public final class Astra extends Ship {
   private void advanceStep(FlightControls controls, float step, WorldBounds world) {
     boolean ultra = ultraRemainingSeconds > 0f;
     float target = controls.down() ? 0f
-        : ultra ? FlightTuning.ULTRA_SPEED
-        : controls.up() ? FlightTuning.TURBO_SPEED : FlightTuning.NORMAL_SPEED;
+        : ultra ? speeds.ultra()
+        : controls.up() ? speeds.turbo() : speeds.normal();
     float rate = controls.down() ? FlightTuning.BRAKE_RATE : FlightTuning.RECOVERY_RATE;
     float change = rate * step;
     flightSpeed = flightSpeed < target ? Math.min(target, flightSpeed + change)
@@ -133,7 +149,7 @@ public final class Astra extends Ship {
   }
 
   private boolean steerFromBorder(float step, WorldBounds world) {
-    float zone = Math.max(FlightTuning.NORMAL_SPEED,
+    float zone = Math.max(speeds.normal(),
         flightSpeed * 1.5f);
     double radians = Math.toRadians(yawDegrees);
     float east = (float) Math.sin(radians);

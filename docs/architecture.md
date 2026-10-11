@@ -17,7 +17,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
-| `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias de presentación de sesión. |
+| `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
 | `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
@@ -51,9 +51,9 @@ En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
-unidades. `FlightTuning` reúne las cifras
-de velocidad, aceleración, frenado y giro aprobadas (crucero 230 u/s, turbo 550,
-Ultra 750, giro 130°/s; el desplazamiento lateral-solo conserva 300 u/s como
+unidades. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
+Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
+`FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
@@ -64,17 +64,22 @@ estrellas dentro del tamaño lógico nuevo cuando `WelcomeScreen.resize` cambia 
 viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
 dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
-y las fases durante la sesión de aplicación. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo y Encuadre de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
+LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
+contexto está disponible y persiste el encuadre y velocidades de Astra, el tamaño de ventana y la selección de pantalla completa.
+Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
+no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
+Vídeo, Encuadre y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
 de PhaseOne. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
-`GamePresentationSettings` mantiene en memoria el encuadre de Astra (18 % inicial, 10–35 %, pasos
-de 1 %); `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva ese porcentaje en exploración
-y combate. El ajuste se reinicia al cerrar la aplicación.
+`GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y lo
+guarda a través de `GameSettingsStore`; `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva
+ese porcentaje en exploración y combate. El árbol de clases debe incluir el adaptador de almacenamiento
+junto a la configuración de presentación.
 `FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
-En exploración, el centro de Astra queda al 18 % de la altura visible desde el
-borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
+En exploración, el centro de Astra queda en el porcentaje persistido (18 % inicial,
+configurable entre 10–35 %) de la altura visible desde el borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
 1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
@@ -739,13 +744,14 @@ com.davidpe.cosmicaces
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
 |   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
-|   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()
+|   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()  5. speeds()
 |   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. setMuzzleFlashVisible()
 |   |   |   8. currentRegion()  9. shotAt(): instantánea de los dos cañones para una emisión.
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
 |   |   +-- FlightControls: teclas de pilotaje y activación puntual de Ultra.
 |   |   |   1. neutral()  2. lateral()  3. turning()
-|   |   +-- FlightTuning: parámetros de vuelo aprobados de PhaseOne.
+|   |   +-- FlightTuning: parámetros de aceleración, frenado, giro y desplazamiento lateral.
+|   |   +-- FlightSpeeds: velocidades objetivo configurables independientes, límite 50–1000 u/s.
 |   |   +-- HeroShipSheet: laminas v3 y cinco recortes de sprites de Astra.
 |   |   |   1. sheets()  2. firingSheets()  3. cannonMouths()  4. firingPlacement()
 |   |   |   +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
@@ -820,11 +826,15 @@ com.davidpe.cosmicaces
 |
 +-- infrastructure
     +-- gdx
-        +-- ScreenFactory: construye pantallas y comparte configuración de presentación de sesión.
-        |   1. createWelcomeScreen()  2. createPhaseOneScreen()
+        +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
+        |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
+        +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
+        |   1. initialize()  2. astraBottomFraction()  3. saveAstraBottomFraction()
+        |   4. flightSpeeds()  5. saveFlightSpeeds()  6. savedVideoPreference()  7. saveVideoPreference()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
-        +-- GamePresentationSettings: encuadre de Astra en memoria; ajustable entre 10–35 %.
-        |   1. astraBottomFraction()  2. setAstraBottomFraction()  3. adjustAstraBottomFraction()
+        +-- GamePresentationSettings: encuadre de Astra persistido; ajustable entre 10–35 %.
+        |   1. loadFrom()  2. astraBottomFraction()  3. setAstraBottomFraction()
+        |   4. adjustAstraBottomFraction()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()
@@ -843,7 +853,7 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre e input de bienvenida.
+            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre/velocidades e input de bienvenida.
             |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
             |   1. render()  2. resize()  3. dispose()

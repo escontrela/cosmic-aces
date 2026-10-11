@@ -342,7 +342,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
         controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
-    hud.drawScore(batch, font, phaseSnapshot.get().points(), hudViewport.getWorldWidth());
+    hud.drawScore(batch, hudFont, phaseSnapshot.get().points(),
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     if (runFinished) {
       drawEndMessage();
     }

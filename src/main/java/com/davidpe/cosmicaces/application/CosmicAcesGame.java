@@ -37,6 +37,7 @@ public final class CosmicAcesGame extends Game {
 
   @Override
   public void create() {
+    screenFactory.loadSettings();
     subscribeCoordinator();
     showScreen(screenFactory.createWelcomeScreen());
   }
