@@ -2,7 +2,9 @@ package com.davidpe.cosmicaces.application;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PhaseOneGameControllerTest {
@@ -92,5 +94,37 @@ class PhaseOneGameControllerTest {
     }
 
     assertEquals(30, controller.scorePoints());
+  }
+
+  @Test
+  void ghostwingGroupsOnlyAdvanceDuringTheRun() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f, () -> 0f);
+    controller.placeAstra(2000f, 600f, 0f);
+    controller.advanceGhostwing(100f);
+    assertTrue(controller.ghostwingEncounter().groups().isEmpty(),
+        "the run has not started yet");
+
+    controller.start();
+    controller.advanceGhostwing(20f);
+    assertEquals(1, controller.ghostwingEncounter().groups().size());
+    float frozenX = controller.ghostwingEncounter().activeDrones().get(0).x();
+
+    controller.advanceRun(60f);
+    controller.advanceGhostwing(100f);
+    assertEquals(frozenX, controller.ghostwingEncounter().activeDrones().get(0).x(), 0.001f,
+        "groups must freeze once the run is finished");
+  }
+
+  @Test
+  void ghostwingAdvanceFeedsOnlyTheActiveRunSlice() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f, () -> 0f);
+    controller.placeAstra(2000f, 600f, 0f);
+    controller.start();
+    controller.advanceRun(40f); // only 20 s of run time remain
+    controller.advanceGhostwing(30f); // feeds exactly the 20 active seconds
+    List<GhostwingDrone> drones = controller.ghostwingEncounter().activeDrones();
+    assertEquals(2, drones.size());
+    assertEquals(-72f + 90f * 20f, drones.get(0).x(), 0.001f,
+        "only the active run slice may drive scheduling and flight");
   }
 }

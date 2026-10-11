@@ -18,6 +18,8 @@ public final class PhaseScore {
   public static final int COINCIDENCE_POINTS_PER_SECOND = 10;
   /** Bonus granted once for each destroyed Vesper Raider. */
   public static final int RAIDER_DESTROYED_BONUS = 1000;
+  /** Bonus granted once for each Ghostwing drone destroyed by Astra's fire. */
+  public static final int GHOSTWING_DESTROYED_BONUS = 100;
   /**
    * Tolerance used when converting accumulated time to whole seconds, so binary float error from
    * summing small deltas does not lose a second that is mathematically complete.
@@ -69,6 +71,17 @@ public final class PhaseScore {
   public int awardRaiderDestroyed() {
     bonusPoints += RAIDER_DESTROYED_BONUS;
     return RAIDER_DESTROYED_BONUS;
+  }
+
+  /**
+   * Adds the single bonus for destroying one Ghostwing drone with an Astra projectile and returns
+   * the points granted, so the caller can publish them. Call exactly once per destroyed drone, only
+   * when the destruction cause is Astra's shot; collisions, world exits and repeated impacts on an
+   * already destroyed drone must never call it.
+   */
+  public int awardGhostwingDestroyed() {
+    bonusPoints += GHOSTWING_DESTROYED_BONUS;
+    return GHOSTWING_DESTROYED_BONUS;
   }
 
   private static int wholeSeconds(float seconds) {

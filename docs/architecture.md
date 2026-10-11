@@ -107,6 +107,118 @@ es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantall
 `internalPath()`, `frameSlices()` y `frameSlice(int)` exponen recortes sin cargar
 texturas; el futuro objeto visual de Ghostwing deberá compartir una textura por
 pantalla y liberarla allí.
+
+### Grupos de drones Ghostwing con vuelo mundial (COS-46)
+
+`domain.enemy.GhostwingDrone` es una nave sin arma que extiende `Ship`: caja estable
+72×72 (celda cuadrada 724×724 sin estirar), dirección cardinal fija y reloj de
+hélice de tres fases (`PROPELLER_FRAME_SECONDS = 0,08 s`). El enum `Direction`
+mapea cada sentido a su rotación de render sobre la orientación base de la lámina
+(morro +Y): norte 0°, este -90°, sur 180° y oeste +90°, siempre respecto al centro
+de la caja. `advance(dt)` mueve en línea recta (movimiento lineal: dividir el delta
+no cambia la trayectoria) y cicla la hélice; no persigue, gira ni dispara. El dron
+no posee textura: `Visuals` carga una única `Texture` con sus tres regiones y es
+propiedad de la pantalla que las use (la hija de presentación), mientras el modelo
+se construye y prueba sin iniciar GDX. `currentRegion()` lanza si no se han adjuntado
+los visuals, igual que Vesper.
+
+`domain.enemy.GhostwingEncounter` programa y vuela los grupos independientemente de
+`RaiderEncounter`. Cada grupo (`GhostwingGroup`, identificable por `id()`) contiene
+2–10 drones (ambos extremos incluidos, `MIN_GROUP_SIZE`/`MAX_GROUP_SIZE`), entra
+completo desde **fuera** de un borde mundial y cruza en recta a 90 u/s
+(`DRONE_SPEED`, por debajo del crucero de Astra 230 u/s y del Raider 180 u/s) hasta
+que cada miembro supera el borde opuesto; `GhostwingGroup.advance` retira a los que
+completan el cruce y el encuentro elimina el grupo vacío. La aparición usa el mismo
+patrón inyectable `UnitRandom` que el Raider: primer y siguientes intervalos en
+[20, 30] s de **tiempo activo** de fase, eje (horizontal/vertical) y sentido
+aleatorios, techo de 3 grupos vivos (`MAX_ACTIVE_GROUPS`) con aplazamiento de la
+aparición pendiente (el contador se mantiene en 0) para que liberar un cupo genere
+como máximo un grupo nuevo, nunca una ráfaga. La formación escala los centros en el
+eje perpendicular con `FORMATION_SPACING = 1,4 × caja` (distancia entre centros
+siempre mayor que la caja de colisión) y un desplazamiento longitudinal acotado
+(`FORMATION_LONGITUDINAL_JITTER = 0,9 × caja`); no se usan `clampX/Y` al mover los
+drones para que crucen y salgan del mundo. `markDestroyed(id)` retira un dron (inerte
+para combate posterior, sin reciclado) y elimina el grupo sin miembros;
+`representativePoint(group)` devuelve el centroide de los miembros vivos, base del
+símbolo único por grupo del minimapa.
+
+`PhaseOneGameController` posee un `GhostwingEncounter` con fuente de aleatoriedad
+propia (constructor de dos `UnitRandom`, uno por encuentro). `advanceGhostwing(dt)`
+alimenta solo la porción activa de la fase (`Math.min(dt, remainingRunSeconds())`) y
+no toca armas, puntuación, cámara ni el Raider; `ghostwingEncounter()` expone el
+encuentro para presentación y pruebas. `PhaseOneScreen` llama a
+`advanceGhostwing(delta)` una vez por frame dentro del recorrido, junto a
+`advanceEncounter`; dibujar sprites, explosiones y marcador de minimapa pertenece a
+la hija de presentación.
+
+### Combate Ghostwing en PhaseOne (COS-47)
+
+El controlador integra a los drones vivos en el combate sin mezclarlos con las reglas
+de Vesper. `astraProjectileStep` barre cada proyectil de Astra contra todas las formas
+de casco de la fase —el círculo del Raider (activo o protector) y el círculo inscrito
+de cada dron activo (`BODY_RADIUS_FACTOR`, radio 36 u para la caja 72×72)— y elige el
+blanco de **menor fracción de entrada** sobre el segmento; los empates se resuelven por
+`ProjectileTarget(fraction, kind, droneId)` (dron < blindaje Raider < casco Raider y
+menor id de dron), de modo que el resultado no depende del orden de iteración. Un
+proyectil se consume una vez y destruye como máximo un blanco: el dron elegido se
+retira al instante con `markDestroyed`, así un segundo proyectil del mismo frame no lo
+re-impacta, y el Raider conserva exactamente su paso de daño de diez impactos y su
+bonus de 1000 puntos. `destroyGhostwingDrone(id, cause)` elimina el dron vivo, emite
+`GhostwingDeath` una única vez y suma el bonus solo cuando la causa es disparo.
+
+`resolveGhostwingContact`, invocado en `advanceCombat` después del contacto Vesper
+existente y solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de
+ambos círculos traslatorios sobre el mismo frame (`CollisionDetector.sweep`): Astra
+barre su `AstraMotion` recién capturada por `advanceFlight` y cada dron se reconstruye
+restando su vector cardinal fijo × `DRONE_SPEED` × los mismos segundos activos que usó
+`advanceGhostwing`, por lo que ni la velocidad ni los frames largos atraviesan el casco.
+En un contacto válido se destruye solo el dron implicado (causa `COLLISION`, cero
+puntos) y se llama al `destroyAstra()` existente; `handleRespawns()` mantiene la
+reaparición de 3 s con 2 s de inmunidad. Un Astra destruido o protegido nunca colisiona,
+igual que con el Raider, y no hay daño en área ni reacción en cadena: los drones
+próximos a una explosión no se ven afectados.
+
+`PhaseScore` añade `GHOSTWING_DESTROYED_BONUS = 100` y `awardGhostwingDestroyed()`,
+llamado solo en la transición activa→destruido por disparo; el bonus se drena por
+`pendingCombatPoints`/`drainCombatPoints()` y se publica con `PointsEarned`, de modo
+que un choque, una fuga o repetir impacto sobre un dron ya muerto nunca puntúan.
+`drainGhostwingDeaths()` devuelve y limpia los `GhostwingDeath(droneId, centerX,
+centerY, cause)` pendientes (causa `SHOT` o `COLLISION`), que la presentación (hija
+COS-48) convertirá en explosiones ancladas exactamente una vez por dron; los drones
+que completan el cruce se retiran sin evento.
+
+### Presentación Ghostwing en PhaseOne (COS-48)
+
+`PhaseOneScreen` posee un único `GhostwingDrone.Visuals` (textura compartida y tres regiones de
+hélice) creado en su bloque de carga con limpieza parcial y liberado una sola vez en `dispose()`.
+Cada frame, `drawGhostwingDrones(batch)` adjunta esos visuals a todos los drones vivos (idempotente,
+así los grupos recién aparecidos siempre dibujan) y en el mismo `SpriteBatch`/proyección mundial que
+Astra/Vesper solo a los que intersectan la vista rotada real (`CameraVisibility.shipVisible`), con
+`Ship.draw(batch, rotationDegrees)` usando el rumbo cardinal y el frame de hélice del modelo. Un
+dron destruido sale de `activeDrones()` en el frame de su muerte, por lo que no vuelve a dibujarse
+aunque su explosión siga visible (CA6).
+
+`domain.effect.ShipExplosions` es un pool puro (sin LibGDX) de explosiones simultáneas:
+`spawn(centerX, centerY, peakSize)` añade una en el centro mundial congelado, `advance(dt)` avanza
+todas y retira las terminadas, `active()` expone las que siguen. `PhaseOneScreen.updateExplosions`
+consume exactamente una vez por frame los `GhostwingDeath` de `drainGhostwingDeaths()`: cada evento
+crea una explosión anclada y añade un cue a `audio.playExplosions(...)`, sumado a los de Astra/Vesper
+—un choque Astra+Ghostwing produce dos explosiones y dos cues; un dron ya muerto nunca reinicia su
+explosión. Todas las explosiones de drones comparten la `ShipExplosionVisuals` existente y se dibujan
+en `drawExplosions`. El pico es `1,8 ×` la caja 72×72 del dron (ajuste visual del PO).
+
+`FlightMinimap.draw` recibe ahora una lista de puntos representativos
+(`GhostwingEncounter.representativePoint(group)`, uno por grupo activo —centroide de los miembros
+vivos—, no por dron) y dibuja exactamente un rombo ámbar hueco por grupo
+(`GROUP_MARKER_HALF = 6` px; vértices puros en `diamondVertices`, probados sin renderer). El grupo
+sin miembros vivos desaparece del encuentro y del mapa; la preferencia M y la ocultación temporal
+por combate se conservan, y esa ocultación sigue siendo solo por Vesper.
+
+El indicador fuera de cámara (`OffscreenEnemyIndicator`) y el encuadre de combate
+(`cameraCombatTarget`) permanecen estrictamente en Vesper: retienen la API del raider y nunca
+reciben drones, de modo que Ghostwing no genera triángulo de dogfight ni activa el encuadre del
+Raider (CA8), y la cámara, HUD y señalización de Vesper quedan intactos (CA9). La comprobación
+visual de tamaño/color/legibilidad/audio y ritmo pertenece al PO humano.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
@@ -556,12 +668,13 @@ com.davidpe.cosmicaces
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
 |   +-- PhaseOneGameController extends GameController: encuentros, armas y combate de PhaseOne.
-|       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()
-|       4. advanceCombat()  5. advanceWeapons()  6. drainCombatPoints()
-|       7. isRaiderActive()  8. activeRaider()  9. setRaiderVisuals()
-|       10. astraCombat()  11. raiderCombat()  12. isAstraActive()
-|       13. scorePoints()  14. astraGun()  15. raiderGun()
-|       16. advanceHitFeedback()  17. astraHitFlashIntensity()  18. raiderHitFlashIntensity()
+|       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
+|       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
+|       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
+|       11. ghostwingEncounter()  12. setRaiderVisuals()  13. astraCombat()
+|       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
+|       18. raiderGun()  19. advanceHitFeedback()
+|       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
 |
 +-- domain
 |   +-- game
@@ -573,6 +686,7 @@ com.davidpe.cosmicaces
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
 |   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
 |   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
+|   |   |   4. awardGhostwingDestroyed()
 |   |   +-- WorldBounds: dimensiones finitas y límites para una caja.
 |   |   |   1. maxX()  2. maxY()  3. clampX()  4. clampY()
 |   |   +-- GameId: identidad de partida para descartar eventos antiguos.
@@ -583,6 +697,8 @@ com.davidpe.cosmicaces
 |   |       +-- LifeLost: comunica una vida perdida.
 |   |       +-- PhaseCompleted: comunica el resultado de la fase.
 |   |       +-- GameAbandoned: solicita abandonar.
+|   |   +-- GhostwingDeath(droneId, centerX, centerY, cause): destrucción de un dron,
+|   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]
@@ -613,6 +729,16 @@ com.davidpe.cosmicaces
 |   +-- enemy
 |   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
+|   |   +-- GhostwingDrone extends Ship: dron sin arma con dirección cardinal fija y hélice.
+|   |   |   1. id()  2. direction()  3. rotationDegrees()  4. centerX()  5. centerY()
+|   |   |   6. advance()  7. propellerFrame()  8. setVisuals()
+|   |   |   +-- Direction [enum]: NORTH/EAST/SOUTH/WEST con vector y rotación de render.
+|   |   |   +-- Visuals: textura compartida y tres regiones; dispose() la libera.
+|   |   +-- GhostwingEncounter: calendario y vuelo mundial de grupos de drones.
+|   |   |   1. advance()  2. groups()  3. activeDrones()  4. markDestroyed()
+|   |   |   5. representativePoint() [estático]  6. nextIntervalSeconds()
+|   |   |   +-- Point(x, y): punto mundial por valor.
+|   |   |   +-- GhostwingGroup: id, dirección, miembros y retirada en el borde opuesto.
 |   |   +-- VesperRaider extends Ship: enemigo autónomo con rumbo en el mundo.
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
 |   |   |   4. placeAt()  5. centerX()  6. centerY()  7. setDriftDirection()
@@ -639,6 +765,9 @@ com.davidpe.cosmicaces
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- ShipExplosion: animación mundial no cíclica de una destrucción.
 |   |   |   1. advance()  2. frameIndex()  3. isFinished()
+|   |   +-- ShipExplosions: pool puro de explosiones simultáneas (varias por frame).
+|   |   |   1. spawn()  2. advance()  3. active()  4. size()
+|   |   |   +-- Entry(animation, peakSize): explosión en curso con su pico capturado.
 |   |   +-- ShipExplosionVisuals: textura compartida screen-owned, regiones y dibujo.
 |   |       1. region()  2. draw()  3. dispose()
 |   |   +-- ShipHitFlash: pulso temporal puro de destello por impacto (0,10 s).
@@ -687,6 +816,9 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
             |   1. render()  2. resize()  3. dispose()
+            |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
+            |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
+            |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados.
@@ -700,8 +832,9 @@ com.davidpe.cosmicaces
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
                 1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
                 5. draw()  6. drawScore()
-            +-- FlightMinimap: overlay opcional del mundo, Astra y Vesper Raider.
+            +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
+                4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
             |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
