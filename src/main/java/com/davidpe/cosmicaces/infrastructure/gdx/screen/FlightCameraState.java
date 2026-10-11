@@ -7,9 +7,9 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 /**
  * Pure presentation state for the lagged world camera.
  *
- * <p>It normally frames the exploration view: a fixed look-ahead and a small zoom that only reflects
- * the current flight mode. While the single enemy intersects the exploration framing it switches to
- * the combat framing — a wider zoom that shows more space around both ships and a much smaller
+ * <p>It normally frames the current exploration viewport: a fixed look-ahead and a small zoom that
+ * only reflects the current flight mode. While the single enemy intersects that framing it switches
+ * to the combat framing — a wider zoom that shows more space around both ships and a much smaller
  * look-ahead — and it returns smoothly to exploration once the enemy leaves. The switch is a latch
  * with a separate entry/exit threshold and a short hold, so brief crossings of the viewport edge
  * never alternate the mode. Everything here is presentation: it reads Astra's public state and the
@@ -52,7 +52,8 @@ final class FlightCameraState {
 
   /** Exploration-only update, used when no enemy is being framed. */
   void update(Astra astra, float deltaSeconds) {
-    update(astra, deltaSeconds, CombatTarget.none());
+    update(astra, deltaSeconds, CombatTarget.none(),
+        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
   }
 
   /**
@@ -61,12 +62,18 @@ final class FlightCameraState {
    * @param target the enemy the encounter should frame, or {@link CombatTarget#none()} when absent
    */
   void update(Astra astra, float deltaSeconds, CombatTarget target) {
+    update(astra, deltaSeconds, target, VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+  }
+
+  /** Advances framing against the effective logical view, before the camera zoom is applied. */
+  void update(Astra astra, float deltaSeconds, CombatTarget target,
+      float viewWidth, float viewHeight) {
     if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) return;
     float yawBlend = (float) (1d - Math.exp(-deltaSeconds / YAW_FOLLOW_SECONDS));
     float positionBlend = (float) (1d - Math.exp(-deltaSeconds / POSITION_FOLLOW_SECONDS));
     yawDegrees = normalize(yawDegrees
         + normalize(astra.yawDegrees() - yawDegrees) * yawBlend);
-    updateCombatLatch(astra, deltaSeconds, target);
+    updateCombatLatch(astra, deltaSeconds, target, viewWidth, viewHeight);
     float aheadTarget = combatActive ? COMBAT_AHEAD_DISTANCE : CAMERA_AHEAD_DISTANCE;
     aheadDistance += (aheadTarget - aheadDistance) * positionBlend;
     x += (desiredX(astra, yawDegrees, aheadDistance) - x) * positionBlend;
@@ -85,25 +92,26 @@ final class FlightCameraState {
   }
 
   /**
-   * Latches the combat framing on the stable exploration reference view. An active enemy enters
-   * combat as soon as it intersects that reference; while engaged it stays until it has been beyond
-   * the exit margin for {@link #COMBAT_EXIT_SECONDS}. A missing enemy (destroyed, waiting to
+   * Latches the combat framing on the current exploration view. An active enemy enters combat as
+   * soon as it intersects that view; while engaged it stays until it has been beyond the exit
+   * margin for {@link #COMBAT_EXIT_SECONDS}. A missing enemy (destroyed, waiting to
    * respawn, or a finished run) releases the mode immediately so no stale target is kept.
    */
-  private void updateCombatLatch(Astra astra, float deltaSeconds, CombatTarget target) {
+  private void updateCombatLatch(Astra astra, float deltaSeconds, CombatTarget target,
+      float viewWidth, float viewHeight) {
     if (!target.active()) {
       combatActive = false;
       combatExitSeconds = 0f;
       return;
     }
     if (!combatActive) {
-      if (referenceVisible(astra, target, 0f)) {
+      if (referenceVisible(astra, target, 0f, viewWidth, viewHeight)) {
         combatActive = true;
         combatExitSeconds = 0f;
       }
       return;
     }
-    if (referenceVisible(astra, target, COMBAT_EXIT_MARGIN)) {
+    if (referenceVisible(astra, target, COMBAT_EXIT_MARGIN, viewWidth, viewHeight)) {
       combatExitSeconds = 0f;
     } else {
       combatExitSeconds += deltaSeconds;
@@ -115,13 +123,14 @@ final class FlightCameraState {
   }
 
   /**
-   * Whether the enemy intersects the exploration framing of reference: Astra's centre, the smoothed
-   * yaw, the fixed exploration look-ahead and the current flight-mode zoom. It deliberately never
+   * Whether the enemy intersects the current exploration framing: Astra's centre, the smoothed yaw,
+   * the fixed exploration look-ahead and the current flight-mode zoom. It deliberately never
    * uses the combat look-ahead or the combat zoom, so the combat framing cannot switch itself on.
    *
    * @param extraMargin additional enemy-box margin beyond the base exploration view
    */
-  private boolean referenceVisible(Astra astra, CombatTarget target, float extraMargin) {
+  private boolean referenceVisible(Astra astra, CombatTarget target, float extraMargin,
+      float viewWidth, float viewHeight) {
     double radians = Math.toRadians(yawDegrees);
     float upX = (float) Math.sin(radians);
     float upY = (float) Math.cos(radians);
@@ -129,7 +138,7 @@ final class FlightCameraState {
     float referenceY = astra.y() + astra.drawHeight() / 2f + upY * CAMERA_AHEAD_DISTANCE;
     return CameraVisibility.shipVisible(target.centerX(), target.centerY(),
         target.halfBox() + extraMargin, referenceX, referenceY, upX, upY,
-        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, desiredZoom(astra, false));
+        viewWidth, viewHeight, desiredZoom(astra, false));
   }
 
   private static float desiredX(Astra astra, float yaw, float ahead) {

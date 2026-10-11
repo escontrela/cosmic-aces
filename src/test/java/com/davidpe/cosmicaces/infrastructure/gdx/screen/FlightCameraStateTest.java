@@ -75,6 +75,21 @@ class FlightCameraStateTest {
     assertEquals(100f, state.aheadDistance(), 1e-4f);
   }
 
+  @Test void combatLatchUsesTheEffectiveViewportDimensions() {
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 0f, WORLD);
+    float targetX = refX(astra, 0f) + 700f;
+    float targetY = refY(astra, 0f);
+
+    FlightCameraState reference = new FlightCameraState(astra);
+    reference.update(astra, 0.25f, targetAt(targetX, targetY), 1024f, 768f);
+    assertFalse(reference.combatActive());
+
+    FlightCameraState fullHd = new FlightCameraState(astra);
+    fullHd.update(astra, 0.25f, targetAt(targetX, targetY), 1920f, 1080f);
+    assertTrue(fullHd.combatActive());
+  }
+
   @Test void combatConvergesToWiderZoomAndSmallerAhead() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);

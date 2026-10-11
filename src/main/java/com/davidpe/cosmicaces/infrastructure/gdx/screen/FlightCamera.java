@@ -19,6 +19,12 @@ final class FlightCamera {
     apply();
   }
 
+  void update(Astra astra, float deltaSeconds, FlightCameraState.CombatTarget target,
+      float viewWidth, float viewHeight) {
+    state.update(astra, deltaSeconds, target, viewWidth, viewHeight);
+    apply();
+  }
+
   private void apply() {
     double radians = Math.toRadians(state.yawDegrees());
     camera.position.set(state.x(), state.y(), 0f);

@@ -229,10 +229,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
-    // The camera frames the exploration view and widens into combat framing while the live enemy is
-    // inside the reference exploration view; it never receives a stale target after destruction,
+    // The camera frames the current exploration view and widens into combat framing while the live
+    // enemy is inside it; it never receives a stale target after destruction,
     // respawn wait or the end of the run.
-    flightCamera.update(controller.astra(), delta, cameraCombatTarget());
+    flightCamera.update(controller.astra(), delta, cameraCombatTarget(),
+        viewport.getWorldWidth(), viewport.getWorldHeight());
     // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
     // encounter and the camera update) so Vesper fires only while both ships are really visible.
     // The pre-movement sample above stays the scoring input and is never reused for the weapons.
@@ -241,9 +242,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // frame is drawn at its full first intensity. It also runs after the run finishes so the last
     // pulse of an in-flight projectile keeps extinguishing.
     controller.advanceHitFeedback(delta);
-    // One weapons update per frame, after the camera that this frame draws, using the world zoom as
-    // the frozen range so a shot covers about two visible viewport heights. Impacts are resolved
-    // inside this call and the single raider destruction bonus is published once, before the HUD.
+    // One weapons update per frame, after the camera that this frame draws. Shot range remains tied
+    // to the 768-unit reference height, so a larger presentation viewport does not retune weapons.
+    // Impacts are resolved inside this call and the single raider destruction bonus is published
+    // once, before the HUD.
     long astraBurstsBefore = controller.astraGun().emissionCount();
     long raiderBurstsBefore = controller.raiderGun().emissionCount();
     int weaponEarned = controller.advanceWeapons(delta, emissionSeconds,
@@ -269,8 +271,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         runFinished, controller.astra().flightSpeed()));
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
-    float visibleRadius = (float) Math.hypot(VirtualScreenSize.WIDTH / 2f,
-        VirtualScreenSize.HEIGHT / 2f) * camera.zoom + 180f;
+    float visibleRadius = (float) Math.hypot(viewport.getWorldWidth() / 2f,
+        viewport.getWorldHeight() / 2f) * camera.zoom + 180f;
     scenery.draw(shapes, camera.position.x - visibleRadius,
         camera.position.y - visibleRadius, camera.position.x + visibleRadius,
         camera.position.y + visibleRadius);
@@ -433,7 +435,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
         raider.y() + raider.drawHeight() / 2f,
         Math.max(raider.drawWidth(), raider.drawHeight()) / 2f,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
-        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera.zoom);
+        viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
     if (!placement.active()) {
       return;
     }
@@ -443,7 +445,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       MinimapProjection.Rectangle panel = MinimapProjection.fit(PhaseOneGameController.WORLD,
           VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT).panel();
       placement = OffscreenEnemyIndicator.avoidReservations(placement,
-          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, panel);
+          viewport.getWorldWidth(), viewport.getWorldHeight(), panel);
       if (!placement.active()) {
         return;
       }
@@ -462,7 +464,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private boolean shipVisible(float centerX, float centerY, float halfBox) {
     return CameraVisibility.shipVisible(centerX, centerY, halfBox,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
-        VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT, camera.zoom);
+        viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
   }
 
   private void drawEndMessage() {

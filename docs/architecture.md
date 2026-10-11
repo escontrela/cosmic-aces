@@ -828,8 +828,8 @@ com.davidpe.cosmicaces
             |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
-            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados.
-            |   1. update() [2 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
+            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados según el viewport efectivo.
+            |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
             |   6. combatActive()  7. aheadDistance()
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
