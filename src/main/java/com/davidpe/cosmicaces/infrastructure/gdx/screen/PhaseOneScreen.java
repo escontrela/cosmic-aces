@@ -83,6 +83,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final GhostwingDrone.Visuals ghostwingVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
+  private final AstraLightEffect astraLightEffect;
   private final PhaseOneAudio audio;
   private final BitmapFont font;
   private final BitmapFont hudFont;
@@ -137,6 +138,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     GhostwingDrone.Visuals loadedGhostwing = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
+    AstraLightEffect loadedAstraLight = null;
     PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
@@ -149,6 +151,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
+      loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
@@ -180,6 +183,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedHitFlash != null) {
         loadedHitFlash.dispose();
       }
+      if (loadedAstraLight != null) {
+        loadedAstraLight.dispose();
+      }
       if (loadedShapes != null) {
         loadedShapes.dispose();
       }
@@ -195,6 +201,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ghostwingVisuals = loadedGhostwing;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
+    astraLightEffect = loadedAstraLight;
     audio = loadedAudio;
     font = loadedFont;
     hudFont = loadedHudFont;
@@ -281,6 +288,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // loop never restarts or stacks just because this method runs once per frame.
     audio.updateCabinAmbience(PhaseOneAudio.cabinAmbienceAudible(controller.isAstraActive(),
         runFinished, controller.astra().flightSpeed()));
+    astraLightEffect.update(controller.astra(), delta,
+        !runFinished && controller.isAstraActive());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(viewport.getWorldWidth() / 2f,
@@ -295,6 +304,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
     batch.begin();
+    if (controller.isAstraActive()
+        && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
+      astraLightEffect.draw(batch, controller.astra());
+    }
     if (controller.isAstraActive()
         && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
       hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
@@ -368,6 +381,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ghostwingVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
+    astraLightEffect.dispose();
     font.dispose();
     hudFont.dispose();
   }
