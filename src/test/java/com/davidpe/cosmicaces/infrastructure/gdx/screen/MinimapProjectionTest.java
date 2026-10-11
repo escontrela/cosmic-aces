@@ -33,6 +33,16 @@ class MinimapProjectionTest {
     assertTrue(panel.y() + panel.height() <= 768f);
   }
 
+  @Test void anchorsPanelToTheRightEdgeAcrossWideAndSixteenTenViewports() {
+    for (float[] size : new float[][] {{1920f, 1080f}, {1440f, 900f}}) {
+      MinimapProjection.Rectangle panel =
+          MinimapProjection.fit(WORLD, size[0], size[1]).panel();
+      assertEquals(size[0] - 24f, panel.x() + panel.width(), 0.001f);
+      assertTrue(panel.y() >= MinimapProjection.BOTTOM_MARGIN);
+      assertTrue(panel.y() + panel.height() <= size[1] - 12f);
+    }
+  }
+
   @Test void keepsMarkersInsideTheMapAtWorldEdgesAndClampsOutOfBoundsCoordinates() {
     MinimapProjection projection = MinimapProjection.fit(WORLD, 1024f, 768f);
     MinimapProjection.Rectangle map = projection.map();

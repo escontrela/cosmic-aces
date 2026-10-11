@@ -131,6 +131,8 @@ public final class WelcomeScreen extends ScreenAdapter {
   @Override
   public void resize(int width, int height) {
     viewport.update(width, height, true);
+    starfield.resize(Math.max(1, Math.round(viewport.getWorldWidth())),
+        Math.max(1, Math.round(viewport.getWorldHeight())));
   }
 
   @Override
@@ -142,14 +144,19 @@ public final class WelcomeScreen extends ScreenAdapter {
   }
 
   private void drawWelcome(float delta) {
-    float shipTop = VirtualScreenSize.HEIGHT * 0.84f;
+    float viewportWidth = viewport.getWorldWidth();
+    float viewportHeight = viewport.getWorldHeight();
+    float contentHeight = (SHIP.length + TITLE.length) * LINE_HEIGHT + 84f;
+    float shipTop = (viewportHeight + contentHeight) / 2f;
     float titleTop = shipTop - (SHIP.length + 1) * LINE_HEIGHT;
     float titleBottom = titleTop - (TITLE.length - 1) * LINE_HEIGHT;
+    float contentWidth = Math.max(maxLineLength(SHIP), maxLineLength(TITLE)) * CELL_WIDTH;
+    float panelWidth = Math.min(viewportWidth - 32f, contentWidth + 48f);
+    float panelX = (viewportWidth - panelWidth) / 2f;
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     shapes.setColor(Color.BLACK);
-    shapes.rect(134.4f, titleBottom - 28.16f, VirtualScreenSize.WIDTH - 268.8f,
-        shipTop - titleBottom + 61.44f);
+    shapes.rect(panelX, titleBottom - 68f, panelWidth, shipTop - titleBottom + 92f);
     shapes.end();
 
     batch.begin();
@@ -161,7 +168,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     blinkTimer += delta;
     boolean promptVisible = ((int) (blinkTimer / BLINK_PERIOD)) % 2 == 0;
     if (promptVisible) {
-      float promptX = (VirtualScreenSize.WIDTH - promptLayout.width) / 2f;
+      float promptX = Math.max(16f, (viewportWidth - promptLayout.width) / 2f);
       promptFont.draw(batch, promptLayout, promptX, titleBottom - 56f);
     }
     batch.end();
@@ -173,7 +180,7 @@ public final class WelcomeScreen extends ScreenAdapter {
         logoFont.setColor(Color.GOLD);
       }
       String line = lines[row];
-      float left = (VirtualScreenSize.WIDTH - line.length() * CELL_WIDTH) / 2f;
+      float left = (viewport.getWorldWidth() - line.length() * CELL_WIDTH) / 2f;
       float y = top - row * LINE_HEIGHT;
       for (int column = 0; column < line.length(); column++) {
         char glyph = line.charAt(column);
@@ -182,5 +189,13 @@ public final class WelcomeScreen extends ScreenAdapter {
         }
       }
     }
+  }
+
+  private static int maxLineLength(String[] lines) {
+    int max = 0;
+    for (String line : lines) {
+      max = Math.max(max, line.length());
+    }
+    return max;
   }
 }

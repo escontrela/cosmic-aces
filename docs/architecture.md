@@ -59,7 +59,10 @@ según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
 estrellas cubren todo el mapa y las isletas de bloques permanecen en las mismas
 coordenadas al regresar. El dibujo filtra los elementos fuera de la región
-visible. `Starfield` conserva el scroll de la pantalla de bienvenida.
+visible. `Starfield` conserva el scroll de la pantalla de bienvenida y redistribuye sus
+estrellas dentro del tamaño lógico nuevo cuando `WelcomeScreen.resize` cambia el
+viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
+dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
 La cámara enfoca 100 unidades por delante de Astra y sigue su posición con
@@ -80,8 +83,11 @@ dibujar; la visibilidad de armas, dibujo y minimapa sigue usando la cámara real
 actualizada y la puntuación conserva su muestreo previo al movimiento.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
 `FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
-el mundo, sin panel ni títulos, y el score acumulado en la esquina superior
-derecha. `PhaseScore` (domain.game) convierte el tiempo válido del recorrido en
+el mundo, sin panel ni títulos, anclando la velocidad al margen derecho actual;
+el score acumulado también se alinea a esa esquina. El minimapa y su reserva del
+indicador de Vesper usan el mismo tamaño lógico actual de la cámara HUD, por lo
+que ambos permanecen juntos en el borde derecho después de resize. `PhaseScore`
+(domain.game) convierte el tiempo válido del recorrido en
 puntos solo al cruzar segundos completos: 1 por segundo de fase y 10 por cada
 segundo completo de coincidencia visible de Astra y el Raider; los segundos ya
 concedidos evitan doble conteo y el resultado no depende de cómo se reparta el

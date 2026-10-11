@@ -7,8 +7,8 @@ import com.badlogic.gdx.math.MathUtils;
 /** A reusable, vertically scrolling star background. */
 public final class Starfield {
 
-  private final int width;
-  private final int height;
+  private int width;
+  private int height;
   private final int count;
   private final float minSpeed;
   private final float maxSpeed;
@@ -64,6 +64,21 @@ public final class Starfield {
       if (y[i] < -wrapMargin) {
         randomize(i, height + wrapMargin);
       }
+    }
+  }
+
+  /** Updates the star field bounds after a window resize and redistributes its stars. */
+  public void resize(int width, int height) {
+    if (width <= 0 || height <= 0) {
+      throw new IllegalArgumentException("Starfield dimensions must be positive");
+    }
+    if (this.width == width && this.height == height) {
+      return;
+    }
+    this.width = width;
+    this.height = height;
+    for (int i = 0; i < count; i++) {
+      randomize(i, MathUtils.random(0f, height));
     }
   }
 

@@ -29,4 +29,11 @@ class FlightHudTest {
     assertEquals("ENERGIA 0%", FlightHud.energyLabel(-5), "negative energy clamps to zero");
     assertEquals("ENERGIA 100%", FlightHud.energyLabel(125), "overflow clamps to one hundred");
   }
+
+  @Test void viewportAnchorsKeepHudReadingsDistributedAtTheCurrentEdges() {
+    assertEquals(1760f, FlightHud.rightAlignedX(1920f, 136f));
+    assertEquals(672f, FlightHud.centeredX(1440f, 96f));
+    assertEquals(24f, FlightHud.rightAlignedX(180f, 200f),
+        "narrow windows keep a safe left margin when content cannot fit");
+  }
 }

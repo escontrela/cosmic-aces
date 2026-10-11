@@ -325,12 +325,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!enemyInViewport) {
       minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
-          ghostwingGroupPoints(), VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+          ghostwingGroupPoints(), hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
-        controller.astraCombat().energyPercent());
-    hud.drawScore(batch, font, phaseSnapshot.get().points());
+        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
+    hud.drawScore(batch, font, phaseSnapshot.get().points(), hudViewport.getWorldWidth());
     if (runFinished) {
       drawEndMessage();
     }
@@ -435,7 +435,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
         raider.y() + raider.drawHeight() / 2f,
         Math.max(raider.drawWidth(), raider.drawHeight()) / 2f,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
-        viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), camera.zoom);
     if (!placement.active()) {
       return;
     }
@@ -443,9 +443,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // The panel the minimap will draw this frame (same fit arguments), kept as a clean band that
       // the triangle slides off without leaving its own edge.
       MinimapProjection.Rectangle panel = MinimapProjection.fit(PhaseOneGameController.WORLD,
-          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT).panel();
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight()).panel();
       placement = OffscreenEnemyIndicator.avoidReservations(placement,
-          viewport.getWorldWidth(), viewport.getWorldHeight(), panel);
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), panel);
       if (!placement.active()) {
         return;
       }
@@ -468,8 +468,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   }
 
   private void drawEndMessage() {
-    float x = (VirtualScreenSize.WIDTH - endLayout.width) / 2f;
-    float y = VirtualScreenSize.HEIGHT * 0.62f;
+    float x = Math.max(24f, (hudViewport.getWorldWidth() - endLayout.width) / 2f);
+    float y = hudViewport.getWorldHeight() * 0.62f;
     batch.begin();
     font.setColor(Color.GOLD);
     font.draw(batch, endLayout, x, y);
