@@ -812,6 +812,11 @@ com.davidpe.cosmicaces
         +-- ScreenFactory: construye pantallas y conecta dependencias.
         |   1. createWelcomeScreen()  2. createPhaseOneScreen()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
+        +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
+        |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
+        |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()
+        |   5. distinctModes() [lógica pura: deduplicación por resolución y Hz mayor]
+        |   6. supportedMode()  7. restoredWindowSize()
         +-- event
         |   +-- GameEventBus: bus sincrono por tipo concreto de evento.
         |   |   1. subscribe()  2. publish()
