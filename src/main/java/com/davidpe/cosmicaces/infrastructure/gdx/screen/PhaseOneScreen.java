@@ -14,12 +14,16 @@ import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
+import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
+import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
+import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
+import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
@@ -31,13 +35,17 @@ import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 /**
  * First playable screen: world scenery, flight camera, fixed HUD and input. The single Vesper
  * Raider is kept alive in the world by the controller and drawn only while it intersects the camera
- * view. This screen owns and releases every LibGDX resource it creates.
+ * view; the Ghostwing drone groups are drawn from their world geometry with one shared sheet, and
+ * every drone destruction (shot or hull contact) becomes one world-anchored explosion. This screen
+ * owns and releases every LibGDX resource it creates.
  *
  * <p>It never navigates by itself: it publishes game events through the injected {@link
  * GameEventPublisher} and the composition root decides the next screen. The run's own state (time
@@ -71,6 +79,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final WorldScenery scenery;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
+  private final GhostwingDrone.Visuals ghostwingVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final PhaseOneAudio audio;
@@ -82,6 +91,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private ActiveExplosion raiderExplosion;
   private boolean astraExplosionSpawned;
   private boolean raiderExplosionSpawned;
+  /** One pool for every concurrent Ghostwing explosion: a drone can die on any frame. */
+  private final ShipExplosions ghostwingExplosions = new ShipExplosions();
 
   public PhaseOneScreen(
       GameEventPublisher publisher,
@@ -110,6 +121,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ShapeRenderer loadedShapes = null;
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
+    GhostwingDrone.Visuals loadedGhostwing = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     PhaseOneAudio loadedAudio = null;
@@ -121,6 +133,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedShapes = new ShapeRenderer();
       loadedAstra = new Astra.Visuals();
       loadedRaider = new VesperRaider.Visuals();
+      loadedGhostwing = new GhostwingDrone.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAudio = new PhaseOneAudio();
@@ -145,6 +158,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedRaider != null) {
         loadedRaider.dispose();
       }
+      if (loadedGhostwing != null) {
+        loadedGhostwing.dispose();
+      }
       if (loadedAstra != null) {
         loadedAstra.dispose();
       }
@@ -163,6 +179,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes = loadedShapes;
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
+    ghostwingVisuals = loadedGhostwing;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
     audio = loadedAudio;
@@ -274,6 +291,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
           controller.raiderHitFlashIntensity());
     }
+    // Every live Ghostwing drone attaches the same shared visuals, so newly spawned groups are
+    // always drawable; only drones intersecting the real rotated camera view are batched.
+    drawGhostwingDrones(batch);
     drawExplosions(batch);
     batch.end();
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
@@ -302,7 +322,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!enemyInViewport) {
       minimap.draw(shapes, PhaseOneGameController.WORLD, scenery, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
-          VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
+          ghostwingGroupPoints(), VirtualScreenSize.WIDTH, VirtualScreenSize.HEIGHT);
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
@@ -326,6 +346,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.dispose();
     astraVisuals.dispose();
     raiderVisuals.dispose();
+    ghostwingVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     font.dispose();
@@ -458,6 +479,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * <p>The same fresh transition drives the explosion cue: both destruction flags are sampled before
    * this frame mutates them, so one destruction plays exactly one cue, a still-destroyed ship in the
    * following frames adds nothing, and a mutual collision plays one voice per ship.
+   *
+   * <p>Every pending {@link GhostwingDeath} of the frame is consumed exactly once: each one spawns a
+   * world-anchored explosion in the shared pool and adds one cue, so an Astra+Ghostwing collision
+   * plays both voices and a drone that stays dead never re-explodes.
    */
   private void updateExplosions(float delta) {
     int explosionCues = PhaseOneAudio.explosionCues(
@@ -497,7 +522,28 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
     }
 
-    audio.playExplosions(explosionCues);
+    int ghostwingCues = spawnGhostwingExplosions();
+    ghostwingExplosions.advance(delta);
+    audio.playExplosions(explosionCues + ghostwingCues);
+  }
+
+  /**
+   * Consumes this frame's pending Ghostwing drone deaths once and creates one world-anchored
+   * explosion per event at the frozen death centre. Returns the number of new cues to play; the
+   * pool drops each animation as soon as it finishes.
+   */
+  private int spawnGhostwingExplosions() {
+    List<GhostwingDeath> deaths = controller.drainGhostwingDeaths();
+    for (GhostwingDeath death : deaths) {
+      ghostwingExplosions.spawn(death.centerX(), death.centerY(), ghostwingExplosionPeak());
+    }
+    return deaths.size();
+  }
+
+  /** Explosion peak for a drone death, based on the stable 72×72 Ghostwing box. */
+  private static float ghostwingExplosionPeak() {
+    return EXPLOSION_PEAK_FACTOR
+        * Math.max(GhostwingEncounter.DRONE_WIDTH, GhostwingEncounter.DRONE_HEIGHT);
   }
 
   /** Draws every running explosion into the open world-space batch, anchored at its death centre. */
@@ -512,6 +558,36 @@ public final class PhaseOneScreen extends ScreenAdapter {
           raiderExplosion.animation().centerX(), raiderExplosion.animation().centerY(),
           raiderExplosion.peakSize());
     }
+    for (ShipExplosions.Entry ghostwing : ghostwingExplosions.active()) {
+      explosionVisuals.draw(batch, ghostwing.animation().frameIndex(),
+          ghostwing.animation().centerX(), ghostwing.animation().centerY(),
+          ghostwing.peakSize());
+    }
+  }
+
+  /**
+   * Draws every live Ghostwing drone with the shared sheet, rotating around each drone's stable box
+   * centre with its fixed cardinal heading. Only drones that intersect the real rotated camera view
+   * are batched. A destroyed drone leaves {@code activeDrones()} on the death frame, so it is never
+   * drawn again even while its explosion animation is still playing.
+   */
+  private void drawGhostwingDrones(SpriteBatch batch) {
+    for (GhostwingDrone drone : controller.ghostwingEncounter().activeDrones()) {
+      drone.setVisuals(ghostwingVisuals);
+      if (shipVisible(drone.centerX(), drone.centerY(),
+          Math.max(drone.drawWidth(), drone.drawHeight()) / 2f)) {
+        drone.draw(batch, drone.rotationDegrees());
+      }
+    }
+  }
+
+  /** One representative world point per active Ghostwing group, the single minimap symbol. */
+  private List<GhostwingEncounter.Point> ghostwingGroupPoints() {
+    List<GhostwingEncounter.Point> points = new ArrayList<>();
+    for (GhostwingEncounter.GhostwingGroup group : controller.ghostwingEncounter().groups()) {
+      points.add(GhostwingEncounter.representativePoint(group));
+    }
+    return points;
   }
 
   /**
