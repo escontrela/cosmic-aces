@@ -400,8 +400,19 @@ Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige co
 `UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
 del punto de muerte, con fallback al mejor candidato y sin recrear texturas.
 
-`RaiderEncounter` queda con la afinación aprobada del PO (velocidad 180, giro 75°/s)
-y CA18: la sobrecarga
+`RaiderEncounter` usa la cinemática continua de Vesper (COS-62): crucero 300 u/s,
+pasada 500 u/s y reenganche 320 u/s como velocidades objetivo por fase, con
+aceleración 300 u/s² y deceleración 450 u/s²; giro máximo 130°/s y aceleración
+angular 360°/s². El estado físico vive en `VesperRaider` (`currentSpeed`,
+`angularVelocityDegrees`): `steerTowards(target, ωmax, α, dt)` sigue un perfil de
+frenado angular acotado y `advance(dt, targetSpeed, accel, decel)` rampa la
+velocidad; el objetivo táctico lo fija `RaiderEncounter` (`targetSpeed()`). Las
+constantes son un punto de partida técnico medible, no una cifra fijada por el PO.
+`leastTurnSide` convierte cada dirección candidata al marco de descenso con
+`headingFor(vx, vy) = degrees(atan2(vx, -vy))` antes de comparar, corrigiendo la
+mezcla de marcos anterior. La pose de guiñada usa histéresis sobre la velocidad
+angular real (entra ≥5°/s, sale ≤1°/s) para evitar parpadeo neutral. Con CA18, la
+sobrecarga
 `advance(dt, world, targetX, targetY, targetVelX, targetVelY, targetRadius, selfRadius)`
 prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimiento
 relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
@@ -420,12 +431,13 @@ el lado de órbita de la pasada y el de separación se fijan una sola vez al ent
 la maniobra con desempate determinista, de modo que no hay rectificaciones de lado por
 frame. `UnitRandom` queda solo para la espera inicial y para las posiciones de
 aparición/reaparición. El raider dispone además de un turbo táctico reproducible:
-`TURBO_SPEED_MULTIPLIER=1,5` sobre `RAIDER_SPEED`, ventana máxima
-`TURBO_MAX_SECONDS=1 s` y recuperación `TURBO_RECOVERY_SECONDS=4 s`, medidos con el
-mismo `delta`; se activa solo al cerrar distancia en APPROACH o REPOSITION (banda
->350) y se corta ante un contacto previsto, un lado de evasión activo o una pasada
-firme. La predicción de contacto usa la velocidad efectiva para conservar la
-evitación. La evitación de choque y la respuesta de bordes siguen siendo la prioridad
+durante su ventana (`TURBO_MAX_SECONDS=1 s`, recuperación `TURBO_RECOVERY_SECONDS=4 s`,
+medidos con el mismo `delta`) apunta a la velocidad de pasada a través de la misma
+rampa de aceleración acotada, sin multiplicadores ni saltos de velocidad; se activa
+solo al cerrar distancia en APPROACH o REPOSITION (banda >350) y se corta ante un
+contacto previsto, un lado de evasión activo o una pasada firme. La predicción de
+contacto usa la velocidad efectiva actual (`VesperRaider.currentSpeed()`). La
+evitación de choque y la respuesta de bordes siguen siendo la prioridad
 de seguridad sobre las tres fases. El plan (fase, lados y turbo) se reinicia en
 `spawn`, `destroyActive` y `respawnAt`, y `maneuver()`, `separationSide()`,
 `avoidanceSide()`, `isTurboActive()`, `turboSecondsRemaining()` y
@@ -641,13 +653,16 @@ alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
 rotación de rumbo en coordenadas de mundo. `RaiderEncounter` conserva una única
 instancia de Vesper Raider por fase: espera una vez, aparece por delante de la
 ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
-salga de cámara. Con COS-32 la velocidad es 180 u/s
-y `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
-tras la destrucción; con COS-37 alterna fases de aproximación, pasada acotada y
+salga de cámara. Con COS-62 la velocidad es continua (crucero 300 u/s, pasada
+500 u/s, reenganche 320 u/s) y rampa con aceleración/deceleración acotadas;
+`destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
+tras la destrucción y reinician plan, velocidad, ω y pose; con COS-37 alterna
+fases de aproximación, pasada acotada y
 reenganche (véase «Combate determinista integrado (COS-32)»), y con COS-40 esas
 fases usan rumbos deterministas sin deriva aleatoria y un turbo táctico acotado.
-`VesperRaider.steerTowards` gira el rumbo con un límite de
-velocidad angular y `setDriftDirection`/`pose()` eligen la pose de guiñada al
+`VesperRaider.steerTowards` gira el rumbo con velocidad angular y aceleración
+angular acotadas (`MAX_TURN_RATE_DEGREES=130`, `MAX_ANGULAR_ACCELERATION_DEGREES=360`)
+y `setDriftDirection`/`pose()` eligen la pose de guiñada al
 girar o la de alabeo al derivar; el empuje acotado combina la aproximación al
 jugador con una respuesta suave en los
 bordes. La posición se recorta al mundo solo como salvaguarda. `PhaseOneScreen`

@@ -17,10 +17,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * and the inward border response remain safety overrides on top of the phases.
  *
  * <p>While closing in or recovering a firing line the raider may fire a bounded tactical turbo: a
- * short, reproducible speed boost (see {@link #TURBO_SPEED_MULTIPLIER}) with an active window and a
- * recovery window, both measured in simulation time. Turbo never engages during a stable firing pass
- * or while a collision-avoidance maneuver has priority, and it always resets to normal speed when the
- * encounter restarts.
+ * short, reproducible speed boost toward {@link #PASS_SPEED} with an active window and a recovery
+ * window, both measured in simulation time. The boost is only a speed target, so the raider reaches
+ * it through the shared bounded acceleration ramp instead of a jump. Turbo never engages during a
+ * stable firing pass or while a collision-avoidance maneuver has priority, and it always resets to
+ * normal speed when the encounter restarts.
  *
  * <p>A destroyed raider keeps its instance (and its borrowed visuals) and stops moving until the
  * controller respawns it elsewhere. Timing, speed, turbo and avoidance values are technical choices
@@ -28,8 +29,16 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class RaiderEncounter {
 
-  /** Raider speed in world units per second. */
-  public static final float RAIDER_SPEED = 180f;
+  /** Raider cruise speed in world units per second; the base speed of the whole dogfight. */
+  public static final float CRUISE_SPEED = 300f;
+  /** Committed fast-pass speed in world units per second. */
+  public static final float PASS_SPEED = 500f;
+  /** Re-engagement speed in world units per second while opening space for the next pass. */
+  public static final float REENGAGE_SPEED = 320f;
+  /** Speed ramp-up rate in world units per second squared. */
+  public static final float SPEED_ACCELERATION = 300f;
+  /** Speed ramp-down rate in world units per second squared. */
+  public static final float SPEED_DECELERATION = 450f;
   /** World size of the raider box used for bounds and matched by the sprite drawing. */
   public static final float RAIDER_WIDTH = 80f;
   public static final float RAIDER_HEIGHT = 80f;
@@ -40,7 +49,9 @@ public final class RaiderEncounter {
   public static final float SPAWN_AHEAD_DISTANCE = 1700f;
   public static final float SPAWN_LATERAL_DISTANCE = 500f;
   /** Maximum heading change per second, in degrees. */
-  public static final float MAX_TURN_RATE_DEGREES = 75f;
+  public static final float MAX_TURN_RATE_DEGREES = 130f;
+  /** Maximum change of the heading angular velocity per second, in degrees per second squared. */
+  public static final float MAX_ANGULAR_ACCELERATION_DEGREES = 360f;
   /** Distance from a world edge where the inward steering response starts fading in. */
   public static final float BORDER_ZONE = 1400f;
   /** Relative strength of the inward border response against the unit bearing to the player. */
@@ -66,8 +77,11 @@ public final class RaiderEncounter {
   /** Longest reposition loop before the raider forces a new approach. */
   public static final float REPOSITION_MAX_SECONDS = 2.5f;
 
-  /** Tactical turbo: speed multiplier applied while the boost window is active. */
-  public static final float TURBO_SPEED_MULTIPLIER = 1.5f;
+  /**
+   * Tactical turbo: while the boost window is active the encounter targets {@link #PASS_SPEED}
+   * instead of the phase speed, so the boost is reached through the same bounded acceleration ramp
+   * as any other speed change and can never teleport the raider forward.
+   */
   /** Longest a turbo window stays active, in seconds. */
   public static final float TURBO_MAX_SECONDS = 1f;
   /** Recovery time before turbo may engage again, in seconds. */
@@ -314,13 +328,14 @@ public final class RaiderEncounter {
     boolean avoidanceAvailable = selfRadius + targetRadius > 0f && distance > 0.0001d;
     boolean contactRisk = avoidanceAvailable
         && predictsContact(targetX, targetY, targetVelocityX, targetVelocityY,
-            targetRadius, selfRadius, selfX, selfY, effectiveSpeed());
+            targetRadius, selfRadius, selfX, selfY, raider.currentSpeed());
     updateAvoidanceSide(step, contactRisk, bearing);
     updateTurbo(step, distance, contactRisk);
 
     raider.steerTowards(desiredHeadingDegrees(world, targetX, targetY, targetVelocityX,
-        targetVelocityY, targetRadius, selfRadius), MAX_TURN_RATE_DEGREES * step);
-    raider.advance(step, effectiveSpeed());
+        targetVelocityY, targetRadius, selfRadius), MAX_TURN_RATE_DEGREES,
+        MAX_ANGULAR_ACCELERATION_DEGREES, step);
+    raider.advance(step, targetSpeed(), SPEED_ACCELERATION, SPEED_DECELERATION);
     raider.clampToWorld(world);
   }
 
@@ -367,7 +382,7 @@ public final class RaiderEncounter {
     float lateral = (random.nextUnit() * 2f - 1f) * SPAWN_LATERAL_DISTANCE;
     float x = world.clampX(targetX + lateral, RAIDER_WIDTH);
     float y = world.clampY(targetY + SPAWN_AHEAD_DISTANCE, RAIDER_HEIGHT);
-    raider = new VesperRaider(RAIDER_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, x, y, 0f);
+    raider = new VesperRaider(CRUISE_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, x, y, 0f);
     raider.setVisuals(visuals);
     resetPlan();
   }
@@ -472,9 +487,20 @@ public final class RaiderEncounter {
     return closingIn && distance > ATTACK_PASS_ENTER_DISTANCE;
   }
 
-  /** Speed actually applied this step: normal unless the tactical turbo window is active. */
-  private float effectiveSpeed() {
-    return turboSeconds > 0f ? RAIDER_SPEED * TURBO_SPEED_MULTIPLIER : RAIDER_SPEED;
+  /**
+   * Speed target for the current step. Turbo and a committed pass both aim at {@link #PASS_SPEED};
+   * the reposition break aims at {@link #REENGAGE_SPEED}; everything else cruises. The value is only
+   * a target: {@link VesperRaider#advance(float, float, float, float)} ramps toward it within the
+   * acceleration/deceleration limits, so phase changes never jump the speed.
+   */
+  private float targetSpeed() {
+    if (turboSeconds > 0f || maneuver == Maneuver.ATTACK_PASS) {
+      return PASS_SPEED;
+    }
+    if (maneuver == Maneuver.REPOSITION) {
+      return REENGAGE_SPEED;
+    }
+    return CRUISE_SPEED;
   }
 
   /** Prediction of the closest approach within the avoidance horizon using relative motion. */
@@ -519,17 +545,32 @@ public final class RaiderEncounter {
     }
   }
 
-  /** Least-turn perpendicular side to a bearing: +1 left, -1 right, 0 when both cost the same. */
+  /**
+   * Least-turn perpendicular side to a bearing: +1 for the candidate reached by adding a quarter
+   * turn to the mathematical bearing, -1 for subtracting it, 0 when both cost the same.
+   *
+   * <p>The bearing is a mathematical angle ({@code atan2(dy, dx)}, x-east / y-north, CCW) while the
+   * raider heading uses the descent convention (0 points down, positive turns right / clockwise).
+   * Each candidate world direction is therefore converted with
+   * {@code headingFor(vx, vy) = degrees(atan2(vx, -vy))} before the cost is compared; the previous
+   * direct comparison of {@code degrees(bearing)} against the descent heading mixed both frames.
+   */
   private int leastTurnSide(double bearing) {
     float heading = raider.headingDegrees();
-    float left = normalizeYaw((float) Math.toDegrees(bearing + Math.PI / 2d));
-    float right = normalizeYaw((float) Math.toDegrees(bearing - Math.PI / 2d));
-    float leftCost = Math.abs(normalizeYaw(left - heading));
-    float rightCost = Math.abs(normalizeYaw(right - heading));
-    if (Math.abs(leftCost - rightCost) < 0.001f) {
+    float counterClockwise = headingFor(Math.cos(bearing + Math.PI / 2d),
+        Math.sin(bearing + Math.PI / 2d));
+    float clockwise = headingFor(Math.cos(bearing - Math.PI / 2d), Math.sin(bearing - Math.PI / 2d));
+    float counterClockwiseCost = Math.abs(normalizeYaw(counterClockwise - heading));
+    float clockwiseCost = Math.abs(normalizeYaw(clockwise - heading));
+    if (Math.abs(counterClockwiseCost - clockwiseCost) < 0.001f) {
       return 0;
     }
-    return leftCost < rightCost ? 1 : -1;
+    return counterClockwiseCost < clockwiseCost ? 1 : -1;
+  }
+
+  /** Converts a world direction into the raider's descent heading: 0 points down, + turns right. */
+  static float headingFor(double directionX, double directionY) {
+    return (float) Math.toDegrees(Math.atan2(directionX, -directionY));
   }
 
   /** Least-turn perpendicular side for avoidance; a tie always breaks to the right. */

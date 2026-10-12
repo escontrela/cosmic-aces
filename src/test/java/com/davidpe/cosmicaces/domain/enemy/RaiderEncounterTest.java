@@ -205,19 +205,21 @@ class RaiderEncounterTest {
   }
 
   @Test
-  void tacticalTurboEngagesWhileClosingInAndRespectsWindowAndRecovery() {
+  void tacticalTurboEngagesWhileClosingInAndRampsSpeedContinuously() {
     float targetX = 2000f;
     float targetY = 9000f;
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
     encounter.advance(5f, WORLD, targetX, targetY); // spawns ~1700 units ahead of the target
     assertEquals(RaiderEncounter.Maneuver.APPROACH, encounter.maneuver());
+    assertEquals(RaiderEncounter.CRUISE_SPEED, encounter.raider().currentSpeed(), EPSILON,
+        "a fresh life starts at cruise speed");
 
-    float before = distance(encounter, targetX, targetY);
     encounter.advance(1f / 60f, WORLD, targetX, targetY, 0f, 0f, 0f, 0f);
     assertTrue(encounter.isTurboActive(), "turbo must engage while closing in");
-    float after = distance(encounter, targetX, targetY);
-    assertEquals(RaiderEncounter.RAIDER_SPEED * RaiderEncounter.TURBO_SPEED_MULTIPLIER / 60f,
-        before - after, 0.05f, "turbo must apply the proposed multiplier");
+    // The boost is only a speed target: the first frame may ramp by acceleration * dt, never jump.
+    float expectedRamp = RaiderEncounter.CRUISE_SPEED + RaiderEncounter.SPEED_ACCELERATION / 60f;
+    assertEquals(expectedRamp, encounter.raider().currentSpeed(), 0.01f,
+        "turbo must ramp speed within the acceleration limit instead of teleporting it");
 
     // Over 30 s of 1/60 s frames the window stays bounded and the recovery is respected.
     RaiderEncounter run = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
@@ -248,6 +250,40 @@ class RaiderEncounterTest {
       assertTrue(minGapFrames / 60f >= RaiderEncounter.TURBO_RECOVERY_SECONDS - 0.05f,
           "turbo recovery must be respected, saw " + minGapFrames / 60f + " s");
     }
+  }
+
+  @Test
+  void speedChangesStayWithinTheAccelerationLimitsAcrossManeuvers() {
+    float targetX = 2000f;
+    float targetY = 9000f;
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f, 0.5f));
+    encounter.advance(5f, WORLD, targetX, targetY);
+    float maxUp = RaiderEncounter.SPEED_ACCELERATION / 120f + 0.01f;
+    float maxDown = RaiderEncounter.SPEED_DECELERATION / 120f + 0.01f;
+    float previous = encounter.raider().currentSpeed();
+
+    for (int i = 0; i < 3600; i++) { // 30 s at one 1/120 s integration substep per call
+      encounter.advance(1f / 120f, WORLD, targetX, targetY, 0f, 0f, 20f, 40f);
+      float current = encounter.raider().currentSpeed();
+      float delta = current - previous;
+      assertTrue(delta <= maxUp, "speed jumped up by " + delta);
+      assertTrue(delta >= -maxDown, "speed jumped down by " + delta);
+      assertTrue(Float.isFinite(current) && current > 0f, "speed must stay finite and positive");
+      previous = current;
+    }
+  }
+
+  @Test
+  void convertsWorldDirectionsToTheRaiderDescentHeading() {
+    // 0 points down, + turns right (clockwise); the math bearing must never be compared directly.
+    assertEquals(0f, RaiderEncounter.headingFor(0d, -1d), 0.001f, "south/down");
+    assertEquals(90f, RaiderEncounter.headingFor(1d, 0d), 0.001f, "east/right");
+    assertEquals(-90f, RaiderEncounter.headingFor(-1d, 0d), 0.001f, "west/left");
+    assertEquals(180f, normalizeYaw(RaiderEncounter.headingFor(0d, 1d)), 0.001f, "north/up");
+    assertEquals(135f, RaiderEncounter.headingFor(1d, 1d), 0.001f, "north-east diagonal");
+    assertEquals(45f, RaiderEncounter.headingFor(1d, -1d), 0.001f, "south-east diagonal");
+    assertEquals(-135f, RaiderEncounter.headingFor(-1d, 1d), 0.001f, "north-west diagonal");
+    assertEquals(-45f, RaiderEncounter.headingFor(-1d, -1d), 0.001f, "south-west diagonal");
   }
 
   @Test
@@ -296,10 +332,17 @@ class RaiderEncounterTest {
   }
 
   @Test
-  void keepsTheApprovedRaiderTuningAndBoundedTurbo() {
-    assertEquals(180f, RaiderEncounter.RAIDER_SPEED, "was 240, now 180");
-    assertEquals(75f, RaiderEncounter.MAX_TURN_RATE_DEGREES, "bounded turns are kept");
-    assertEquals(1.5f, RaiderEncounter.TURBO_SPEED_MULTIPLIER, "proposed turbo multiplier");
+  void keepsTheContinuousRaiderTuning() {
+    // This root replaces the previous Vesper tuning (180 u/s cruise, 75 deg/s turn and a turbo that
+    // cut out during the pass) with continuous, bounded kinematics.
+    assertEquals(300f, RaiderEncounter.CRUISE_SPEED, "cruise speed");
+    assertEquals(500f, RaiderEncounter.PASS_SPEED, "committed pass speed, clearly above the old 180");
+    assertEquals(320f, RaiderEncounter.REENGAGE_SPEED, "re-engagement speed");
+    assertEquals(300f, RaiderEncounter.SPEED_ACCELERATION, "bounded speed ramp-up");
+    assertEquals(450f, RaiderEncounter.SPEED_DECELERATION, "bounded speed ramp-down");
+    assertEquals(130f, RaiderEncounter.MAX_TURN_RATE_DEGREES, "bounded angular velocity");
+    assertEquals(360f, RaiderEncounter.MAX_ANGULAR_ACCELERATION_DEGREES,
+        "bounded angular acceleration");
     assertEquals(1f, RaiderEncounter.TURBO_MAX_SECONDS, "the turbo window is bounded");
     assertEquals(4f, RaiderEncounter.TURBO_RECOVERY_SECONDS, "the turbo recovery is bounded");
   }

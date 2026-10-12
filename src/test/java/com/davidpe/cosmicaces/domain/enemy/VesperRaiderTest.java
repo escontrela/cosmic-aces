@@ -183,6 +183,140 @@ class VesperRaiderTest {
     assertEquals(idle.scale(), firing.scale(), 1e-4f, "the uniform scale never changes");
   }
 
+  @Test
+  void continuousSteeringIntegratesBoundedAngularVelocityAndAcceleration() {
+    float maxRate = 130f;
+    float maxAccel = 360f;
+    float dt = 1f / 120f;
+    float[][] cases = {{0f, 180f}, {0f, 90f}, {90f, -90f}, {179f, -179f}, {0f, -180f}};
+    for (float[] expected : cases) {
+      VesperRaider raider = raider(0f, 0f, expected[0]);
+      float previousHeading = raider.headingDegrees();
+      float previousOmega = raider.angularVelocityDegrees();
+      float maxOmega = 0f;
+      for (int i = 0; i < 600; i++) { // 5 s at 120 Hz
+        raider.steerTowards(expected[1], maxRate, maxAccel, dt);
+        float omega = raider.angularVelocityDegrees();
+        float step = Math.abs(normalizeYaw(raider.headingDegrees() - previousHeading));
+        assertTrue(step <= maxRate * dt + 0.001f,
+            "heading jumped " + step + " from " + previousHeading + " to " + raider.headingDegrees());
+        assertTrue(Math.abs(omega - previousOmega) <= maxAccel * dt + 0.001f,
+            "angular velocity jumped from " + previousOmega + " to " + omega);
+        assertTrue(Math.abs(omega) <= maxRate + 0.001f, "angular velocity exceeded its maximum");
+        assertTrue(Float.isFinite(raider.headingDegrees()) && Float.isFinite(omega),
+            "heading and angular velocity must stay finite");
+        maxOmega = Math.max(maxOmega, Math.abs(omega));
+        previousHeading = raider.headingDegrees();
+        previousOmega = omega;
+      }
+      assertEquals(0f, normalizeYaw(raider.headingDegrees() - expected[1]), 1f,
+          "turn from " + expected[0] + " to " + expected[1] + " must converge");
+      assertTrue(maxOmega > 1f, "the turn must actually rotate the heading");
+    }
+  }
+
+  @Test
+  void speedRampRespectsAccelerationAndDecelerationLimits() {
+    VesperRaider raider = raider(0f, 0f, 0f); // current speed starts at SPEED == 100
+    float dt = 1f / 120f;
+    float acceleration = 300f;
+    float deceleration = 450f;
+    float previous = raider.currentSpeed();
+    for (int i = 0; i < 120; i++) { // ramp up toward 500
+      raider.advance(dt, 500f, acceleration, deceleration);
+      float delta = raider.currentSpeed() - previous;
+      assertTrue(delta >= -0.001f && delta <= acceleration * dt + 0.001f, "up ramp " + delta);
+      previous = raider.currentSpeed();
+    }
+    assertTrue(raider.currentSpeed() > 100f, "the speed must ramp up");
+    for (int i = 0; i < 120; i++) { // ramp down toward 100
+      raider.advance(dt, 100f, acceleration, deceleration);
+      float delta = raider.currentSpeed() - previous;
+      assertTrue(delta <= 0.001f && delta >= -deceleration * dt - 0.001f, "down ramp " + delta);
+      previous = raider.currentSpeed();
+    }
+    assertTrue(raider.currentSpeed() < 500f, "the speed must ramp down");
+  }
+
+  @Test
+  void invalidDeltasDoNotChangeSteeringOrSpeedState() {
+    VesperRaider raider = raider(0f, 0f, 0f);
+    raider.steerTowards(90f, 130f, 360f, 1f / 120f);
+    raider.advance(1f / 120f, 500f, 300f, 450f);
+    float heading = raider.headingDegrees();
+    float omega = raider.angularVelocityDegrees();
+    float speed = raider.currentSpeed();
+    float x = raider.x();
+    float y = raider.y();
+    for (float bad : new float[] {0f, -1f, Float.NaN, Float.POSITIVE_INFINITY}) {
+      raider.steerTowards(90f, 130f, 360f, bad);
+      raider.advance(bad, 500f, 300f, 450f);
+    }
+    assertEquals(heading, raider.headingDegrees(), EPSILON);
+    assertEquals(omega, raider.angularVelocityDegrees(), EPSILON);
+    assertEquals(speed, raider.currentSpeed(), EPSILON);
+    assertEquals(x, raider.x(), EPSILON);
+    assertEquals(y, raider.y(), EPSILON);
+  }
+
+  @Test
+  void approachingAFixedTargetDoesNotAlternateTheTurnSign() {
+    VesperRaider raider = raider(0f, 0f, 0f);
+    float previousSign = 0f;
+    int flips = 0;
+    for (int i = 0; i < 600; i++) {
+      raider.steerTowards(150f, 130f, 360f, 1f / 120f);
+      float omega = raider.angularVelocityDegrees();
+      if (Math.abs(omega) > 0.1f) {
+        float sign = Math.signum(omega);
+        if (previousSign != 0f && sign != previousSign) {
+          flips++;
+        }
+        previousSign = sign;
+      }
+    }
+    assertEquals(0, flips, "a fixed target must not flip the turn side");
+    assertEquals(150f, raider.headingDegrees(), 1f);
+  }
+
+  @Test
+  void fixedTargetHeadingConvergesWithinOneDegreeAcrossFrameRates() {
+    float previous = Float.NaN;
+    for (float dt : new float[] {1f / 30f, 1f / 60f, 1f / 120f}) {
+      VesperRaider raider = raider(0f, 0f, 0f);
+      int steps = Math.round(5f / dt);
+      for (int i = 0; i < steps; i++) {
+        raider.steerTowards(135f, 130f, 360f, dt);
+      }
+      assertEquals(135f, raider.headingDegrees(), 1f,
+          "the heading must converge within one degree at " + (1f / dt) + " Hz");
+      if (!Float.isNaN(previous)) {
+        assertEquals(previous, raider.headingDegrees(), 1f,
+            "frame rate must not change the settled heading");
+      }
+      previous = raider.headingDegrees();
+    }
+  }
+
+  @Test
+  void straightCruiseKeepsPositionConsistentAcrossFrameRates() {
+    float[] positions = new float[3];
+    float[] rates = {30f, 60f, 120f};
+    for (int r = 0; r < rates.length; r++) {
+      VesperRaider raider = raider(0f, 0f, 0f);
+      float dt = 1f / rates[r];
+      int steps = Math.round(5f / dt);
+      for (int i = 0; i < steps; i++) {
+        raider.advance(dt, raider.currentSpeed(), 300f, 450f); // target == current: no ramp
+      }
+      positions[r] = raider.y();
+    }
+    for (float position : positions) {
+      assertEquals(positions[0], position, 2f,
+          "a straight cruise must land within two world units across frame rates");
+    }
+  }
+
   /** Invokes the protected placement hook via reflection; no GL context is required. */
   private static Ship.SpritePlacement spritePlacement(VesperRaider raider, TextureRegion region)
       throws Exception {
@@ -194,5 +328,12 @@ class VesperRaiderTest {
 
   private static VesperRaider raider(float x, float y, float headingDegrees) {
     return new VesperRaider(SPEED, 10f, 10f, x, y, headingDegrees);
+  }
+
+  private static float normalizeYaw(float yaw) {
+    float normalized = yaw % 360f;
+    if (normalized > 180f) normalized -= 360f;
+    if (normalized <= -180f) normalized += 360f;
+    return normalized;
   }
 }
