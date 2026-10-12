@@ -81,6 +81,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final FlightCamera flightCamera;
   private final FlightHud hud = new FlightHud();
   private final MissionHud missionHud = new MissionHud();
+  private final EnemyStatusHud enemyStatusHud = new EnemyStatusHud();
   private final FlightMinimap minimap = new FlightMinimap();
   private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
@@ -348,7 +349,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
           controller.astraHitFlashIntensity());
     }
-    boolean enemyInViewport = flow.isPlaying() && controller.isRaiderActive() && raiderVisible();
+    // One engagement read for the frame this camera actually draws: each ship's presence plus its
+    // view test. It feeds the enemy drawing, the minimap suppression and the enemy status HUD so no
+    // part of the screen can disagree about whether the raider is facing Astra this frame.
+    boolean raiderInCombat = raiderVisible();
+    boolean astraInCombat = astraInCamera();
+    boolean enemyInViewport = flow.isPlaying() && controller.isRaiderActive() && raiderInCombat;
     if (enemyInViewport) {
       VesperRaider raider = controller.activeRaider();
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
@@ -400,6 +406,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
         raiderVisuals.region(VesperRaiderSheet.Pose.NEUTRAL, false),
         astraVisuals.region(HeroShipSheet.Pose.NEUTRAL, false, false),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+    // The enemy combat status reuses the single engagement read above and the energy already
+    // resolved by this frame's impacts, so name and percentage always match the encounter actually
+    // drawn; it stays hidden on INTRO, RESULT, before the first spawn, between respawns and after
+    // the final destruction.
+    if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)) {
+      enemyStatusHud.draw(batch, hudFont,
+          new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()),
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+    }
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.
     if (flow.isIntro()) {
@@ -479,16 +494,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * update. Sampling uses the real camera transform (rotation and zoom), not a fixed 800x600 box.
    */
   private boolean shipsCoincidentVisible() {
-    if (!controller.isRaiderActive() || !controller.isAstraActive()) {
+    return astraInCamera() && raiderVisible();
+  }
+
+  /** True while Astra is active and its stable box intersects the rotated camera view. */
+  private boolean astraInCamera() {
+    if (!controller.isAstraActive()) {
       return false;
     }
     Astra astra = controller.astra();
-    VesperRaider raider = controller.activeRaider();
     return shipVisible(astra.x() + astra.drawWidth() / 2f, astra.y() + astra.drawHeight() / 2f,
-        Math.max(astra.drawWidth(), astra.drawHeight()) / 2f)
-        && shipVisible(raider.x() + raider.drawWidth() / 2f,
-            raider.y() + raider.drawHeight() / 2f,
-            Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
+        Math.max(astra.drawWidth(), astra.drawHeight()) / 2f);
   }
 
   /**
@@ -510,7 +526,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Exact rotated-rectangle test deciding whether the off-camera raider is drawn. */
   private boolean raiderVisible() {
     VesperRaider raider = controller.activeRaider();
-    return shipVisible(raider.x() + raider.drawWidth() / 2f,
+    return raider != null && shipVisible(raider.x() + raider.drawWidth() / 2f,
         raider.y() + raider.drawHeight() / 2f,
         Math.max(raider.drawWidth(), raider.drawHeight()) / 2f);
   }

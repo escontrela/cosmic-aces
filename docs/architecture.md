@@ -556,6 +556,32 @@ derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redim
 batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
 inicial autoritativa; la legibilidad visual es del PO.
 
+### HUD de enfrentamiento del Vesper (COS-72)
+
+`infrastructure.gdx.screen.EnemyStatusHud` es el bloque de combate enemigo de PhaseOne, dibujado
+bajo la misma proyección HUD de `hudViewport` solo cuando Astra y el Vesper Raider vivo coinciden en
+la vista rotada real de la cámara: el título `VESPER RAIDER` y su energía restante como porcentaje
+entero (`100% … 0%`). No posee recursos nativos ni lectura dual: la pantalla calcula una sola vez por
+frame (`astraInCamera()` y `raiderVisible()`, hechos de presencia+visibilidad por nave bajo la cámara
+que ese frame dibuja) y los combina con `flow.isPlaying()` en la regla pura
+`EnemyStatusHud.show(playing, astraInCombat, raiderInCombat)`. El bloque queda oculto durante INTRO,
+RESULT, antes de la primera aparición, fuera de cámara, con Astra destruida o fuera de vista, entre
+respawns y tras la destrucción final; el porcentaje se lee de `raiderCombat().energyPercent()` (pasos
+100→65→30→0, respawn a 100) después de resolver los impactos del frame y antes de pintar el HUD, con
+clamp 0–100 en el `record Readout`. Es independiente del `ENERGIA NN%` de Astra (`FlightHud`): el
+bloque enemigo lleva su propio título y color para que no puedan confundirse y no crea ninguna barra
+de jefe.
+
+El layout es una función pura del `hudViewport` y de los anchos medidos con `GlyphLayout`: ambas
+líneas quedan centradas en la banda superior-media, por debajo de los contadores/reloj de COS-71 y de
+la fila del score, y por encima de la banda inferior (rumbo/velocidad/energía/arma) y del minimapa,
+también al redimensionar (800×600, 1024×768, 1920×1080). El dibujo respeta `begin/end` del
+`SpriteBatch` y restaura color de fuente y batch; `PhaseOneScreen.raiderVisible()` se hizo null-safe
+al reutilizarla (devuelve `false` sin Raider activo) y `shipsCoincidentVisible()` delega ahora en
+`astraInCamera() && raiderVisible()` sin cambiar su semántica. `EnemyStatusHudTest` cubre la regla de
+visibilidad (INTRO/RESULT, antes de spawn, tras destrucción esperando respawn, Astra no visible y
+coincidencia real), el formato con clamp y el layout sin colisiones; la legibilidad visual es del PO.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
@@ -1058,8 +1084,12 @@ com.davidpe.cosmicaces
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
-                1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
-                5. draw()  6. drawScore()
+            |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
+            |   5. draw()  6. drawScore()
+            +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
+            |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
+            +-- EnemyStatusHud: VESPER RAIDER + energía % durante el enfrentamiento (COS-72).
+            |   1. show()  2. Readout.energyLabel()  3. layout()  4. draw()
             +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
                 4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
