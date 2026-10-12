@@ -18,11 +18,11 @@ import java.util.function.LongSupplier;
  * <p>It is generic over the resource type {@code T} and takes a {@link ResourceFactory} that
  * creates, disposes and sizes a resource for a tile path. That keeps the whole policy testable with
  * a fake loader and no LibGDX context; {@link PhaseOneTerrainTextureFactory} is the concrete GL
- * factory the screen wires in the render subtask. This class never draws and never touches a {@code
+ * factory wired by {@link PhaseOneScreen}. This class never draws and never touches a {@code
  * Texture} itself.
  *
  * <p><b>Threading and budget.</b> Resources are created on the calling thread, which is the LibGDX
- * render thread when the screen integrates it; the same thread must dispose them. {@link
+ * render thread when the screen updates it; the same thread must dispose them. {@link
  * #update(Plan, long)} spends a per-frame time budget on the prefetch ring so a normal frame never
  * decodes the whole matrix, while the tiles that are actually visible are always served even if
  * they exceed that budget.

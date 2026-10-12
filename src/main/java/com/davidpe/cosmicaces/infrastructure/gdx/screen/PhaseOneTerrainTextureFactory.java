@@ -9,8 +9,8 @@ import com.badlogic.gdx.graphics.Texture;
  *
  * <p>It must be used from the LibGDX lifecycle: {@link #create(String)} uploads the texture on the
  * render thread, and the owning {@code PhaseOneTerrainCache} calls {@link #dispose(Texture)} from
- * its own {@code dispose()} when the screen leaves. The integration of the drawing belongs to the
- * render subtask; this adapter is not wired into {@code PhaseOneScreen} yet.
+ * its own {@code dispose()} when the screen leaves. {@code PhaseOneScreen} owns the cache and
+ * draws the resident textures behind world entities.
  *
  * <p>Memory is estimated as RGBA8888 (four bytes per pixel), the default texture format, so the
  * counters report the real per-tile cost: 1024 × 768 × 4 ≈ 3 MiB per tile.

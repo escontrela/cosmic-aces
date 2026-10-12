@@ -168,6 +168,78 @@ class PhaseOneTerrainCacheTest {
   }
 
   @Test
+  void resizeRotationWorldEdgesAndReturnKeepEveryVisibleTileReady() {
+    FakeFactory factory = new FakeFactory();
+    PhaseOneTerrainCache<FakeTexture> cache = new PhaseOneTerrainCache<>(factory);
+    List<Plan> views = List.of(
+        planAt(400f, 450f, 0.35f, 0.94f, 1f, LARGE_WIDTH, LARGE_HEIGHT),
+        planAt(7800f, 11600f, -0.71f, 0.71f, 1.15f, LARGE_WIDTH, LARGE_HEIGHT),
+        planAt(3500f, 6000f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT),
+        planAt(400f, 450f, 0.35f, 0.94f, 1f, LARGE_WIDTH, LARGE_HEIGHT));
+
+    for (Plan plan : views) {
+      FrameResult result = cache.update(plan, 0L);
+      assertTrue(result.visibleComplete(), "resize, yaw or return left a visible tile missing");
+      for (Tile tile : plan.visible()) {
+        assertNotNull(cache.resource(tile), "missing visible tile " + tile.path());
+      }
+      assertTrue(cache.residentCount() <= plan.retained().size(),
+          "residents must fit the current two-ring retention bound");
+      assertTrue(cache.residentCount() < PhaseOneTerrainCatalog.TILE_COUNT,
+          "the complete map must never be resident at once");
+    }
+
+    cache.dispose();
+    assertEquals(factory.createdPaths.size(), factory.disposedPaths.size(),
+        "all resources loaded across resize and return must be freed on exit");
+  }
+
+  @Test
+  void fullFlightAcrossColumnsRowsTurnsAndViewportChangesStaysBounded() {
+    FakeFactory factory = new FakeFactory();
+    PhaseOneTerrainCache<FakeTexture> cache = new PhaseOneTerrainCache<>(factory);
+    int maxResident = 0;
+    long maxBytes = 0L;
+
+    // A smooth S route sweeps from left to right and back while climbing through all 16 rows.
+    for (int step = 0; step <= 120; step++) {
+      float y = 100f + step * (11_800f / 120f);
+      float phase = y / 2_000f;
+      float x = 4096f + 3500f * (float) Math.sin(phase);
+      float tangentX = 3500f / 2_000f * (float) Math.cos(phase);
+      float travelLength = (float) Math.hypot(tangentX, 1f);
+      float upX = tangentX / travelLength;
+      float upY = 1f / travelLength;
+      float width = step % 3 == 0 ? LARGE_WIDTH : REFERENCE_WIDTH;
+      float height = step % 3 == 0 ? LARGE_HEIGHT : REFERENCE_HEIGHT;
+      float zoom = step % 9 == 0 ? 1.25f : 1f;
+      Plan plan = planAt(x, y, upX, upY, zoom, width, height, tangentX, 1f);
+
+      FrameResult result = cache.update(plan, 8L * 1_000_000L);
+
+      assertTrue(result.visibleComplete(), "flight left a hole at step " + step);
+      assertTrue(cache.residentCount() <= plan.retained().size(),
+          "cache exceeded the current two-ring bound at step " + step);
+      assertTrue(cache.residentCount() < PhaseOneTerrainCatalog.TILE_COUNT,
+          "full-flight cache must not load all 128 images");
+      for (Tile tile : plan.visible()) {
+        assertNotNull(cache.resource(tile), "visible tile not resident at step " + step);
+      }
+      maxResident = Math.max(maxResident, cache.residentCount());
+      maxBytes = Math.max(maxBytes, cache.estimatedBytes());
+      assertEquals(cache.residentCount() * BYTES_PER_TILE, cache.estimatedBytes());
+    }
+
+    assertTrue(maxResident > 0);
+    assertTrue(maxResident <= 64,
+        "S-flight peak should stay within 64 tiles (~192 MiB RGBA8888), got " + maxResident);
+    assertEquals(maxResident * BYTES_PER_TILE, maxBytes);
+    cache.dispose();
+    assertEquals(factory.createdPaths.size(), factory.disposedPaths.size(),
+        "leaving after a full flight releases every resident texture");
+  }
+
+  @Test
   void estimatedBytesTracksTheResidentSetAcrossMovement() {
     FakeFactory factory = new FakeFactory();
     PhaseOneTerrainCache<FakeTexture> cache = new PhaseOneTerrainCache<>(factory);

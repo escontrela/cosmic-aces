@@ -6,11 +6,10 @@ import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
-import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
 import java.util.List;
 
 /**
- * Optional fixed-screen map overlay for PhaseOne: the whole world, the persistent islands, Astra's
+ * Optional fixed-screen map overlay for PhaseOne: the whole world, Astra's
  * cyan arrow, the red Vesper point with its direction trail, and one amber hollow diamond per
  * active Ghostwing group (the group's representative point, never one marker per drone). It owns no
  * native resources.
@@ -19,7 +18,6 @@ final class FlightMinimap {
   private static final Color PANEL_COLOR = new Color(0.008f, 0.022f, 0.04f, 1f);
   private static final Color MAP_COLOR = new Color(0.012f, 0.036f, 0.06f, 1f);
   private static final Color BORDER_COLOR = new Color(0.08f, 0.52f, 0.70f, 1f);
-  private static final Color ISLAND_COLOR = new Color(0.20f, 0.58f, 0.75f, 1f);
   private static final Color ASTRA_COLOR = new Color(0.48f, 0.91f, 1f, 1f);
   private static final Color RAIDER_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
   private static final Color RAIDER_TRAIL_COLOR = new Color(1f, 0.48f, 0.20f, 1f);
@@ -40,7 +38,7 @@ final class FlightMinimap {
     visible = !visible;
   }
 
-  void draw(ShapeRenderer shapes, WorldBounds world, WorldScenery scenery, Astra astra,
+  void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
       VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
       float viewportWidth, float viewportHeight) {
     if (!visible) return;
@@ -53,12 +51,6 @@ final class FlightMinimap {
     shapes.rect(panel.x(), panel.y(), panel.width(), panel.height());
     shapes.setColor(MAP_COLOR);
     shapes.rect(map.x(), map.y(), map.width(), map.height());
-    shapes.setColor(ISLAND_COLOR);
-    for (WorldScenery.Island island : scenery.islands()) {
-      MinimapProjection.Point point = projection.project(
-          island.x() + 3.5f * island.tileSize(), island.y() + 3f * island.tileSize());
-      shapes.circle(point.x(), point.y(), 2f, 8);
-    }
     shapes.end();
 
     shapes.begin(ShapeRenderer.ShapeType.Line);
