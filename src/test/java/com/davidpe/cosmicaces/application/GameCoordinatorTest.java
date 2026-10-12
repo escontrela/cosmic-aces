@@ -245,4 +245,26 @@ class GameCoordinatorTest {
     assertEquals(GamePhase.PLAYING_PHASE_ONE, coordinator.consumePendingTransition());
     assertNull(coordinator.consumePendingTransition());
   }
+
+  @Test
+  void threeLifeLossesReachZeroAndACompletionSnapshotKeepsZero() {
+    GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES);
+    coordinator.onEvent(new StartRequested(coordinator.state().gameId(), GamePhase.WELCOME));
+    coordinator.consumePendingTransition();
+    GameId playing = coordinator.state().gameId();
+
+    for (int life = 1; life <= 3; life++) {
+      coordinator.onEvent(new LifeLost(playing, GamePhase.PLAYING_PHASE_ONE));
+      assertEquals(STARTING_LIVES - life, coordinator.state().lives(),
+          "each accepted loss removes exactly one life");
+    }
+    // The pool is clamped at zero: a late extra loss never makes it negative.
+    coordinator.onEvent(new LifeLost(playing, GamePhase.PLAYING_PHASE_ONE));
+    assertEquals(0, coordinator.state().lives());
+
+    coordinator.onEvent(new PhaseCompleted(
+        new PhaseResult(playing, GamePhase.PLAYING_PHASE_ONE, 120, 0)));
+    assertEquals(0, coordinator.state().lives(), "a defeated phase reports zero lives");
+    assertEquals(120, coordinator.state().points());
+  }
 }

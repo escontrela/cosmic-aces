@@ -24,6 +24,7 @@ import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
+import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
@@ -224,6 +225,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // exactly at the 10-minute mission limit while already-fired projectiles keep their straight path.
     float emissionSeconds = runFinished ? 0f : activeEmissionSeconds(delta);
     if (!runFinished) {
+      // Authoritative lives at the start of the frame. The coordinator owns the pool; the screen
+      // only reports deaths and never keeps a diverging counter.
+      int astraLives = phaseSnapshot.get().lives();
       int earned = applyMovementInput(delta, shipsCoincidentVisible());
       controller.advanceEncounter(delta);
       // Ghostwing groups are simulated in world coordinates during the active run only; their
@@ -231,7 +235,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.advanceGhostwing(delta);
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
-      earned += controller.advanceCombat(delta);
+      earned += controller.advanceCombat(delta, astraLives);
+      // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
+      // completion snapshot below) always sees the already-decremented pool.
+      publishAstraLifeLosses();
       if (earned > 0) {
         // Report points before the completion snapshot so the last second is never overwritten.
         publisher.publish(new PointsEarned(gameId, phase, earned));
@@ -279,6 +286,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (weaponEarned > 0) {
       publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
     }
+    // A raider projectile can also destroy Astra inside advanceWeapons; publish that loss too before
+    // the mission decision and the HUD read the authoritative snapshot.
+    publishAstraLifeLosses();
+    // Decide the single mission outcome from the now-decremented lives and the remaining clock. The
+    // visible WIN/LOSE panel belongs to the following screen-flow child; here the terminal state
+    // only fixes the pool (an exhausted pool never respawns) and keeps the result stable.
+    controller.resolveMissionOutcome(phaseSnapshot.get().lives());
     // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only
     // converts the destroyed state into a world-anchored animation.
@@ -392,6 +406,19 @@ public final class PhaseOneScreen extends ScreenAdapter {
       return 0f;
     }
     return Math.min(delta, controller.remainingRunSeconds());
+  }
+
+  /**
+   * Publishes exactly one {@link LifeLost} per Astra destruction drained since the last call. The
+   * controller is the single place that recognises the ACTIVE→DESTROYED transition, so a frame with
+   * several impacts on the same body still produces one event and a protected or already destroyed
+   * Astra produces none.
+   */
+  private void publishAstraLifeLosses() {
+    int losses = controller.drainAstraLifeLosses();
+    for (int loss = 0; loss < losses; loss++) {
+      publisher.publish(new LifeLost(gameId, phase));
+    }
   }
 
   private int applyMovementInput(float delta, boolean coincident) {

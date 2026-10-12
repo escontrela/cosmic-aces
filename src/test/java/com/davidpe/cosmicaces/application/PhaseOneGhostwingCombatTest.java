@@ -232,7 +232,7 @@ class PhaseOneGhostwingCombatTest {
     long drone0Id = drones.get(0).id();
     long drone1Id = drones.get(1).id();
 
-    assertEquals(0, controller.advanceCombat(DELTA),
+    assertEquals(0, controller.advanceCombat(DELTA, 3),
         "a collision awards no points");
     assertTrue(controller.astraCombat().isDestroyed(), "Astra explodes on the contact");
     List<GhostwingDeath> deaths = controller.drainGhostwingDeaths();
@@ -256,12 +256,12 @@ class PhaseOneGhostwingCombatTest {
     List<GhostwingDrone> drones = controller.ghostwingEncounter().activeDrones();
     long drone1Id = drones.get(1).id();
     controller.advanceGhostwing(DELTA);
-    controller.advanceCombat(DELTA); // contact destroys Astra and drone0
+    controller.advanceCombat(DELTA, 3); // contact destroys Astra and drone0
     assertTrue(controller.astraCombat().isDestroyed());
     controller.drainGhostwingDeaths();
 
     // Three seconds later Astra respawns at the same spot, invulnerable and at full energy.
-    assertEquals(0, controller.advanceCombat(3f));
+    assertEquals(0, controller.advanceCombat(3f, 3));
     assertTrue(controller.isAstraActive());
     assertTrue(controller.astraCombat().isInvulnerable());
     assertEquals(100, controller.astraCombat().energyPercent());
@@ -269,7 +269,7 @@ class PhaseOneGhostwingCombatTest {
     // Overlap the surviving drone while the protection window runs: no one is destroyed.
     controller.placeAstra(201.6f - 33.06f, 1764f - 42.63f, 0f);
     controller.advanceGhostwing(DELTA);
-    controller.advanceCombat(DELTA);
+    controller.advanceCombat(DELTA, 3);
     assertFalse(controller.astraCombat().isDestroyed(),
         "protected Astra never collides, matching the Vesper contact rule");
     assertTrue(controller.astraCombat().isInvulnerable());
@@ -279,7 +279,7 @@ class PhaseOneGhostwingCombatTest {
         "a protected contact destroys neither ship");
 
     // The 2 s protection window still ends on schedule, as before this feature.
-    controller.advanceCombat(2f);
+    controller.advanceCombat(2f, 3);
     assertFalse(controller.astraCombat().isInvulnerable());
   }
 
@@ -312,6 +312,46 @@ class PhaseOneGhostwingCombatTest {
     assertEquals(1200, controller.scorePoints(),
         "200 for the two drones plus the approved 1000-point raider bonus");
     assertFalse(controller.isRaiderActive());
+  }
+
+  @Test
+  void aGhostwingCollisionCostsExactlyOneLifeAndRespawnsWhileLivesRemain() {
+    PhaseOneGameController controller =
+        new PhaseOneGameController(() -> 0f, northPairRandom());
+    controller.placeAstra(100.8f - 33.06f, 1764f - 42.63f, 0f);
+    controller.start();
+    controller.advanceGhostwing(20f);
+
+    assertEquals(0, controller.advanceCombat(DELTA, 3), "a collision awards no points");
+    assertTrue(controller.astraCombat().isDestroyed());
+    assertEquals(1, controller.drainAstraLifeLosses(), "one collision, one life");
+    assertEquals(0, controller.drainAstraLifeLosses(), "drained exactly once");
+
+    // Three seconds later Astra returns while lives remain, with her existing 2 s protection.
+    controller.advanceCombat(3f, 2);
+    assertTrue(controller.isAstraActive(), "Astra reappears while lives remain");
+    assertTrue(controller.astraCombat().isInvulnerable());
+  }
+
+  @Test
+  void aProtectedAstraNeverLosesALifeToADroneContact() {
+    PhaseOneGameController controller =
+        new PhaseOneGameController(() -> 0f, northPairRandom());
+    controller.placeAstra(100.8f - 33.06f, 1764f - 42.63f, 0f);
+    controller.start();
+    controller.advanceGhostwing(20f);
+
+    controller.advanceCombat(DELTA, 3); // first collision destroys Astra and drone0
+    assertEquals(1, controller.drainAstraLifeLosses());
+    controller.advanceCombat(3f, 2);    // Astra back and protected
+
+    List<GhostwingDrone> survivors = controller.ghostwingEncounter().activeDrones();
+    assertFalse(survivors.isEmpty(), "the sibling drone keeps flying");
+    controller.placeAstra(survivors.get(0).x(), survivors.get(0).y(), 0f);
+    controller.advanceCombat(DELTA, 2);
+
+    assertFalse(controller.astraCombat().isDestroyed(), "protected Astra never collides");
+    assertEquals(0, controller.drainAstraLifeLosses(), "a protected contact costs no life");
   }
 
   /** Deterministic unit-random source feeding a scripted queue; the last value repeats. */

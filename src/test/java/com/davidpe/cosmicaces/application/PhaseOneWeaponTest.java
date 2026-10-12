@@ -362,10 +362,10 @@ class PhaseOneWeaponTest {
     // Record a moving trajectory for the old life, then destroy and respawn the raider.
     controller.advanceEncounter(0.5f);
     controller.placeAstra(raider.x(), raider.y(), 0f);
-    controller.advanceCombat(1f / 60f); // hull contact destroys both ships
+    controller.advanceCombat(1f / 60f, 3); // hull contact destroys both ships
     assertFalse(controller.isRaiderActive());
-    controller.advanceCombat(3f); // Astra returns
-    controller.advanceCombat(2f); // Vesper returns at the 5-second mark
+    controller.advanceCombat(3f, 3); // Astra returns
+    controller.advanceCombat(2f, 3); // Vesper returns at the 5-second mark
     assertTrue(controller.isRaiderActive());
     VesperRaider respawned = controller.activeRaider();
     float newCenterX = respawned.centerX();

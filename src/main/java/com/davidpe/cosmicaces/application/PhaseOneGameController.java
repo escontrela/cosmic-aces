@@ -63,6 +63,12 @@ public final class PhaseOneGameController extends GameController {
   private float raiderDeathCenterX;
   private float raiderDeathCenterY;
   private int pendingCombatPoints;
+  /**
+   * Astra destructions recorded since the last drain: exactly one per real ACTIVE→DESTROYED
+   * transition. The screen publishes one {@code LifeLost} per entry so a frame with several impacts
+   * on the same body still costs a single life.
+   */
+  private int pendingAstraLifeLosses;
   private final List<GhostwingDeath> pendingGhostwingDeaths = new ArrayList<>();
 
   public PhaseOneGameController() {
@@ -183,18 +189,21 @@ public final class PhaseOneGameController extends GameController {
   /**
    * Advances both ships' combat timers, resolves a vulnerable hull-to-hull contact and places any
    * ship whose respawn delay has elapsed. Called once per frame inside the run; it can award the
-   * single destruction bonus if the contact destroys the raider. No {@code LifeLost} is emitted.
+   * single destruction bonus if the contact destroys the raider. The authoritative lives remaining
+   * are supplied by the caller from the coordinator snapshot: Astra only reappears while the pool is
+   * above zero, so an exhausted pool leaves her defeated with no extra damage.
    *
+   * @param astraLivesRemaining lives Astra has left, as held by the coordinator
    * @return points earned by this call (the raider destruction bonus, if any)
    */
-  public int advanceCombat(float deltaSeconds) {
+  public int advanceCombat(float deltaSeconds, int astraLivesRemaining) {
     if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
         || deltaSeconds <= 0f) {
       return 0;
     }
     astraCombat.advance(deltaSeconds);
     raiderCombat.advance(deltaSeconds);
-    handleRespawns();
+    handleRespawns(astraLivesRemaining);
     resolveShipContact();
     resolveGhostwingContact(deltaSeconds);
     return drainCombatPoints();
@@ -205,6 +214,18 @@ public final class PhaseOneGameController extends GameController {
     int points = pendingCombatPoints;
     pendingCombatPoints = 0;
     return points;
+  }
+
+  /**
+   * Returns and clears the Astra life losses recorded since the last drain. Each real destruction
+   * (projectile, hull contact with the Raider or a Ghostwing drone, or energy depletion) adds exactly
+   * one entry; repeated impacts on an already destroyed body add none. The screen publishes one
+   * {@code LifeLost} event per entry, so the coordinator always decrements the pool exactly once.
+   */
+  public int drainAstraLifeLosses() {
+    int losses = pendingAstraLifeLosses;
+    pendingAstraLifeLosses = 0;
+    return losses;
   }
 
   /**
@@ -300,8 +321,8 @@ public final class PhaseOneGameController extends GameController {
     }
   }
 
-  private void handleRespawns() {
-    if (astraCombat.readyToRespawn()) {
+  private void handleRespawns(int astraLivesRemaining) {
+    if (astraCombat.readyToRespawn() && astraLivesRemaining > 0) {
       astraCombat.respawn();
       astraHitFlash.clear();
       astra().placeAt(astraDeathX, astraDeathY, astraDeathYaw, WORLD);
@@ -334,6 +355,9 @@ public final class PhaseOneGameController extends GameController {
     astraDeathX = astra().x();
     astraDeathY = astra().y();
     astraDeathYaw = astra().yawDegrees();
+    // The idempotent guard above makes this the single ACTIVE→DESTROYED transition, so exactly one
+    // life loss is queued even when a projectile and a contact resolve in the same frame.
+    pendingAstraLifeLosses++;
   }
 
   private void destroyRaider() {

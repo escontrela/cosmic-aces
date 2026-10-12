@@ -34,7 +34,7 @@ class VesperDogfightIntegrationTest {
 
     // Force a hull-to-hull contact by placing Astra on the raider: both ships are destroyed once.
     controller.placeAstra(first.x(), first.y(), 0f);
-    controller.advanceCombat(DT);
+    controller.advanceCombat(DT, 3);
     assertFalse(controller.isRaiderActive(), "the hull contact destroys the raider");
     assertTrue(controller.raiderCombat().isDestroyed());
 
@@ -47,8 +47,8 @@ class VesperDogfightIntegrationTest {
     assertTrue(controller.raiderGun().emissionCount() == 0, "no defeated-life burst events");
 
     // Astra returns after 3 s and Vesper after 5 s; the respawn must reuse the same instance.
-    controller.advanceCombat(3f);
-    controller.advanceCombat(2f);
+    controller.advanceCombat(3f, 3);
+    controller.advanceCombat(2f, 3);
     assertTrue(controller.isRaiderActive());
     assertSame(first, controller.activeRaider(),
         "respawn must keep the single persistent instance, never recreate it");
@@ -78,7 +78,7 @@ class VesperDogfightIntegrationTest {
     for (int frame = 0; frame < 120; frame++) {
       controller.advanceFlight(BRAKE, DT, false);
       controller.advanceEncounter(DT);
-      controller.advanceCombat(DT);
+      controller.advanceCombat(DT, 3);
       controller.advanceWeapons(DT, DT, false, false, RANGE); // never coincident
     }
     assertTrue(controller.raiderGun().projectiles().isEmpty(),

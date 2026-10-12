@@ -483,6 +483,25 @@ proyectiles ya emitidos no re-impactan sobre restos del mismo frame: `activeRaid
 morir, `destroyRaider()` es idempotente y cada proyectil impacta como máximo una vez. El desenlace
 por tiempo/vidas y su gating en pantalla pertenecen a las hijas COS-69/COS-70.
 
+### Vidas reales de Astra (COS-69)
+
+`CosmicAcesGame` concede 3 vidas iniciales a cada partida (el valor provisional anterior era 1). El
+`GameCoordinator` sigue siendo la única fuente de vidas persistentes: `PhaseOneScreen` lee el recuento
+autoritativo del snapshot al empezar cada frame y lo pasa a
+`PhaseOneGameController.advanceCombat(delta, astraLivesRemaining)`, de modo que `handleRespawns()` solo
+devuelve a Astra al mundo mientras queden vidas; con 0 no reaparece aunque el reloj de 10:00 siga
+corriendo y el estado de combate no aplica más daño a la nave destruida.
+
+`destroyAstra()` es el único punto de transición ACTIVE→DESTROYED (proyectil de Vesper, contacto de
+cascos con el Raider o con un dron Ghostwing) y ya es idempotente: encola exactamente una pérdida por
+transición, que la pantalla drena con `drainAstraLifeLosses()`. `PhaseOneScreen` publica un `LifeLost`
+por entrada drenada, después de `advanceCombat` y de `advanceWeapons` y antes de leer el snapshot, de
+modo que el coordinador y `PhaseCompleted` siempre ven la vida ya descontada y varios impactos sobre el
+mismo cuerpo no restan vidas extra. Inmediatamente después la pantalla resuelve el desenlace con las
+vidas autoritativas (`resolveMissionOutcome`); la prioridad (0 vidas ⇒ LOSE antes de la 3ª baja, luego
+la meta, luego el reloj) vive en `PhaseOneMission.resolve`. El panel WIN/LOSE visible corresponde al
+hijo de flujo de pantalla.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
