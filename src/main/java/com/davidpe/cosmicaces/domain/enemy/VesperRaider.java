@@ -19,12 +19,49 @@ import java.util.List;
 public final class VesperRaider extends Ship {
 
   private static final float TURN_EPSILON_DEGREES = 0.001f;
+  /**
+   * Angular-velocity dead band for the yaw pose: the turn pose engages once the physical turn
+   * reaches the enter threshold and only releases below the (lower) exit threshold, so a nearly
+   * straight heading does not flicker between neutral and a yaw frame.
+   */
+  private static final float TURN_POSE_ENTER_DEGREES_PER_SECOND = 5f;
+  private static final float TURN_POSE_EXIT_DEGREES_PER_SECOND = 1f;
+  /**
+   * Heading error, in degrees, below which the controller snaps onto the target and damps the
+   * angular velocity to zero without reversing it. This is far below any visible turn and stops the
+   * bounded deceleration profile from limit-cycling around the target.
+   */
+  private static final float TARGET_SNAP_DEGREES = 0.05f;
 
   private float headingDegrees;
   private int turnDirection;
   private int driftDirection;
   private boolean muzzleFlashVisible;
   private Visuals visuals;
+  /** Current effective speed, ramped toward the encounter's target by bounded acceleration. */
+  private float currentSpeed;
+  /** Current angular velocity of the heading, in degrees per second (sign = turn side). */
+  private float angularVelocityDegrees;
+  /** Whether the yaw pose is latched on, held with hysteresis around the angular dead band. */
+  private boolean yawPoseActive;
+
+  /**
+   * Immutable snapshot of one emission instant: the stable body centre, the descent heading and the
+   * latched pose that selects the measured cannon mouths. The encounter records one per bounded
+   * substep so a fast frame can be sampled between its endpoints instead of freezing every shot on
+   * the frame's final state.
+   */
+  public record ShotSample(float centerX, float centerY, float headingDegrees,
+      VesperRaiderSheet.Pose pose) {
+    public ShotSample {
+      if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
+        throw new IllegalArgumentException("Shot sample centre and heading must be finite");
+      }
+      if (pose == null) {
+        throw new IllegalArgumentException("Shot sample pose is required");
+      }
+    }
+  }
 
   public VesperRaider(float speed, float width, float height, float x, float y,
       float headingDegrees) {
@@ -33,6 +70,7 @@ public final class VesperRaider extends Ship {
     if (width <= 0f || height <= 0f || !Float.isFinite(width) || !Float.isFinite(height)) {
       throw new IllegalArgumentException("Raider box must be positive: " + width + "x" + height);
     }
+    currentSpeed = speed;
     setHeadingDegrees(headingDegrees);
   }
 
@@ -57,18 +95,31 @@ public final class VesperRaider extends Ship {
     return headingDegrees;
   }
 
+  /** Current effective speed in world units per second, after bounded acceleration. */
+  public float currentSpeed() {
+    return currentSpeed;
+  }
+
+  /** Current heading angular velocity in degrees per second (sign selects the turn side). */
+  public float angularVelocityDegrees() {
+    return angularVelocityDegrees;
+  }
+
   /** Direction of the last bounded turn: -1 left, 0 straight, +1 right. */
   public int turnDirection() {
     return turnDirection;
   }
 
-  /** Replaces the heading and clears any in-progress turn. */
+  /** Replaces the heading and clears any in-progress turn, angular velocity and speed ramp. */
   public void setHeadingDegrees(float headingDegrees) {
     if (!Float.isFinite(headingDegrees)) {
       throw new IllegalArgumentException("Heading must be finite");
     }
     this.headingDegrees = normalizeYaw(headingDegrees);
     turnDirection = 0;
+    angularVelocityDegrees = 0f;
+    yawPoseActive = false;
+    currentSpeed = speed();
   }
 
   /** Places the raider centre at a world point while keeping it inside the finite world. */
@@ -91,6 +142,11 @@ public final class VesperRaider extends Ship {
     return y() + drawHeight() / 2f;
   }
 
+  /** Captures the current body centre, heading and latched pose for a later historical shot. */
+  public ShotSample captureShotSample() {
+    return new ShotSample(centerX(), centerY(), headingDegrees, pose());
+  }
+
   /** Records the side of the current drift so the banked pose can reflect it. */
   public void setDriftDirection(int driftDirection) {
     this.driftDirection = Integer.signum(driftDirection);
@@ -111,6 +167,102 @@ public final class VesperRaider extends Ship {
     float applied = Math.max(-maxDeltaDegrees, Math.min(maxDeltaDegrees, difference));
     headingDegrees = normalizeYaw(headingDegrees + applied);
     turnDirection = Math.abs(applied) < TURN_EPSILON_DEGREES ? 0 : (applied > 0f ? 1 : -1);
+  }
+
+  /**
+   * Turns the heading toward {@code targetHeadingDegrees} with bounded angular velocity and angular
+   * acceleration, integrating one bounded step. The requested angular velocity follows a time
+   * optimal deceleration profile ({@code min(omegaMax, sqrt(2 * angularAcceleration * |error|))}) so
+   * the turn bleeds off as it approaches the target instead of overshooting it, and the applied
+   * change per call never exceeds {@code angularAcceleration * deltaSeconds}. The applied angular
+   * velocity is the single source of the yaw pose, latched with a small hysteresis band.
+   *
+   * <p>A non-positive or non-finite {@code deltaSeconds} leaves the heading, angular velocity and
+   * pose untouched, matching the encounter's delta contract.
+   *
+   * @param maxAngularAccelerationDegreesPerSecondSquared angular acceleration limit, in deg/s²
+   */
+  public void steerTowards(float targetHeadingDegrees, float maxTurnRateDegrees,
+      float maxAngularAccelerationDegreesPerSecondSquared, float deltaSeconds) {
+    if (!Float.isFinite(targetHeadingDegrees) || !Float.isFinite(maxTurnRateDegrees)
+        || maxTurnRateDegrees < 0f
+        || !Float.isFinite(maxAngularAccelerationDegreesPerSecondSquared)
+        || maxAngularAccelerationDegreesPerSecondSquared < 0f) {
+      throw new IllegalArgumentException(
+          "Steering target, rate and acceleration must be finite and non-negative");
+    }
+    if (deltaSeconds <= 0f || !Float.isFinite(deltaSeconds)) {
+      return;
+    }
+    float maxChange = maxAngularAccelerationDegreesPerSecondSquared * deltaSeconds;
+    float difference = normalizeYaw(targetHeadingDegrees - headingDegrees);
+    if (Math.abs(difference) <= TARGET_SNAP_DEGREES) {
+      // Settle exactly on the target and bleed the last angular velocity off toward zero without
+      // reversing it, so the turn never flickers left/right around the final heading.
+      headingDegrees = normalizeYaw(targetHeadingDegrees);
+      angularVelocityDegrees = dampTowardZero(angularVelocityDegrees, maxChange);
+      updateTurnPose();
+      return;
+    }
+    float brakingSpeed = maxAngularAccelerationDegreesPerSecondSquared <= 0f
+        ? maxTurnRateDegrees
+        : (float) Math.sqrt(2d * maxAngularAccelerationDegreesPerSecondSquared
+            * Math.abs(difference));
+    float desiredAngularVelocity = Math.min(maxTurnRateDegrees, brakingSpeed);
+    if (difference < 0f) {
+      desiredAngularVelocity = -desiredAngularVelocity;
+    }
+    angularVelocityDegrees += Math.max(-maxChange,
+        Math.min(maxChange, desiredAngularVelocity - angularVelocityDegrees));
+    angularVelocityDegrees = Math.max(-maxTurnRateDegrees,
+        Math.min(maxTurnRateDegrees, angularVelocityDegrees));
+    headingDegrees = normalizeYaw(headingDegrees + angularVelocityDegrees * deltaSeconds);
+    updateTurnPose();
+  }
+
+  /** Reduces a signed value toward zero by at most {@code maxChange}, never crossing it. */
+  private static float dampTowardZero(float value, float maxChange) {
+    if (Math.abs(value) <= maxChange) {
+      return 0f;
+    }
+    return value > 0f ? value - maxChange : value + maxChange;
+  }
+
+  /**
+   * Integrates one bounded step along the current heading while ramping the effective speed toward
+   * {@code targetSpeed} with separate acceleration and deceleration limits, so turbo or phase
+   * changes can never teleport the speed. A non-positive or non-finite {@code deltaSeconds} leaves
+   * the speed and position untouched.
+   */
+  public void advance(float deltaSeconds, float targetSpeed, float acceleration,
+      float deceleration) {
+    if (!Float.isFinite(targetSpeed) || targetSpeed <= 0f
+        || !Float.isFinite(acceleration) || acceleration < 0f
+        || !Float.isFinite(deceleration) || deceleration < 0f) {
+      throw new IllegalArgumentException(
+          "Speed target and rates must be finite and positive");
+    }
+    if (deltaSeconds <= 0f || !Float.isFinite(deltaSeconds)) {
+      return;
+    }
+    float rate = targetSpeed >= currentSpeed ? acceleration : deceleration;
+    float change = rate * deltaSeconds;
+    currentSpeed = currentSpeed < targetSpeed ? Math.min(targetSpeed, currentSpeed + change)
+        : Math.max(targetSpeed, currentSpeed - change);
+    advance(MovementIntent.fromDownwardHeading(headingDegrees), deltaSeconds, currentSpeed);
+  }
+
+  /** Latches the yaw pose from the physical turn with hysteresis to avoid neutral flicker. */
+  private void updateTurnPose() {
+    if (!yawPoseActive
+        && Math.abs(angularVelocityDegrees) >= TURN_POSE_ENTER_DEGREES_PER_SECOND) {
+      yawPoseActive = true;
+    } else if (yawPoseActive
+        && Math.abs(angularVelocityDegrees) <= TURN_POSE_EXIT_DEGREES_PER_SECOND) {
+      yawPoseActive = false;
+    }
+    turnDirection = !yawPoseActive ? 0
+        : angularVelocityDegrees > 0f ? 1 : angularVelocityDegrees < 0f ? -1 : 0;
   }
 
   /** Last-resort safeguard that keeps the raider box inside the finite world. */
@@ -150,6 +302,24 @@ public final class VesperRaider extends Ship {
    * @param range travel distance frozen into each projectile
    */
   public GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees, float range) {
+    return shotAt(centerX, centerY, headingDegrees, pose(), range);
+  }
+
+  /**
+   * Builds a two-cannon emission snapshot from a previously {@link #captureShotSample() captured}
+   * sample, using its historical heading and latched pose instead of the live mutable state. A frame
+   * that turns or moves can therefore emit from the exact point and pose that was valid at each
+   * offset, and a later respawn can never rewrite an already-taken sample.
+   */
+  public GunBurst.Shot shotAt(ShotSample sample, float range) {
+    if (sample == null) {
+      throw new IllegalArgumentException("Shot sample is required");
+    }
+    return shotAt(sample.centerX(), sample.centerY(), sample.headingDegrees(), sample.pose(), range);
+  }
+
+  private GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees,
+      VesperRaiderSheet.Pose pose, float range) {
     if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
       throw new IllegalArgumentException("Shot center and heading must be finite");
     }
@@ -158,7 +328,7 @@ public final class VesperRaider extends Ship {
     float forwardY = (float) -Math.cos(radians);
     float rightX = (float) Math.cos(radians);
     float rightY = (float) Math.sin(radians);
-    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose());
+    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose);
     List<GunBurst.Muzzle> muzzles = new ArrayList<>(mouths.size());
     for (VesperRaiderSheet.CannonMouth mouth : mouths) {
       float lateral = mouth.lateral() * drawWidth();
