@@ -2,9 +2,11 @@ package com.davidpe.cosmicaces.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import org.junit.jupiter.api.Test;
 
@@ -269,5 +271,80 @@ class PhaseOneCombatTest {
     }
     assertTrue(controller.astraCombat().isInvulnerable(),
         "the protection window still runs during these contacts");
+  }
+
+  @Test
+  void eachVesperDestructionCountsOnceAndTheThirdOneClosesRespawns() {
+    PhaseOneGameController controller = spawnRaider();
+    assertEquals(0, controller.vesperKills());
+
+    for (int kill = 1; kill <= 3; kill++) {
+      VesperRaider raider = controller.activeRaider();
+      assertNotNull(raider, "Vesper must be present before kill " + kill);
+      // Park the raider at a known open spot so the contact geometry is deterministic.
+      raider.placeAt(4000f - raider.drawWidth() / 2f, 6000f - raider.drawHeight() / 2f, 0f,
+          PhaseOneGameController.WORLD);
+      // Drop Astra's box on the raider: a vulnerable hull contact destroys both ships once.
+      controller.placeAstra(raider.x(), raider.y(), 0f);
+      assertEquals(1000, controller.advanceCombat(DELTA), "kill " + kill + " awards one bonus");
+      assertEquals(kill, controller.vesperKills(), "exactly one kill per destruction");
+      assertEquals(kill * 1000, controller.scorePoints(), "no double bonus");
+      assertEquals(0, controller.raiderCombat().energyPercent());
+      assertFalse(controller.isRaiderActive());
+
+      if (kill < 3) {
+        // Astra returns at 3 s (invulnerable) and Vesper at 5 s at full energy and a valid point.
+        controller.advanceCombat(5f);
+        assertTrue(controller.isRaiderActive(), "Vesper reappears after kill " + kill);
+        assertEquals(100, controller.raiderCombat().energyPercent(),
+            "a new Vesper life starts at full energy");
+        VesperRaider next = controller.activeRaider();
+        assertTrue(next.centerX() >= 0f
+            && next.centerX() <= PhaseOneGameController.WORLD.width());
+        assertTrue(next.centerY() >= 0f
+            && next.centerY() <= PhaseOneGameController.WORLD.height());
+        controller.advanceCombat(2f); // Astra's post-respawn protection ends
+        assertFalse(controller.astraCombat().isInvulnerable());
+      }
+    }
+
+    // Long past the 5 s respawn window, the third kill must keep Vesper away for good.
+    controller.advanceCombat(30f);
+    assertFalse(controller.isRaiderActive(), "no fourth Vesper life after the third kill");
+    assertEquals(3, controller.vesperKills());
+    assertEquals(3000, controller.scorePoints());
+  }
+
+  @Test
+  void aMissionLostByLivesIgnoresLaterDestructionsAndStopsRespawns() {
+    PhaseOneGameController controller = spawnRaider();
+    // The lives child resolves the terminal LOSE when the authoritative pool reaches zero.
+    assertEquals(PhaseOutcome.LOSE, controller.resolveMissionOutcome(0));
+
+    VesperRaider raider = controller.activeRaider();
+    controller.placeAstra(raider.x(), raider.y(), 0f);
+    assertEquals(0, controller.advanceCombat(DELTA),
+        "a destruction after the mission is already lost awards nothing");
+    assertEquals(0, controller.vesperKills(),
+        "and never advances the mission counter");
+    assertFalse(controller.isRaiderActive());
+
+    controller.advanceCombat(60f);
+    assertFalse(controller.isRaiderActive(), "a terminal mission never respawns Vesper");
+  }
+
+  @Test
+  void anExpiredRunNeverRespawnsAVesperKilledDuringTheRun() {
+    PhaseOneGameController controller = spawnRaider();
+    VesperRaider raider = controller.activeRaider();
+    controller.placeAstra(raider.x(), raider.y(), 0f);
+    controller.advanceCombat(DELTA);
+    assertEquals(1, controller.vesperKills());
+
+    controller.advanceRun(600f);
+    assertTrue(controller.isRunFinished());
+    assertEquals(0, controller.advanceCombat(60f), "the finished run advances no combat");
+    assertFalse(controller.isRaiderActive(), "the expired clock creates no new Raider");
+    assertEquals(1, controller.vesperKills());
   }
 }

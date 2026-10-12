@@ -464,6 +464,25 @@ con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuan
 también exige a Astra activa. La explosión gráfica, el parpadeo y el HUD de energía
 quedan descritos en la sección «Explosiones, parpadeo y energía integrados (COS-33)».
 
+### Bajas de Vesper conectadas a la misión (COS-68)
+
+`PhaseOneGameController.destroyRaider()` es el único punto de transición «vida → destruido» del
+Raider, se invoque por proyectil de Astra o por contacto de cascos. Ahí, tras validar
+ACTIVE→DESTROYED, guardar el centro de muerte, destruir el encuentro y limpiar el destello, la baja
+pasa por `PhaseOneMission.recordVesperKill()`: cada destrucción real cuenta una sola vez hasta la
+meta de 3, y el bonus de 1000 de `PhaseScore.awardRaiderDestroyed()` se concede **solo si la baja
+fue aceptada**, de modo que una destrucción posterior a un desenlace terminal ni cuenta ni puntúa.
+El contador no se infiere del bonus 1000, del frame de explosión ni de `raiderVisible`.
+
+`handleRespawns()` conserva la única instancia de `RaiderEncounter` y el `ShipCombatState.vesper()`
+para las vidas 2 y 3 (espera de 5 s, energía al 100 % y un punto válido del mundo), pero
+`isRaiderRespawnClosed()` interrumpe esa reaparición en cuanto `vesperKills >= 3` o la misión quedó
+terminal por cualquier causa (vidas agotadas o reloj expirado): tras la tercera baja Vesper no
+reaparece, no se crea una cuarta vida ni un segundo enemigo, y no se cargan texturas nuevas. Los
+proyectiles ya emitidos no re-impactan sobre restos del mismo frame: `activeRaider()` es null al
+morir, `destroyRaider()` es idempotente y cada proyectil impacta como máximo una vez. El desenlace
+por tiempo/vidas y su gating en pantalla pertenecen a las hijas COS-69/COS-70.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho

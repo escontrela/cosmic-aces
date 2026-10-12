@@ -307,12 +307,22 @@ public final class PhaseOneGameController extends GameController {
       astra().placeAt(astraDeathX, astraDeathY, astraDeathYaw, WORLD);
       astraMotion = null;
     }
-    if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null) {
+    if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null
+        && !isRaiderRespawnClosed()) {
       raiderCombat.respawn();
       raiderHitFlash.clear();
       raiderEncounter.respawnAt(WORLD, astra().x() + astra().drawWidth() / 2f,
           astra().y() + astra().drawHeight() / 2f, bodyRadius(astra()));
     }
+  }
+
+  /**
+   * True once the raider must never reappear: the mission already has a terminal outcome or the
+   * approved three-kill goal has been reached. The single raider instance is kept either way, so no
+   * third enemy is created and no texture is loaded; only the respawn is withheld.
+   */
+  private boolean isRaiderRespawnClosed() {
+    return mission.isFinished() || mission.vesperKills() >= mission.vesperKillGoal();
   }
 
   private void destroyAstra() {
@@ -338,7 +348,12 @@ public final class PhaseOneGameController extends GameController {
     raiderCombat.destroy();
     raiderHitFlash.clear();
     raiderEncounter.destroyActive();
-    pendingCombatPoints += score.awardRaiderDestroyed();
+    // One real destruction advances the mission counter exactly once, in the same transition that
+    // clears the encounter. The 1000-point bonus is tied to an accepted kill so a destruction after
+    // a terminal outcome neither counts nor scores, while kills 1/2/3 still award 1000 each.
+    if (mission.recordVesperKill()) {
+      pendingCombatPoints += score.awardRaiderDestroyed();
+    }
   }
 
   /**

@@ -383,6 +383,35 @@ class PhaseOneWeaponTest {
     }
   }
 
+  @Test
+  void aWholeBurstInOneFrameCountsExactlyOneVesperKill() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    VesperRaider raider = controller.activeRaider();
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+
+    // Burn two of the three damage steps with short frames: two full 35-point steps, no kill yet.
+    int guard = 0;
+    while (controller.raiderCombat().energyPercent() > 30 && guard < 1800) {
+      controller.advanceWeapons(1f / 60f, 1f / 60f, true, false, RANGE);
+      guard++;
+    }
+    assertEquals(30, controller.raiderCombat().energyPercent(), "two damage steps landed");
+    assertEquals(0, controller.vesperKills());
+
+    // One long frame fires a whole burst whose projectiles reach the same hull together; the many
+    // impacts on that frame are one destruction, never one per projectile.
+    controller.advanceWeapons(1f, 1f, true, false, RANGE);
+    assertTrue(controller.raiderCombat().isDestroyed(), "the burst finishes Vesper in one frame");
+    assertEquals(1, controller.vesperKills(), "many impacts in one frame count one kill");
+    assertEquals(1000, controller.scorePoints(), "the kill bonus is awarded exactly once");
+    assertFalse(controller.isRaiderActive());
+  }
+
   private static float originDistance(GunProjectile a, GunProjectile b) {
     return (float) Math.hypot(a.originX() - b.originX(), a.originY() - b.originY());
   }

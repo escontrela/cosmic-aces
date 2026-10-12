@@ -204,6 +204,23 @@ class PhaseOneGhostwingCombatTest {
   }
 
   @Test
+  void destroyingGhostwingDronesNeverAdvancesTheVesperKillCount() {
+    PhaseOneGameController controller =
+        new PhaseOneGameController(() -> 0f, eastPairRandom());
+    controller.placeAstra(astraXForLeftMuzzle(1764f), 0f, 0f);
+    controller.start();
+    controller.advanceGhostwing(20f);
+    assertEquals(0, controller.vesperKills());
+
+    // One emission event's two projectiles cross both drone hulls in the same frame.
+    controller.advanceWeapons(0.5f, 0.05f, true, false, RANGE);
+    assertEquals(2, controller.drainGhostwingDeaths().size());
+    assertEquals(200, controller.scorePoints(), "only the approved 100-point drone bonuses");
+    assertEquals(0, controller.vesperKills(),
+        "Ghostwing destructions are not Vesper Raider kills");
+  }
+
+  @Test
   void ghostwingContactDestroysBothShipsAndKeepsAstraRespawnUntouched() {
     PhaseOneGameController controller =
         new PhaseOneGameController(() -> 0f, northPairRandom());
