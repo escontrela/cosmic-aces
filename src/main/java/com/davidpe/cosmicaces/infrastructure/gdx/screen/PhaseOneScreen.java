@@ -20,6 +20,7 @@ import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
+import com.davidpe.cosmicaces.domain.enemy.VesperRaiderSheet;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
@@ -31,6 +32,7 @@ import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.domain.player.HeroShipSheet;
 import com.davidpe.cosmicaces.domain.scenery.WorldScenery;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
@@ -78,6 +80,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final Viewport hudViewport;
   private final FlightCamera flightCamera;
   private final FlightHud hud = new FlightHud();
+  private final MissionHud missionHud = new MissionHud();
   private final FlightMinimap minimap = new FlightMinimap();
   private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
@@ -387,7 +390,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
         controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
-    hud.drawScore(batch, hudFont, phaseSnapshot.get().points(),
+    PhaseResult snapshot = phaseSnapshot.get();
+    hud.drawScore(batch, hudFont, snapshot.points(),
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+    // Mission readings reuse the single authoritative snapshot read above and the neutral,
+    // non-firing regions of the screen-owned ship visuals: the borrowed icons are never loaded nor
+    // disposed here, and the mission HUD owns no resource of its own.
+    missionHud.draw(batch, hudFont, MissionHud.Readout.from(controller, snapshot),
+        raiderVisuals.region(VesperRaiderSheet.Pose.NEUTRAL, false),
+        astraVisuals.region(HeroShipSheet.Pose.NEUTRAL, false, false),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.

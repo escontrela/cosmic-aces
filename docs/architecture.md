@@ -530,6 +530,32 @@ y muestra `WIN`/`LOSE`. ESPACIO (pulsación nueva) publica `GameAbandoned` y vue
 abandona desde cualquier estado. Al volver a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
 nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
 
+### HUD de misión en pantalla (COS-71)
+
+`infrastructure.gdx.screen.MissionHud` es el HUD fijo de misión de PhaseOne, dibujado bajo la misma
+proyección HUD de `hudViewport`: icono pequeño de Vesper con bajas `0/3 … 3/3`, icono pequeño de
+Astra con vidas `3 … 0` y reloj `10:00 … 00:00`. No posee recursos nativos: los iconos son las
+regiones neutras sin fuego prestadas de `Astra.Visuals` y `VesperRaider.Visuals` (propiedad de la
+pantalla, que sigue creando y liberando las texturas); el icono de Vesper se rota 180° para que la
+región orientada a descenso apunte arriba sin mutar la región compartida. Nada aquí carga ni libera
+texturas y tampoco se duplican contadores: el `record MissionHud.Readout` captura una única lectura
+por frame (`vesperKills`/`vesperKillGoal` del controlador, `lives` del snapshot del coordinador,
+`remainingRunSeconds` del reloj de dominio) y la pantalla la construye una vez al final del frame con
+el mismo `PhaseResult` que alimenta `drawScore`. `PhaseOneScreen` no vuelve a sumar ni restar vidas,
+bajas o tiempo.
+
+El reloj formatea segundos pendientes con `ceil` a `MM:SS` de dos dígitos (`10:00`, `09:59`, `01:00`,
+`00:00`; sin `09:60`, sin negativos; valores no finitos o ≤ 0 → `00:00`) usando la misma fuente de
+tiempo del dominio. Las lecturas no se avanzan fuera de `PLAYING` (el `PhaseOneScreenFlow` corta la
+simulación), por lo que INTRO muestra 0/3 + 3 vidas + 10:00 y RESULT muestra los valores congelados
+del desenlace. El layout es una función pura del ancho/altura del `hudViewport` y de los anchos
+medidos con `GlyphLayout`: contadores en la banda superior izquierda, reloj centrado en la línea
+superior (con separación mínima de los contadores y margen derecho) y score existente arriba a la
+derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redimensionar (800×600,
+1024×768, 1920×1080). El dibujo respeta `begin/end` del `SpriteBatch` y restaura color de fuente y
+batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
+inicial autoritativa; la legibilidad visual es del PO.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
