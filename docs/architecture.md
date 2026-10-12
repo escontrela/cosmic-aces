@@ -406,7 +406,9 @@ aceleración 300 u/s² y deceleración 450 u/s²; giro máximo 130°/s y acelera
 angular 360°/s². El estado físico vive en `VesperRaider` (`currentSpeed`,
 `angularVelocityDegrees`): `steerTowards(target, ωmax, α, dt)` sigue un perfil de
 frenado angular acotado y `advance(dt, targetSpeed, accel, decel)` rampa la
-velocidad; el objetivo táctico lo fija `RaiderEncounter` (`targetSpeed()`). Las
+velocidad; el objetivo táctico lo fija `RaiderEncounter` (`targetSpeed()`): una
+sola política de velocidad por fase (crucero en APPROACH, pasada en ATTACK_PASS,
+reenganche en INVERT), sin ventana de turbo que compita o corte la pasada. Las
 constantes son un punto de partida técnico medible, no una cifra fijada por el PO.
 `leastTurnSide` convierte cada dirección candidata al marco de descenso con
 `headingFor(vx, vy) = degrees(atan2(vx, -vy))` antes de comparar, corrigiendo la
@@ -414,36 +416,48 @@ mezcla de marcos anterior. La pose de guiñada usa histéresis sobre la velocida
 angular real (entra ≥5°/s, sale ≤1°/s) para evitar parpadeo neutral. Con CA18, la
 sobrecarga
 `advance(dt, world, targetX, targetY, targetVelX, targetVelY, targetRadius, selfRadius)`
-prevé la aproximación más cercana dentro de un horizonte de 1,2 s con movimiento
-relativo (el controlador pasa el centro, velocidad y radio de Astra); si predice
-contacto (radios + margen 70), gira perpendicular a la demora en un lado elegido por
-menor cambio de rumbo y lo mantiene ≥ 1,2 s para evitar oscilación; el vector de
-bordes interiores se mantiene. Con COS-37 el combate añade fases explícitas
-(`Maneuver.APPROACH`, `ATTACK_PASS`, `REPOSITION`): en APPROACH se aproxima con un
-adelanto de intercepción acotado a 1 s (posición de Astra + velocidad × 1 s); al
-entrar en 350 unidades (ATTACK_PASS) compromete una pasada curva acotada que conserva
-la separación de disparo bajo 300 unidades, y termina al abrirse de nuevo o tras
-1,8 s; en REPOSITION se retira perpendicular por el lado de menor giro un mínimo de
-0,6 s (o hasta separarse) y un máximo de 2,5 s antes de volver a aproximarse. Con
-COS-40 la trayectoria deja de depender de `UnitRandom` después de la aparición: se
-retiró la deriva aleatoria y cada fase conserva una intención de vuelo persistente;
-el lado de órbita de la pasada y el de separación se fijan una sola vez al entrar en
-la maniobra con desempate determinista, de modo que no hay rectificaciones de lado por
-frame. `UnitRandom` queda solo para la espera inicial y para las posiciones de
-aparición/reaparición. El raider dispone además de un turbo táctico reproducible:
-durante su ventana (`TURBO_MAX_SECONDS=1 s`, recuperación `TURBO_RECOVERY_SECONDS=4 s`,
-medidos con el mismo `delta`) apunta a la velocidad de pasada a través de la misma
-rampa de aceleración acotada, sin multiplicadores ni saltos de velocidad; se activa
-solo al cerrar distancia en APPROACH o REPOSITION (banda >350) y se corta ante un
-contacto previsto, un lado de evasión activo o una pasada firme. La predicción de
-contacto usa la velocidad efectiva actual (`VesperRaider.currentSpeed()`). La
-evitación de choque y la respuesta de bordes siguen siendo la prioridad
-de seguridad sobre las tres fases. El plan (fase, lados y turbo) se reinicia en
-`spawn`, `destroyActive` y `respawnAt`, y `maneuver()`, `separationSide()`,
-`avoidanceSide()`, `isTurboActive()`, `turboSecondsRemaining()` y
-`turboRecoverySeconds()` (accesos de paquete) solo existen para las pruebas
-deterministas de dominio. La sobrecarga de 4 argumentos conserva el
-comportamiento de búsqueda pura para las pruebas deterministas. `PhaseOneScreen`
+prevé la aproximación más cercana dentro de un horizonte con movimiento relativo
+(el controlador pasa el centro, velocidad y radio de Astra); si predice contacto
+(radios + margen), gira perpendicular a la demora en un lado elegido por menor
+cambio de rumbo y lo mantiene ≥ 1,2 s para evitar oscilación; el vector de bordes
+interiores se mantiene. El horizonte y el margen son los generales (1,2 s y 70)
+salvo dentro de la pasada comprometida, donde se usan unos cortos dedicados
+(`PASS_AVOID_HORIZON_SECONDS=0,5 s`, `PASS_AVOID_CONTACT_MARGIN=40`) para que una
+pasada no rompa a 600 unidades y sí presione hasta la ventana de tiro antes del
+quiebre. Con COS-61/COS-63 el combate usa fases explícitas
+(`Maneuver.APPROACH`, `ATTACK_PASS`, `INVERT`):
+
+- **APPROACH** adquiere una línea de tiro balística: resuelve la raíz positiva
+  acotada de `|r + v·t| = projectileSpeed·t` con la velocidad real del proyectil
+  (`GunTuning.PROJECTILE_SPEED`), con fallback a un adelanto directo de 1 s; la
+  línea se replanifica cada `APPROACH_REPLAN_SECONDS=0,2 s` y el rumbo se mantiene
+  entre replanes (objetivo persistente, sin rehacer la línea por frame).
+- **ATTACK_PASS** compromete un corredor fijo: al estar a ≤900 unidades y con
+  error de rumbo ≤15° congela punto de entrada, dirección normalizada y longitud
+  (`max(250, distancia de compromiso + 400)`); al cruzar el plano de salida
+  (progreso longitudinal ≥ longitud) o el límite de 3 s termina la pasada. El
+  corredor no se reconstruye por frame; solo la seguridad lo puede interrumpir y
+  la pasada termina entonces por progreso/timeout para replanificar.
+- **INVERT** abre espacio (0,5 s rectos siguiendo el corredor de salida a
+  velocidad de reenganche) y ejecuta un arco de inversión sobre el lado elegido
+  una sola vez en la entrada (menor giro hacia el objetivo, desempate a la derecha
+  y guarda de espacio mundial por tangente hacia un borde próximo), manteniéndolo
+  hasta recuperar alineación ≤25° con el objetivo o el plazo de 5 s; después vuelve
+  a APPROACH y encara otra pasada.
+
+Con COS-40 la trayectoria deja de depender de `UnitRandom` después de la
+aparición: se retiró la deriva aleatoria y cada fase conserva una intención de
+vuelo persistente; `UnitRandom` queda solo para la espera inicial y para las
+posiciones de aparición/reaparición. La predicción de contacto usa la velocidad
+efectiva actual (`VesperRaider.currentSpeed()`). La evitación de choque y la
+respuesta de bordes siguen siendo la prioridad de seguridad sobre las tres fases.
+El plan (fase, corredor, lado de inversión y acumulador) se reinicia en `spawn`,
+`destroyActive` y `respawnAt`, y los accesos de paquete `maneuver()`,
+`separationSide()`, `avoidanceSide()`, `passDirectionX/Y()`, `passEntryX/Y()`,
+`passLength()`, `passProgress()`, `inversionSide()` e `invertTurnAccumulated()`
+solo existen para las pruebas deterministas de dominio. La sobrecarga de 4
+argumentos conserva el comportamiento de búsqueda pura para las pruebas
+deterministas. `PhaseOneScreen`
 llama a `advanceCombat` una vez por frame dentro del recorrido y suma `drainCombatPoints()`
 con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuando
 `isAstraActive()` es falso y la coincidencia visible (`shipsCoincidentVisible`)
@@ -656,10 +670,12 @@ ruta inicial dentro de `WorldBounds` y persiste en coordenadas de mundo aunque
 salga de cámara. Con COS-62 la velocidad es continua (crucero 300 u/s, pasada
 500 u/s, reenganche 320 u/s) y rampa con aceleración/deceleración acotadas;
 `destroyActive()/respawnAt(...)` conservan esa misma instancia y sus Visuals
-tras la destrucción y reinician plan, velocidad, ω y pose; con COS-37 alterna
-fases de aproximación, pasada acotada y
-reenganche (véase «Combate determinista integrado (COS-32)»), y con COS-40 esas
-fases usan rumbos deterministas sin deriva aleatoria y un turbo táctico acotado.
+tras la destrucción y reinician plan, velocidad, ω y pose; con COS-61/COS-63
+alterna fases de adquisición de línea, pasada comprometida y arco de inversión
+(véase «Combate determinista integrado (COS-32)»), y con COS-40 esas
+fases usan rumbos deterministas sin deriva aleatoria ni random posterior al
+spawn; el turbo táctico anterior se retiró en COS-63 a favor de una única
+velocidad objetivo por fase.
 `VesperRaider.steerTowards` gira el rumbo con velocidad angular y aceleración
 angular acotadas (`MAX_TURN_RATE_DEGREES=130`, `MAX_ANGULAR_ACCELERATION_DEGREES=360`)
 y `setDriftDirection`/`pose()` eligen la pose de guiñada al
