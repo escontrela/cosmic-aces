@@ -18,7 +18,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
+| `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
@@ -600,6 +600,26 @@ frames siguientes el tramo es cero y ningún subsistema avanza naves, combate, d
 `PhaseOneActiveSliceTest` cubre el cruce del límite (mismo tramo para todos, tope del tramo,
 congelación con tramo cero) y el tercer derribo dentro del tramo hacia WIN o LOSE.
 
+### Catálogo de terreno de PhaseOne (COS-82)
+
+`infrastructure.gdx.screen.PhaseOneTerrainCatalog` es un catálogo puro de los 128 tiles del mapa
+(8 columnas × 16 filas), sin `Texture`, sin E/S y sin estado mutable; se construye y consulta sin
+arrancar LibGDX. Fija la correspondencia de COS-81: `row-01-col-01` en el suroeste (inicio del
+recorrido, y=0) y `row-16-col-08` en el noreste (final). Cada `Tile` describe su ruta
+(`assets/images/map-phase-one/row-%02d-col-%02d.png`), el rectángulo destino en unidades de mundo
+(1024 × 768 por celda) y el sub-rectángulo fuente del PNG que le corresponde 1 píxel a 1 unidad de
+mundo, de modo que dibujar la fuente en el destino nunca estira la imagen. La última fila rebasa el
+mundo (y=12288) en 288 unidades: su rectángulo visible y su recorte miden 480 (desde `sourceY=288`)
+para cubrir exactamente `[0,8192]×[0,12000]`. `tiles()`, `tile(row,col)` y `pathFor(...)` validan
+los índices 1..16/1..8; `tileAt(x,y)` resuelve un punto con fronteras interiores semiabiertas y
+devuelve vacío fuera del mundo (sin solicitar recursos); `tilesIn(minX,minY,maxX,maxY)` devuelve en
+orden fila-mayor los tiles que intersecan el rectángulo recortado al mundo, contando los bordes
+compartidos para no perder vecinos en la precarga. La orientación es explícita:
+`requiresVerticalFlip()` devuelve `false` porque el borde superior del PNG es el norte y LibGDX ya
+dibuja el `TextureRegion` por defecto con su fila superior arriba (mayor Y del mundo). El catálogo no
+consulta la nave ni altera el mundo; la pantalla, el selector y el cargador de las hijas siguientes
+lo consumen. La comprobación visual de orientación y continuidad corresponde al PO humano.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
@@ -1109,6 +1129,9 @@ com.davidpe.cosmicaces
             |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
             +-- EnemyStatusHud: VESPER RAIDER + energía % durante el enfrentamiento (COS-72).
             |   1. show()  2. Readout.energyLabel()  3. layout()  4. draw()
+            +-- PhaseOneTerrainCatalog: catálogo puro de los 128 tiles de terreno 8×16 (COS-82).
+            |   1. tiles()  2. tile()  3. pathFor()  4. tileAt()  5. tilesIn()
+            |   6. requiresVerticalFlip()
             +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
                 4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
