@@ -66,13 +66,14 @@ dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
-contexto está disponible y persiste el encuadre y velocidades de Astra, el tamaño de ventana y la selección de pantalla completa.
+contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo, Encuadre y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+Vídeo, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
 de PhaseOne. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
-`GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y lo
+`GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
+modelo visual elegido (`AstraVariant`, original por defecto, alternado con `cycleAstraVariant`) y los
 guarda a través de `GameSettingsStore`; `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva
 ese porcentaje en exploración y combate. El árbol de clases debe incluir el adaptador de almacenamiento
 junto a la configuración de presentación.

@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import org.junit.jupiter.api.Test;
 
 class GamePresentationSettingsTest {
@@ -27,5 +28,33 @@ class GamePresentationSettingsTest {
     settings.setAstraBottomFraction(Float.NaN);
     assertEquals(GamePresentationSettings.DEFAULT_ASTRA_BOTTOM_FRACTION,
         settings.astraBottomFraction(), 0.0001f);
+  }
+
+  @Test
+  void defaultsAstraVariantToOriginal() {
+    GamePresentationSettings settings = new GamePresentationSettings();
+
+    assertEquals(AstraVariant.ORIGINAL, settings.astraVariant());
+  }
+
+  @Test
+  void keepsSelectedAstraVariantAndFallsBackToOriginalOnNull() {
+    GamePresentationSettings settings = new GamePresentationSettings();
+
+    settings.setAstraVariant(AstraVariant.F16_MLU_755);
+    assertEquals(AstraVariant.F16_MLU_755, settings.astraVariant());
+
+    settings.setAstraVariant(null);
+    assertEquals(AstraVariant.ORIGINAL, settings.astraVariant());
+  }
+
+  @Test
+  void cyclesAstraVariantInBothDirectionsAndWrapsAround() {
+    GamePresentationSettings settings = new GamePresentationSettings();
+
+    assertEquals(AstraVariant.F16_MLU_755, settings.cycleAstraVariant(1));
+    assertEquals(AstraVariant.ORIGINAL, settings.cycleAstraVariant(1));
+    assertEquals(AstraVariant.F16_MLU_755, settings.cycleAstraVariant(-1));
+    assertEquals(AstraVariant.ORIGINAL, settings.cycleAstraVariant(-1));
   }
 }

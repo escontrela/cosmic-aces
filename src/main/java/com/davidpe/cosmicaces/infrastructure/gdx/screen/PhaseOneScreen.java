@@ -146,7 +146,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     try {
       loadedBatch = new SpriteBatch();
       loadedShapes = new ShapeRenderer();
-      loadedAstra = new Astra.Visuals();
+      loadedAstra = new Astra.Visuals(presentationSettings.astraVariant());
       loadedRaider = new VesperRaider.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedExplosion = new ShipExplosionVisuals();

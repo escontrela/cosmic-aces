@@ -3,25 +3,36 @@ package com.davidpe.cosmicaces.domain.player;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
 class HeroShipSheetTest {
 
   private static List<HeroShipSheet.Sheet> allSheets() {
-    return java.util.stream.Stream.concat(HeroShipSheet.sheets().stream(),
-        HeroShipSheet.firingSheets().stream()).toList();
+    return Arrays.stream(AstraVariant.values())
+        .flatMap(variant -> HeroShipSheet.sheets(variant).stream())
+        .toList();
+  }
+
+  private static List<HeroShipSheet.Sheet> allFiringSheets() {
+    return Arrays.stream(AstraVariant.values())
+        .map(HeroShipSheet::family)
+        .flatMap(family -> Stream.of(family.normalFiring(), family.accelerateFiring()))
+        .toList();
   }
 
   @Test
   void everyFiringPoseIncludesVisibleMuzzleFlashes() throws IOException {
-    for (HeroShipSheet.Sheet sheet : HeroShipSheet.firingSheets()) {
+    for (HeroShipSheet.Sheet sheet : allFiringSheets()) {
       BufferedImage image = ImageIO.read(getClass().getResource("/" + sheet.internalPath()));
       for (HeroShipSheet.Slice slice : sheet.slices()) {
         boolean hasFlash = false;
@@ -143,34 +154,66 @@ class HeroShipSheetTest {
 
   /**
    * The firing placement metadata must keep the cool body hull of each firing pose anchored on the
-   * flight pose of the same speed family. The expected offset is re-measured from the bundled PNGs
-   * with the same warm-flash color rule, so a slice edit or a stale constant is caught.
+   * flight pose of the same speed family, for every Astra model. The expected offset is re-measured
+   * from the bundled PNGs with the same warm-flash color rule, so a slice edit or a stale constant
+   * is caught.
    */
   @Test
   void firingPlacementKeepsTheBodyHullAnchoredOnItsFlightVariant() throws IOException {
-    List<HeroShipSheet.Sheet> flight = HeroShipSheet.sheets();
-    List<HeroShipSheet.Sheet> firing = HeroShipSheet.firingSheets();
-    for (int family = 0; family < flight.size(); family++) {
-      boolean accelerating = family == 1;
-      BufferedImage flightImage = ImageIO.read(
-          getClass().getResource("/" + flight.get(family).internalPath()));
-      BufferedImage firingImage = ImageIO.read(
-          getClass().getResource("/" + firing.get(family).internalPath()));
-      for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
-        HeroShipSheet.Slice flightSlice = flight.get(family).slice(pose);
-        HeroShipSheet.Slice firingSlice = firing.get(family).slice(pose);
-        double[] flightHull = coolHullCenter(flightImage, flightSlice.x(), flightSlice.y(),
-            flightSlice.width(), flightSlice.height());
-        double[] firingHull = coolHullCenter(firingImage, firingSlice.x(), firingSlice.y(),
-            firingSlice.width(), firingSlice.height());
-        double expectedX = (flightHull[0] - flightSlice.width() / 2d)
-            - (firingHull[0] - firingSlice.width() / 2d);
-        double expectedY = (flightSlice.height() / 2d - flightHull[1])
-            - (firingSlice.height() / 2d - firingHull[1]);
-        HeroShipSheet.FiringPlacement placement =
-            HeroShipSheet.firingPlacement(pose, accelerating);
-        assertEquals(expectedX, placement.offsetXPx(), 1f, "deltaX of " + pose);
-        assertEquals(expectedY, placement.offsetYPx(), 1f, "deltaY of " + pose);
+    for (AstraVariant variant : AstraVariant.values()) {
+      HeroShipSheet.Family family = HeroShipSheet.family(variant);
+      List<HeroShipSheet.Sheet> flight = List.of(family.normal(), family.accelerate());
+      List<HeroShipSheet.Sheet> firing =
+          List.of(family.normalFiring(), family.accelerateFiring());
+      for (int speedFamily = 0; speedFamily < flight.size(); speedFamily++) {
+        boolean accelerating = speedFamily == 1;
+        BufferedImage flightImage = ImageIO.read(
+            getClass().getResource("/" + flight.get(speedFamily).internalPath()));
+        BufferedImage firingImage = ImageIO.read(
+            getClass().getResource("/" + firing.get(speedFamily).internalPath()));
+        for (HeroShipSheet.Pose pose : HeroShipSheet.Pose.values()) {
+          HeroShipSheet.Slice flightSlice = flight.get(speedFamily).slice(pose);
+          HeroShipSheet.Slice firingSlice = firing.get(speedFamily).slice(pose);
+          double[] flightHull = coolHullCenter(flightImage, flightSlice.x(), flightSlice.y(),
+              flightSlice.width(), flightSlice.height());
+          double[] firingHull = coolHullCenter(firingImage, firingSlice.x(), firingSlice.y(),
+              firingSlice.width(), firingSlice.height());
+          double expectedX = (flightHull[0] - flightSlice.width() / 2d)
+              - (firingHull[0] - firingSlice.width() / 2d);
+          double expectedY = (flightSlice.height() / 2d - flightHull[1])
+              - (firingSlice.height() / 2d - firingHull[1]);
+          HeroShipSheet.FiringPlacement placement = family.firingPlacement(pose, accelerating);
+          assertEquals(expectedX, placement.offsetXPx(), 1f,
+              "deltaX of " + variant + " " + pose + " accelerating=" + accelerating);
+          assertEquals(expectedY, placement.offsetYPx(), 1f,
+              "deltaY of " + variant + " " + pose + " accelerating=" + accelerating);
+        }
+      }
+    }
+  }
+
+  @Test
+  void familySelectsTheBundledSheetsOfEachAstraModel() {
+    HeroShipSheet.Family original = HeroShipSheet.family(AstraVariant.ORIGINAL);
+    HeroShipSheet.Family f16 = HeroShipSheet.family(AstraVariant.F16_MLU_755);
+    assertEquals("assets/images/player/hero_ship_v3.png", original.normal().internalPath());
+    assertEquals("assets/images/player/hero_ship_v3_firing.png",
+        original.normalFiring().internalPath());
+    assertEquals("assets/images/player/hero_ship_v4.png", f16.normal().internalPath());
+    assertEquals("assets/images/player/hero_ship_v4_accelerate_firing.png",
+        f16.accelerateFiring().internalPath());
+    assertSame(original, HeroShipSheet.family(null),
+        "a missing or unknown selection falls back to the original model");
+  }
+
+  @Test
+  void everyFamilyExposesFourSheetsWithFivePoses() {
+    for (AstraVariant variant : AstraVariant.values()) {
+      List<HeroShipSheet.Sheet> sheets = HeroShipSheet.sheets(variant);
+      assertEquals(4, sheets.size(), "a model bundles four sheets: " + variant);
+      for (HeroShipSheet.Sheet sheet : sheets) {
+        assertEquals(5, sheet.slices().size(),
+            "every sheet exposes five poses: " + sheet.internalPath());
       }
     }
   }
