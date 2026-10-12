@@ -644,6 +644,35 @@ de render pertenecen a COS-84/COS-85. `PhaseOneTerrainPlannerTest` cubre yaw 0/4
 zoom 1/1,15/1,25, viewport 1024×768 y 1920×1080, fronteras del mundo, avance, inversión de rumbo y
 vuelta a tiles previos, y exige que toda esquina visible quede cubierta.
 
+### Cargador anticipado y caché acotada del terreno (COS-84)
+
+`infrastructure.gdx.screen.PhaseOneTerrainCache<T>` es el dueño único de los recursos del mapa: no
+dibuja ni conoce `Texture`, es genérico sobre el recurso y recibe un `ResourceFactory<T>`
+(crear/liberar/estimar bytes), de modo que toda la política se prueba con un cargador falso sin
+contexto LibGDX. Consume el `Plan` de COS-83 tal cual: primero crea **todos** los `visible` (sin
+presupuesto, para que un salto de cámara o un resize nunca muestren hueco), después recorre
+`prefetch` —ya ordenado delantero primero— mientras el tiempo transcurrido desde el inicio de la
+llamada no supere el presupuesto `budgetNanos` del frame, y expone los tiles que quedan pendientes.
+`primeVisible(plan)` es la carga bloqueante previa al primer dibujo: sirve solo lo visible y deja el
+anillo como pendiente, sin decodificar la matriz entera al entrar. Cada `Tile` tiene como máximo un
+recurso residente (`Map<Tile,T>`), así que nunca hay dos copias GL del mismo PNG.
+
+La memoria se acota por la zona de **retención** del plan, no por un número fijo: tras cargar, solo
+se liberan los residentes para los que `plan.retains(tile)` es falso (visible + dos anillos). Como
+lo visible siempre está dentro de su propia retención, una textura dibujable no se expulsa y una
+oscilación sobre una junta no recarga (histéresis). El límite se adapta al viewport: una ventana
+grande mueve más tiles a `visible` y amplía la retención. Contadores internos
+(`residentCount`, `pendingCount`, `totalLoaded`, `totalEvictions`, `estimatedBytes`) y el
+`FrameResult` de cada llamada sirven a pruebas y diagnóstico, sin HUD de depuración.
+`dispose()` libera todos los residentes y limpia los pendientes de forma idempotente; entrar y
+salir repetidamente no deja recursos ni solicitudes. `PhaseOneTerrainTextureFactory` es el adaptador
+GL concreto (`Texture` desde `path`, `dispose`, bytes RGBA8888) que COS-85 cableará en la pantalla.
+Medición del banco con cargador falso sobre el vuelo completo: 1024×768 retiene como máximo 24
+texturas (~72 MiB) y 1920×1080 un máximo de 30 (~90 MiB), muy por debajo de las 128 (~384 MiB).
+`PhaseOneTerrainCacheTest` cubre carga inicial, salto/resize sin hueco, presupuesto y pendientes,
+prioridad delantera, oscilación sin recarga, expulsión fuera de retención, bytes y cierre. La
+integración del dibujo pertenece a COS-85; la QA visual, al PO.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
