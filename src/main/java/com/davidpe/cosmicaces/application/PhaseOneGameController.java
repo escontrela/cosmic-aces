@@ -8,6 +8,8 @@ import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
+import com.davidpe.cosmicaces.domain.game.PhaseOneMission;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PhaseScore;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
@@ -21,7 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Rules specific to phase one: timed run, autonomous Raider, scoring and the Astra cannon. */
+/**
+ * Rules specific to phase one: the 10-minute mission clock, autonomous Raider, scoring, mission
+ * outcome and the Astra cannon.
+ */
 public final class PhaseOneGameController extends GameController {
 
   public static final WorldBounds WORLD = new WorldBounds(8192f, 12000f);
@@ -39,6 +44,7 @@ public final class PhaseOneGameController extends GameController {
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
   private final PhaseScore score = new PhaseScore();
+  private final PhaseOneMission mission = new PhaseOneMission();
   private final GunBurst astraGun = new GunBurst();
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
   private final ShipCombatState astraCombat = ShipCombatState.astra();
@@ -57,7 +63,26 @@ public final class PhaseOneGameController extends GameController {
   private float raiderDeathCenterX;
   private float raiderDeathCenterY;
   private int pendingCombatPoints;
+  /**
+   * Astra destructions recorded since the last drain: exactly one per real ACTIVE→DESTROYED
+   * transition. The screen publishes one {@code LifeLost} per entry so a frame with several impacts
+   * on the same body still costs a single life.
+   */
+  private int pendingAstraLifeLosses;
   private final List<GhostwingDeath> pendingGhostwingDeaths = new ArrayList<>();
+  /**
+   * Sentinel for "no simulation frame is open": each direct call bounds itself with the run clock,
+   * which is the contract the deterministic tests use.
+   */
+  private static final float NO_ACTIVE_FRAME = -1f;
+  /**
+   * Authorized active slice of the frame being simulated, in seconds, or {@link #NO_ACTIVE_FRAME}
+   * outside a frame. The screen computes it once per frame from the mission clock and shares it with
+   * every subsystem through {@link #beginActiveFrame(float)}, so a delta that reaches 00:00 while
+   * flight advances cannot cut the same frame's encounter, Ghostwing, contact timers or collisions
+   * short. While a frame is open this value is zero or positive.
+   */
+  private float activeFrameSeconds = NO_ACTIVE_FRAME;
 
   public PhaseOneGameController() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -92,19 +117,58 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
+   * Opens the simulation frame with the slice the screen already bounded by the mission clock. While
+   * the frame is open, every subsystem advances exactly this slice instead of re-deriving it from
+   * the run clock, so the clock reaching 00:00 during flight cannot stop the encounter, Ghostwing,
+   * combat timers or collisions of the very same frame. A non-positive or non-finite slice opens an
+   * inert frame in which no subsystem advances.
+   */
+  public void beginActiveFrame(float activeSeconds) {
+    activeFrameSeconds = Float.isFinite(activeSeconds) && activeSeconds > 0f ? activeSeconds : 0f;
+  }
+
+  /**
+   * Closes the current simulation frame, restoring the direct-call contract in which every call
+   * bounds its delta with the run clock and an already finished run advances nothing.
+   */
+  public void endActiveFrame() {
+    activeFrameSeconds = NO_ACTIVE_FRAME;
+  }
+
+  /** True while a frame opened by {@link #beginActiveFrame(float)} is being simulated. */
+  private boolean isActiveFrameOpen() {
+    return activeFrameSeconds != NO_ACTIVE_FRAME;
+  }
+
+  /**
+   * Seconds a subsystem may simulate for this call. Inside an open frame it is exactly the
+   * authorized slice, never re-derived from a clock that may already read 00:00; outside a frame the
+   * run clock bounds the delta, so a direct call keeps the existing behavior.
+   */
+  private float boundedActiveSeconds(float deltaSeconds) {
+    if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) {
+      return 0f;
+    }
+    float limit = isActiveFrameOpen() ? activeFrameSeconds : remainingRunSeconds();
+    return Math.min(deltaSeconds, limit);
+  }
+
+  /**
    * Advances Astra and the run clock using only the portion of this frame remaining in the
-   * 60-second run, and returns the points earned by this delta. Scoring shares the same clamped
-   * {@code activeSeconds} as the clock, so points freeze with the run and are never double counted.
-   * A destroyed Astra keeps the clock running but does not move or earn coincidence points.
+   * 10-minute mission limit, and returns the points earned by this delta. Scoring shares the same
+   * clamped {@code activeSeconds} as the clock, so points freeze with the run and are never double
+   * counted. A destroyed Astra keeps the clock running but does not move or earn coincidence points.
    *
    * @param coincident whether Astra and the raider were both visible during this delta
    */
   public int advanceFlight(FlightControls controls, float deltaSeconds, boolean coincident) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return 0;
     }
-    float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return 0;
+    }
     if (astraCombat.canAct()) {
       float beforeX = astra().x();
       float beforeY = astra().y();
@@ -177,20 +241,26 @@ public final class PhaseOneGameController extends GameController {
   /**
    * Advances both ships' combat timers, resolves a vulnerable hull-to-hull contact and places any
    * ship whose respawn delay has elapsed. Called once per frame inside the run; it can award the
-   * single destruction bonus if the contact destroys the raider. No {@code LifeLost} is emitted.
+   * single destruction bonus if the contact destroys the raider. The authoritative lives remaining
+   * are supplied by the caller from the coordinator snapshot: Astra only reappears while the pool is
+   * above zero, so an exhausted pool leaves her defeated with no extra damage.
    *
+   * @param astraLivesRemaining lives Astra has left, as held by the coordinator
    * @return points earned by this call (the raider destruction bonus, if any)
    */
-  public int advanceCombat(float deltaSeconds) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+  public int advanceCombat(float deltaSeconds, int astraLivesRemaining) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return 0;
     }
-    astraCombat.advance(deltaSeconds);
-    raiderCombat.advance(deltaSeconds);
-    handleRespawns();
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return 0;
+    }
+    astraCombat.advance(activeSeconds);
+    raiderCombat.advance(activeSeconds);
+    handleRespawns(astraLivesRemaining);
     resolveShipContact();
-    resolveGhostwingContact(deltaSeconds);
+    resolveGhostwingContact(activeSeconds);
     return drainCombatPoints();
   }
 
@@ -199,6 +269,18 @@ public final class PhaseOneGameController extends GameController {
     int points = pendingCombatPoints;
     pendingCombatPoints = 0;
     return points;
+  }
+
+  /**
+   * Returns and clears the Astra life losses recorded since the last drain. Each real destruction
+   * (projectile, hull contact with the Raider or a Ghostwing drone, or energy depletion) adds exactly
+   * one entry; repeated impacts on an already destroyed body add none. The screen publishes one
+   * {@code LifeLost} event per entry, so the coordinator always decrements the pool exactly once.
+   */
+  public int drainAstraLifeLosses() {
+    int losses = pendingAstraLifeLosses;
+    pendingAstraLifeLosses = 0;
+    return losses;
   }
 
   /**
@@ -253,18 +335,17 @@ public final class PhaseOneGameController extends GameController {
    * relative sweep of both translating circles over the same frame so fast ships and long frames do
    * not pass through each other. Astra sweeps the motion captured this frame by {@code advanceFlight}
    * ({@link AstraMotion}); each drone sweeps its fixed cardinal travel for the same active-seconds
-   * clamp that {@code advanceGhostwing} used this frame (the run clock does not advance between both
-   * calls, so the reconstruction is exact). A destroyed or protected Astra never collides; on a
+   * slice passed by {@code advanceCombat} (the run clock does not advance between both calls, so the
+   * reconstruction is exact). A destroyed or protected Astra never collides; on a
    * valid contact only the involved drone is removed, {@code destroyAstra()} runs once (idempotent)
    * and {@link #handleRespawns()} keeps the existing 3 s respawn with its 2 s invulnerability. Other
    * drones are not dragged by the explosion: each contacting drone is destroyed on its own and
    * nothing else receives area damage.
    */
-  private void resolveGhostwingContact(float frameDelta) {
+  private void resolveGhostwingContact(float activeSeconds) {
     if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
       return;
     }
-    float activeSeconds = Math.min(frameDelta, remainingRunSeconds());
     CollisionDetector.Circle astraFrom;
     CollisionDetector.Circle astraTo;
     AstraMotion motion = astraMotion;
@@ -294,19 +375,29 @@ public final class PhaseOneGameController extends GameController {
     }
   }
 
-  private void handleRespawns() {
-    if (astraCombat.readyToRespawn()) {
+  private void handleRespawns(int astraLivesRemaining) {
+    if (astraCombat.readyToRespawn() && astraLivesRemaining > 0) {
       astraCombat.respawn();
       astraHitFlash.clear();
       astra().placeAt(astraDeathX, astraDeathY, astraDeathYaw, WORLD);
       astraMotion = null;
     }
-    if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null) {
+    if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null
+        && !isRaiderRespawnClosed()) {
       raiderCombat.respawn();
       raiderHitFlash.clear();
       raiderEncounter.respawnAt(WORLD, astra().x() + astra().drawWidth() / 2f,
           astra().y() + astra().drawHeight() / 2f, bodyRadius(astra()));
     }
+  }
+
+  /**
+   * True once the raider must never reappear: the mission already has a terminal outcome or the
+   * approved three-kill goal has been reached. The single raider instance is kept either way, so no
+   * third enemy is created and no texture is loaded; only the respawn is withheld.
+   */
+  private boolean isRaiderRespawnClosed() {
+    return mission.isFinished() || mission.vesperKills() >= mission.vesperKillGoal();
   }
 
   private void destroyAstra() {
@@ -318,6 +409,9 @@ public final class PhaseOneGameController extends GameController {
     astraDeathX = astra().x();
     astraDeathY = astra().y();
     astraDeathYaw = astra().yawDegrees();
+    // The idempotent guard above makes this the single ACTIVE→DESTROYED transition, so exactly one
+    // life loss is queued even when a projectile and a contact resolve in the same frame.
+    pendingAstraLifeLosses++;
   }
 
   private void destroyRaider() {
@@ -332,7 +426,12 @@ public final class PhaseOneGameController extends GameController {
     raiderCombat.destroy();
     raiderHitFlash.clear();
     raiderEncounter.destroyActive();
-    pendingCombatPoints += score.awardRaiderDestroyed();
+    // One real destruction advances the mission counter exactly once, in the same transition that
+    // clears the encounter. The 1000-point bonus is tied to an accepted kill so a destruction after
+    // a terminal outcome neither counts nor scores, while kills 1/2/3 still award 1000 each.
+    if (mission.recordVesperKill()) {
+      pendingCombatPoints += score.awardRaiderDestroyed();
+    }
   }
 
   /**
@@ -554,13 +653,58 @@ public final class PhaseOneGameController extends GameController {
     return score.totalPoints();
   }
 
+  /** Vesper Raider destructions recorded by the mission, capped at the kill goal. */
+  public int vesperKills() {
+    return mission.vesperKills();
+  }
+
+  /** Vesper Raider destructions needed to win the mission. */
+  public int vesperKillGoal() {
+    return mission.vesperKillGoal();
+  }
+
+  /** Total game time the mission is allowed to last, in seconds (10:00). */
+  public float missionTimeLimitSeconds() {
+    return mission.timeLimitSeconds();
+  }
+
+  /** The mission outcome decided so far: in progress, or the single terminal WIN/LOSE result. */
+  public PhaseOutcome missionOutcome() {
+    return mission.outcome();
+  }
+
+  /**
+   * Resolves the mission for this frame from the authoritative lives and the time left in the run
+   * clock. Applies the approved priority (lives exhausted loses first, then the kill goal wins,
+   * then the expired clock loses) and is idempotent once an outcome is terminal. The screen and the
+   * lives child will call it once per active frame; this child only exposes the state and the rule.
+   */
+  public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
+    return mission.resolve(astraLivesRemaining, remainingRunSeconds());
+  }
+
+  /**
+   * Records one valid Vesper Raider destruction in the mission, counting each real kill exactly once
+   * up to the kill goal. Package-private seam used by the kill-counting and lives children and by
+   * the deterministic tests: the presentation must never mutate mission state on its own.
+   *
+   * @return {@code true} when this call advanced the kill counter
+   */
+  boolean recordVesperKill() {
+    return mission.recordVesperKill();
+  }
+
   /**
    * Advances the single raider toward Astra in world coordinates, supplying the player's centre,
    * velocity and body radius so the encounter can avoid a predicted ram. Projectile paths already
    * in flight are untouched by ship movement.
    */
   public void advanceEncounter(float deltaSeconds) {
-    if (!isRunStarted() || isRunFinished()) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
+      return;
+    }
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
       return;
     }
     float targetCenterX = astra().x() + astra().drawWidth() / 2f;
@@ -572,7 +716,7 @@ public final class PhaseOneGameController extends GameController {
       velocityX = (motion.afterX() - motion.beforeX()) / motion.duration();
       velocityY = (motion.afterY() - motion.beforeY()) / motion.duration();
     }
-    raiderEncounter.advance(deltaSeconds, WORLD, targetCenterX, targetCenterY,
+    raiderEncounter.advance(activeSeconds, WORLD, targetCenterX, targetCenterY,
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
   }
 
@@ -583,11 +727,13 @@ public final class PhaseOneGameController extends GameController {
    * positive or non-finite deltas are ignored, like every other phase-advance method.
    */
   public void advanceGhostwing(float deltaSeconds) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return;
     }
-    float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return;
+    }
     ghostwingEncounter.advance(activeSeconds, WORLD);
   }
 

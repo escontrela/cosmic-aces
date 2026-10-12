@@ -37,6 +37,26 @@ class RaiderEncounterTest {
   }
 
   @Test
+  void threeDestroyRespawnCyclesReuseTheSingleRaiderInstance() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+    assertNotNull(raider);
+
+    for (int life = 1; life <= 3; life++) {
+      encounter.destroyActive();
+      assertFalse(encounter.isActive(), "life " + life + " starts destroyed");
+      assertTrue(encounter.isDefeated());
+      encounter.respawnAt(WORLD, TARGET_X, TARGET_Y, 30f);
+      assertTrue(encounter.isActive(), "life " + life + " must be present after respawn");
+      assertSame(raider, encounter.raider(),
+          "life " + life + " must reuse the single persistent instance");
+      assertTrue(raider.centerX() >= 0f && raider.centerX() <= WORLD.width() + EPSILON);
+      assertTrue(raider.centerY() >= 0f && raider.centerY() <= WORLD.height() + EPSILON);
+    }
+  }
+
+  @Test
   void spawnsAheadOfTheTargetAndInsideTheWorld() {
     RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5s
     encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);

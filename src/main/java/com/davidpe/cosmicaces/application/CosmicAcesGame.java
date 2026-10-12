@@ -24,14 +24,14 @@ import java.util.List;
 public final class CosmicAcesGame extends Game {
 
   /**
-   * Placeholder number of lives for a new game. COS-16 explicitly defers the lives policy to a
-   * later product ticket, so this value is only what the model needs to create a state. No mechanic
-   * reads or changes lives yet and it has no player-visible effect.
+   * Lives Astra starts every PhaseOne mission with (COS-66): each destruction costs exactly one and
+   * an exhausted pool is a defeat. The coordinator owns the authoritative remaining lives; the
+   * screen decides where the pool reached zero.
    */
-  private static final int PLACEHOLDER_STARTING_LIVES = 1;
+  private static final int STARTING_LIVES = 3;
 
   private final GameEventBus bus = new GameEventBus();
-  private final GameCoordinator coordinator = new GameCoordinator(PLACEHOLDER_STARTING_LIVES);
+  private final GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES);
   private final ScreenFactory screenFactory = new ScreenFactory(coordinator, bus);
   private final List<Subscription> subscriptions = new ArrayList<>();
 

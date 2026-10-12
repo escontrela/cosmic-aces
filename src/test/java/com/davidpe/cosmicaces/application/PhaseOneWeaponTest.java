@@ -64,7 +64,7 @@ class PhaseOneWeaponTest {
     assertTrue(controller.astraGun().projectiles().isEmpty(), "no shots before the run");
 
     controller.start();
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
 
     frame(controller, 1f / 60f, true);
@@ -140,7 +140,7 @@ class PhaseOneWeaponTest {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.placeAstra(1600f, 100f, 0f);
     controller.start();
-    controller.advanceRun(59.95f);
+    controller.advanceRun(599.95f);
 
     float remaining = controller.remainingRunSeconds();
     assertTrue(remaining > 0f && remaining < 0.08f, "next cadence step must fall past the run end");
@@ -276,7 +276,7 @@ class PhaseOneWeaponTest {
     assertEquals(afterBurst, controller.astraGun().emissionCount(),
         "a held key without a real emission must not produce cues");
 
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
     for (int frame = 0; frame < 30; frame++) {
       frame(controller, 1f / 60f, true); // trigger still held after the end
@@ -314,7 +314,7 @@ class PhaseOneWeaponTest {
     controller.placeAstra(1600f, 6000f, 0f);
     controller.start();
     controller.advanceEncounter(3f);
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
 
     controller.advanceWeapons(1f / 60f, 0f, false, true, RANGE);
@@ -362,10 +362,10 @@ class PhaseOneWeaponTest {
     // Record a moving trajectory for the old life, then destroy and respawn the raider.
     controller.advanceEncounter(0.5f);
     controller.placeAstra(raider.x(), raider.y(), 0f);
-    controller.advanceCombat(1f / 60f); // hull contact destroys both ships
+    controller.advanceCombat(1f / 60f, 3); // hull contact destroys both ships
     assertFalse(controller.isRaiderActive());
-    controller.advanceCombat(3f); // Astra returns
-    controller.advanceCombat(2f); // Vesper returns at the 5-second mark
+    controller.advanceCombat(3f, 3); // Astra returns
+    controller.advanceCombat(2f, 3); // Vesper returns at the 5-second mark
     assertTrue(controller.isRaiderActive());
     VesperRaider respawned = controller.activeRaider();
     float newCenterX = respawned.centerX();
@@ -381,6 +381,35 @@ class PhaseOneWeaponTest {
       assertTrue(distance < 200f,
           "every shot must originate at the new life, not the pre-death trajectory");
     }
+  }
+
+  @Test
+  void aWholeBurstInOneFrameCountsExactlyOneVesperKill() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    VesperRaider raider = controller.activeRaider();
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+
+    // Burn two of the three damage steps with short frames: two full 35-point steps, no kill yet.
+    int guard = 0;
+    while (controller.raiderCombat().energyPercent() > 30 && guard < 1800) {
+      controller.advanceWeapons(1f / 60f, 1f / 60f, true, false, RANGE);
+      guard++;
+    }
+    assertEquals(30, controller.raiderCombat().energyPercent(), "two damage steps landed");
+    assertEquals(0, controller.vesperKills());
+
+    // One long frame fires a whole burst whose projectiles reach the same hull together; the many
+    // impacts on that frame are one destruction, never one per projectile.
+    controller.advanceWeapons(1f, 1f, true, false, RANGE);
+    assertTrue(controller.raiderCombat().isDestroyed(), "the burst finishes Vesper in one frame");
+    assertEquals(1, controller.vesperKills(), "many impacts in one frame count one kill");
+    assertEquals(1000, controller.scorePoints(), "the kill bonus is awarded exactly once");
+    assertFalse(controller.isRaiderActive());
   }
 
   private static float originDistance(GunProjectile a, GunProjectile b) {

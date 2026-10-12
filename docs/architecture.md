@@ -174,12 +174,12 @@ símbolo único por grupo del minimapa.
 
 `PhaseOneGameController` posee un `GhostwingEncounter` con fuente de aleatoriedad
 propia (constructor de dos `UnitRandom`, uno por encuentro). `advanceGhostwing(dt)`
-alimenta solo la porción activa de la fase (`Math.min(dt, remainingRunSeconds())`) y
-no toca armas, puntuación, cámara ni el Raider; `ghostwingEncounter()` expone el
-encuentro para presentación y pruebas. `PhaseOneScreen` llama a
-`advanceGhostwing(delta)` una vez por frame dentro del recorrido, junto a
-`advanceEncounter`; dibujar sprites, explosiones y marcador de minimapa pertenece a
-la hija de presentación.
+alimenta solo el tramo activo de la fase (acotado por el frame abierto o, fuera de
+él, por `remainingRunSeconds()`) y no toca armas, puntuación, cámara ni el Raider;
+`ghostwingEncounter()` expone el encuentro para presentación y pruebas.
+`PhaseOneScreen` llama a `advanceGhostwing(delta)` una vez por frame dentro del
+recorrido, junto a `advanceEncounter`; dibujar sprites, explosiones y marcador de
+minimapa pertenece a la hija de presentación.
 
 ### Combate Ghostwing en PhaseOne (COS-47)
 
@@ -200,7 +200,7 @@ bonus de 1000 puntos. `destroyGhostwingDrone(id, cause)` elimina el dron vivo, e
 existente y solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de
 ambos círculos traslatorios sobre el mismo frame (`CollisionDetector.sweep`): Astra
 barre su `AstraMotion` recién capturada por `advanceFlight` y cada dron se reconstruye
-restando su vector cardinal fijo × `DRONE_SPEED` × los mismos segundos activos que usó
+restando su vector cardinal fijo × `DRONE_SPEED` × el mismo tramo activo que recibió
 `advanceGhostwing`, por lo que ni la velocidad ni los frames largos atraviesan el casco.
 En un contacto válido se destruye solo el dron implicado (causa `COLLISION`, cero
 puntos) y se llama al `destroyAstra()` existente; `handleRespawns()` mantiene la
@@ -394,7 +394,7 @@ destruye a ninguna (CA15). `destroyRaider()` llama a `score.awardRaiderDestroyed
 (+1000, una vez por vida) y el controlador expone el bonus pendiente con
 `drainCombatPoints()`, que la pantalla publica como `PointsEarned`; no se emite
 `LifeLost` por estas muertes. Astra destruida congela su posición (la cámara la sigue),
-no vuela ni dispara y el reloj de 60 s continúa; reaparece vía `placeAt` en la misma
+no vuela ni dispara y el reloj de 10:00 continúa; reaparece vía `placeAt` en la misma
 posición/rumbo. `RaiderEncounter.destroyActive()` conserva la instancia y sus
 Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige con
 `UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
@@ -463,6 +463,142 @@ con los puntos de vuelo antes de publicar `PointsEarned`; no dibuja a Astra cuan
 `isAstraActive()` es falso y la coincidencia visible (`shipsCoincidentVisible`)
 también exige a Astra activa. La explosión gráfica, el parpadeo y el HUD de energía
 quedan descritos en la sección «Explosiones, parpadeo y energía integrados (COS-33)».
+
+### Bajas de Vesper conectadas a la misión (COS-68)
+
+`PhaseOneGameController.destroyRaider()` es el único punto de transición «vida → destruido» del
+Raider, se invoque por proyectil de Astra o por contacto de cascos. Ahí, tras validar
+ACTIVE→DESTROYED, guardar el centro de muerte, destruir el encuentro y limpiar el destello, la baja
+pasa por `PhaseOneMission.recordVesperKill()`: cada destrucción real cuenta una sola vez hasta la
+meta de 3, y el bonus de 1000 de `PhaseScore.awardRaiderDestroyed()` se concede **solo si la baja
+fue aceptada**, de modo que una destrucción posterior a un desenlace terminal ni cuenta ni puntúa.
+El contador no se infiere del bonus 1000, del frame de explosión ni de `raiderVisible`.
+
+`handleRespawns()` conserva la única instancia de `RaiderEncounter` y el `ShipCombatState.vesper()`
+para las vidas 2 y 3 (espera de 5 s, energía al 100 % y un punto válido del mundo), pero
+`isRaiderRespawnClosed()` interrumpe esa reaparición en cuanto `vesperKills >= 3` o la misión quedó
+terminal por cualquier causa (vidas agotadas o reloj expirado): tras la tercera baja Vesper no
+reaparece, no se crea una cuarta vida ni un segundo enemigo, y no se cargan texturas nuevas. Los
+proyectiles ya emitidos no re-impactan sobre restos del mismo frame: `activeRaider()` es null al
+morir, `destroyRaider()` es idempotente y cada proyectil impacta como máximo una vez. El desenlace
+por tiempo/vidas y su gating en pantalla pertenecen a las hijas COS-69/COS-70.
+
+### Vidas reales de Astra (COS-69)
+
+`CosmicAcesGame` concede 3 vidas iniciales a cada partida (el valor provisional anterior era 1). El
+`GameCoordinator` sigue siendo la única fuente de vidas persistentes: `PhaseOneScreen` lee el recuento
+autoritativo del snapshot al empezar cada frame y lo pasa a
+`PhaseOneGameController.advanceCombat(delta, astraLivesRemaining)`, de modo que `handleRespawns()` solo
+devuelve a Astra al mundo mientras queden vidas; con 0 no reaparece aunque el reloj de 10:00 siga
+corriendo y el estado de combate no aplica más daño a la nave destruida.
+
+`destroyAstra()` es el único punto de transición ACTIVE→DESTROYED (proyectil de Vesper, contacto de
+cascos con el Raider o con un dron Ghostwing) y ya es idempotente: encola exactamente una pérdida por
+transición, que la pantalla drena con `drainAstraLifeLosses()`. `PhaseOneScreen` publica un `LifeLost`
+por entrada drenada, después de `advanceCombat` y de `advanceWeapons` y antes de leer el snapshot, de
+modo que el coordinador y `PhaseCompleted` siempre ven la vida ya descontada y varios impactos sobre el
+mismo cuerpo no restan vidas extra. Inmediatamente después la pantalla resuelve el desenlace con las
+vidas autoritativas (`resolveMissionOutcome`); la prioridad (0 vidas ⇒ LOSE antes de la 3ª baja, luego
+la meta, luego el reloj) vive en `PhaseOneMission.resolve`. El panel WIN/LOSE visible corresponde al
+hijo de flujo de pantalla.
+
+### Ciclo de misión en pantalla (COS-70)
+
+`infrastructure.gdx.screen.PhaseOneScreenFlow` es la regla pura (sin LibGDX) del ciclo de la
+pantalla: `Stage` = `INTRO` (panel de objetivo), `PLAYING` (misión activa) y `RESULT` (panel
+congelado). También posee el latch de ESPACIO: una pulsación solo actúa después de que la tecla se
+haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara y la que dispara el
+golpe final no confirma el panel. Sustituye al antiguo `boolean runFinished`. `ScreenFactory` ya no
+llama a `controller.start()` al construir la pantalla; el inicio ocurre en `PhaseOneScreen` al
+consumir la primera pulsación de ESPACIO, y ese mismo frame simula 0 segundos y no emite disparos.
+
+El orden del frame es: `activeSeconds = min(delta, remainingRunSeconds())` una vez; vuelo,
+encuentro, drones y combate con esa porción; publicación de `LifeLost`/`PointsEarned`; una sola
+llamada a `advanceWeapons(activeSeconds, activeSeconds, flow.fireTrigger(...), ...)` en la que
+proyectiles existentes y emisiones comparten el corte del reloj (así un impacto posterior a 00:00 no
+se resuelve y no puede otorgar victoria tardía); nuevas publicaciones de `LifeLost`/`PointsEarned`;
+y por último `resolveMissionOutcome` con las vidas autoritativas. Si el desenlace es terminal,
+`completeRun()` publica una única `PhaseCompleted` con el snapshot ya actualizado y congela el
+estado. `advanceHitFeedback` y las animaciones de explosión siguen avanzando por presentación. La
+prioridad del resultado (0 vidas ⇒ LOSE antes de la 3ª baja, meta ⇒ WIN, reloj expirado ⇒ LOSE) vive
+en `PhaseOneMission`.
+
+`PhaseOneScreen` dibuja ambos paneles bajo la proyección HUD existente con `GlyphLayout` medido
+contra `hudViewport` (soporta resize) y fondo translúcido, sin ocultar del todo los indicadores: el
+de objetivo resume la meta, las vidas y el límite; el de resultado lee `controller.missionOutcome()`
+y muestra `WIN`/`LOSE`. ESPACIO (pulsación nueva) publica `GameAbandoned` y vuelve a Welcome; ESC
+abandona desde cualquier estado. Al volver a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
+nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
+
+### HUD de misión en pantalla (COS-71)
+
+`infrastructure.gdx.screen.MissionHud` es el HUD fijo de misión de PhaseOne, dibujado bajo la misma
+proyección HUD de `hudViewport`: icono pequeño de Vesper con bajas `0/3 … 3/3`, icono pequeño de
+Astra con vidas `3 … 0` y reloj `10:00 … 00:00`. No posee recursos nativos: los iconos son las
+regiones neutras sin fuego prestadas de `Astra.Visuals` y `VesperRaider.Visuals` (propiedad de la
+pantalla, que sigue creando y liberando las texturas); el icono de Vesper se rota 180° para que la
+región orientada a descenso apunte arriba sin mutar la región compartida. Nada aquí carga ni libera
+texturas y tampoco se duplican contadores: el `record MissionHud.Readout` captura una única lectura
+por frame (`vesperKills`/`vesperKillGoal` del controlador, `lives` del snapshot del coordinador,
+`remainingRunSeconds` del reloj de dominio) y la pantalla la construye una vez al final del frame con
+el mismo `PhaseResult` que alimenta `drawScore`. `PhaseOneScreen` no vuelve a sumar ni restar vidas,
+bajas o tiempo.
+
+El reloj formatea segundos pendientes con `ceil` a `MM:SS` de dos dígitos (`10:00`, `09:59`, `01:00`,
+`00:00`; sin `09:60`, sin negativos; valores no finitos o ≤ 0 → `00:00`) usando la misma fuente de
+tiempo del dominio. Las lecturas no se avanzan fuera de `PLAYING` (el `PhaseOneScreenFlow` corta la
+simulación), por lo que INTRO muestra 0/3 + 3 vidas + 10:00 y RESULT muestra los valores congelados
+del desenlace. El layout es una función pura del ancho/altura del `hudViewport` y de los anchos
+medidos con `GlyphLayout`: contadores en la banda superior izquierda, reloj centrado en la línea
+superior (con separación mínima de los contadores y margen derecho) y score existente arriba a la
+derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redimensionar (800×600,
+1024×768, 1920×1080). El dibujo respeta `begin/end` del `SpriteBatch` y restaura color de fuente y
+batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
+inicial autoritativa; la legibilidad visual es del PO.
+
+### HUD de enfrentamiento del Vesper (COS-72)
+
+`infrastructure.gdx.screen.EnemyStatusHud` es el bloque de combate enemigo de PhaseOne, dibujado
+bajo la misma proyección HUD de `hudViewport` solo cuando Astra y el Vesper Raider vivo coinciden en
+la vista rotada real de la cámara: el título `VESPER RAIDER` y su energía restante como porcentaje
+entero (`100% … 0%`). No posee recursos nativos ni lectura dual: la pantalla calcula una sola vez por
+frame (`astraInCamera()` y `raiderVisible()`, hechos de presencia+visibilidad por nave bajo la cámara
+que ese frame dibuja) y los combina con `flow.isPlaying()` en la regla pura
+`EnemyStatusHud.show(playing, astraInCombat, raiderInCombat)`. El bloque queda oculto durante INTRO,
+RESULT, antes de la primera aparición, fuera de cámara, con Astra destruida o fuera de vista, entre
+respawns y tras la destrucción final; el porcentaje se lee de `raiderCombat().energyPercent()` (pasos
+100→65→30→0, respawn a 100) después de resolver los impactos del frame y antes de pintar el HUD, con
+clamp 0–100 en el `record Readout`. Es independiente del `ENERGIA NN%` de Astra (`FlightHud`): el
+bloque enemigo lleva su propio título y color para que no puedan confundirse y no crea ninguna barra
+de jefe.
+
+El layout es una función pura del `hudViewport` y de los anchos medidos con `GlyphLayout`: ambas
+líneas quedan centradas en la banda superior-media, por debajo de los contadores/reloj de COS-71 y de
+la fila del score, y por encima de la banda inferior (rumbo/velocidad/energía/arma) y del minimapa,
+también al redimensionar (800×600, 1024×768, 1920×1080). El dibujo respeta `begin/end` del
+`SpriteBatch` y restaura color de fuente y batch; `PhaseOneScreen.raiderVisible()` se hizo null-safe
+al reutilizarla (devuelve `false` sin Raider activo) y `shipsCoincidentVisible()` delega ahora en
+`astraInCamera() && raiderVisible()` sin cambiar su semántica. `EnemyStatusHudTest` cubre la regla de
+visibilidad (INTRO/RESULT, antes de spawn, tras destrucción esperando respawn, Astra no visible y
+coincidencia real), el formato con clamp y el layout sin colisiones; la legibilidad visual es del PO.
+
+### Tramo activo autorizado del frame (COS-73)
+
+`PhaseOneGameController.beginActiveFrame(activeSeconds)` / `endActiveFrame()` abren y cierran el
+frame de simulación. `PhaseOneScreen.render()` calcula el tramo activo una sola vez
+(`activeRunSeconds(delta)`, acotado por el tiempo restante), lo abre al empezar a simular y lo cierra
+tras resolver el desenlace; mientras el frame está abierto, `advanceFlight`, `advanceEncounter`,
+`advanceGhostwing` y `advanceCombat` (y `resolveGhostwingContact`) consumen exactamente ese tramo
+mediante `boundedActiveSeconds`, sin volver a derivarlo de `PlayableRun.remainingRunSeconds()` ni
+salir por `isRunFinished()`. Así, un delta que alcanza 00:00 durante el vuelo no recorta el
+movimiento, el encuentro, los drones, los temporizadores, las colisiones ni las armas del mismo
+frame: todos simulan el tramo autorizado una sola vez y después se resuelve el desenlace
+(`PhaseOneMission` conserva la prioridad 0 vidas → LOSE, 3 bajas → WIN, reloj 0 → LOSE). Fuera de un
+frame (llamadas directas, p. ej. pruebas deterministas) no hay tramo autorizado: cada método acota el
+delta con el reloj y un recorrido ya terminado no avanza nada, preservando el contrato previo. En los
+frames siguientes el tramo es cero y ningún subsistema avanza naves, combate, disparos ni puntos.
+`PhaseOneActiveSliceTest` cubre el cruce del límite (mismo tramo para todos, tope del tramo,
+congelación con tramo cero) y el tercer derribo dentro del tramo hacia WIN o LOSE.
 
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
@@ -776,7 +912,8 @@ com.davidpe.cosmicaces
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
-|   +-- PhaseOneGameController extends GameController: encuentros, armas y combate de PhaseOne.
+|   +-- PhaseOneGameController extends GameController: encuentros, armas, combate y misión de PhaseOne.
+|       0. beginActiveFrame() / endActiveFrame(): tramo activo autorizado del frame.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
 |       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
@@ -784,6 +921,8 @@ com.davidpe.cosmicaces
 |       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
 |       18. raiderGun()  19. advanceHitFeedback()
 |       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
+|       22. vesperKills()  23. vesperKillGoal()  24. missionTimeLimitSeconds()
+|       25. missionOutcome()  26. resolveMissionOutcome()
 |
 +-- domain
 |   +-- game
@@ -791,8 +930,11 @@ com.davidpe.cosmicaces
 |   |   |   1. changePhase()  2. addPoints()  3. loseLife()
 |   |   |   4. completePhase()  5. snapshot()
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
-|   |   +-- PlayableRun: recorrido actual de 60 segundos.
+|   |   +-- PlayableRun: reloj del recorrido, límite de 10 minutos (600 s).
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
+|   |   +-- PhaseOneMission: objetivo de la misión (3 bajas en 600 s) y desenlace único.
+|   |   |   1. recordVesperKill()  2. resolve()  3. vesperKills()  4. outcome()
+|   |   +-- PhaseOutcome [enum]: IN_PROGRESS | WIN | LOSE.
 |   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
 |   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
 |   |   |   4. awardGhostwingDestroyed()
@@ -943,6 +1085,11 @@ com.davidpe.cosmicaces
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
             |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
+            |   11. completeRun()  12. drawObjectivePanel()  13. drawResultPanel()
+            |   14. drawOverlayPanel()
+            +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
+            |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
+            |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
@@ -956,8 +1103,12 @@ com.davidpe.cosmicaces
             +-- FlightCamera: aplica el estado a OrthographicCamera.
             |   1. update()
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
-                1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
-                5. draw()  6. drawScore()
+            |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
+            |   5. draw()  6. drawScore()
+            +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
+            |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
+            +-- EnemyStatusHud: VESPER RAIDER + energía % durante el enfrentamiento (COS-72).
+            |   1. show()  2. Readout.energyLabel()  3. layout()  4. draw()
             +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
                 4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
@@ -970,9 +1121,11 @@ com.davidpe.cosmicaces
 
 ## Comportamiento provisional actual
 
-PlayableRun fija la duración en 60 segundos. Al terminar la fase, GameCoordinator
-cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el mensaje
-final hasta abandonar. Todavía no existe una pantalla de game over ni hall of fame.
+PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la misión de PhaseOne).
+PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al terminar, GameCoordinator
+cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el panel WIN/LOSE hasta que una
+pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe una pantalla de game over ni
+hall of fame.
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.
 

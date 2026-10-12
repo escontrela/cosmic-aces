@@ -36,7 +36,8 @@ class PhaseOneScoringTest {
     controller.placeAstra(1600f, 100f, 0f);
     controller.start();
 
-    for (int second = 0; second < 60; second++) {
+    // A whole 10-minute run: 600 complete run seconds, the first 2 of them visibly coincident.
+    for (int second = 0; second < 600; second++) {
       boolean coincident = second < 2;
       int earned = controller.advanceFlight(FlightControls.neutral(), 1f, coincident);
       if (earned > 0) {
@@ -47,8 +48,8 @@ class PhaseOneScoringTest {
       }
     }
 
-    // 60 complete run seconds (60) plus 2 visible coincidence seconds (20).
-    assertEquals(80, coordinator.state().points());
+    // 600 complete run seconds (600) plus 2 visible coincidence seconds (20).
+    assertEquals(620, coordinator.state().points());
     assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
   }
 }
