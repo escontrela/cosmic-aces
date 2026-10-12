@@ -147,6 +147,79 @@ public final class HeroShipSheet {
     return List.of(NORMAL_FIRING, ACCELERATE_FIRING);
   }
 
+  /** F-16 MLU 755 normal-flight sheet (v4 art); five poses in the shared left-to-right order. */
+  public static final Sheet F16_NORMAL = new Sheet(
+      "assets/images/player/hero_ship_v4.png", 2078, 757,
+      List.of(
+          new Slice(24, 67, 363, 624),
+          new Slice(411, 64, 423, 630),
+          new Slice(851, 64, 365, 629),
+          new Slice(1244, 98, 385, 570),
+          new Slice(1652, 101, 387, 568)));
+
+  /** F-16 MLU 755 accelerate sheet, with the engine flame lit. */
+  public static final Sheet F16_ACCELERATE = new Sheet(
+      "assets/images/player/hero_ship_v4_accelerate.png", 2078, 757,
+      List.of(
+          new Slice(21, 67, 369, 619),
+          new Slice(405, 67, 427, 619),
+          new Slice(843, 67, 372, 619),
+          new Slice(1240, 101, 382, 563),
+          new Slice(1648, 101, 380, 569)));
+
+  /** F-16 MLU 755 normal-flight firing sheet, including both lateral muzzle flashes. */
+  public static final Sheet F16_NORMAL_FIRING = new Sheet(
+      "assets/images/player/hero_ship_v4_firing.png", 2078, 757,
+      List.of(
+          new Slice(24, 67, 363, 624),
+          new Slice(411, 64, 423, 630),
+          new Slice(851, 64, 365, 629),
+          new Slice(1244, 98, 385, 570),
+          new Slice(1652, 101, 387, 568)));
+
+  /** F-16 MLU 755 accelerated-flight firing sheet; shares the flight cuts per pose. */
+  public static final Sheet F16_ACCELERATE_FIRING = new Sheet(
+      "assets/images/player/hero_ship_v4_accelerate_firing.png", 2078, 757,
+      List.of(
+          new Slice(21, 67, 369, 619),
+          new Slice(405, 67, 427, 619),
+          new Slice(843, 67, 372, 619),
+          new Slice(1240, 101, 382, 563),
+          new Slice(1648, 101, 380, 569)));
+
+  /**
+   * The four sprite sheets of one Astra visual model plus its per-pose firing registration. The
+   * model selected in settings only changes this appearance family; flight, collisions and weapons
+   * are shared, so switching families never alters the stable draw box.
+   */
+  public record Family(Sheet normal, Sheet accelerate, Sheet normalFiring,
+      Sheet accelerateFiring, List<FiringPlacement> placements) {
+
+    public Family {
+      if (placements.size() != Pose.values().length * 2) {
+        throw new IllegalArgumentException(
+            "A family needs one firing placement per pose and speed family, got "
+                + placements.size());
+      }
+      placements = List.copyOf(placements);
+    }
+
+    /** The cruising ({@code accelerating == false}) or accelerated flight sheet. */
+    public Sheet flight(boolean accelerating) {
+      return accelerating ? accelerate : normal;
+    }
+
+    /** The firing sheet of the given speed family. */
+    public Sheet firing(boolean accelerating) {
+      return accelerating ? accelerateFiring : normalFiring;
+    }
+
+    /** Registration that anchors a firing pose on its flight counterpart. */
+    public FiringPlacement firingPlacement(Pose pose, boolean accelerating) {
+      return placements.get(pose.ordinal() + (accelerating ? Pose.values().length : 0));
+    }
+  }
+
   /**
    * The two measured M61 Vulcan cannon mouths per pose, ordered left then right. Lateral and forward
    * are fractions of the stable draw box center, so every pose and speed variant shares the same
@@ -186,8 +259,43 @@ public final class HeroShipSheet {
 
   /** Correction that keeps the firing variant anchored on its speed family's flight pose. */
   public static FiringPlacement firingPlacement(Pose pose, boolean accelerating) {
-    int index = pose.ordinal() + (accelerating ? Pose.values().length : 0);
-    return FIRING_PLACEMENTS.get(index);
+    return ORIGINAL_FAMILY.firingPlacement(pose, accelerating);
+  }
+
+  /**
+   * Firing registration of the v4 family. Measured on the bundled PNGs, both speed families share
+   * exact cuts with their firing sheets, so no correction is required.
+   */
+  private static final List<FiringPlacement> F16_PLACEMENTS = List.of(
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f),
+      new FiringPlacement(0f, 0f));
+
+  /** The original Astra model, backed by the bundled v3 sheets. */
+  private static final Family ORIGINAL_FAMILY = new Family(
+      NORMAL, ACCELERATE, NORMAL_FIRING, ACCELERATE_FIRING, FIRING_PLACEMENTS);
+
+  /** The F-16 MLU 755 model, backed by the bundled v4 sheets. */
+  private static final Family F16_FAMILY = new Family(
+      F16_NORMAL, F16_ACCELERATE, F16_NORMAL_FIRING, F16_ACCELERATE_FIRING, F16_PLACEMENTS);
+
+  /** The sheet family of the chosen Astra model; a null or unknown selection uses the original. */
+  public static Family family(AstraVariant variant) {
+    return variant == AstraVariant.F16_MLU_755 ? F16_FAMILY : ORIGINAL_FAMILY;
+  }
+
+  /** All four sheets of the chosen model: normal, accelerate, normal firing, accelerate firing. */
+  public static List<Sheet> sheets(AstraVariant variant) {
+    Family family = family(variant);
+    return List.of(
+        family.normal(), family.accelerate(), family.normalFiring(), family.accelerateFiring());
   }
 
   private HeroShipSheet() {}

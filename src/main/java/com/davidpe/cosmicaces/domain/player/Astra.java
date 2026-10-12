@@ -20,6 +20,7 @@ public final class Astra extends Ship {
   private static final int MAX_REGION_HEIGHT = maxRegionHeight();
 
   private Visuals visuals;
+  private AstraVariant variant = AstraVariant.ORIGINAL;
   private HeroShipSheet.Pose pose = HeroShipSheet.Pose.NEUTRAL;
   private boolean accelerating;
   private boolean muzzleFlashVisible;
@@ -55,6 +56,7 @@ public final class Astra extends Ship {
 
   public void setVisuals(Visuals visuals) {
     this.visuals = visuals;
+    this.variant = visuals == null ? AstraVariant.ORIGINAL : visuals.variant();
   }
 
   /** Presentation flag driven by the cannon's own emission pulse; never independently timed. */
@@ -249,7 +251,8 @@ public final class Astra extends Ship {
     if (!muzzleFlashVisible) {
       return centered;
     }
-    HeroShipSheet.FiringPlacement firing = HeroShipSheet.firingPlacement(pose, accelerating);
+    HeroShipSheet.FiringPlacement firing =
+        HeroShipSheet.family(variant).firingPlacement(pose, accelerating);
     return new SpritePlacement(centered.scale(),
         firing.offsetXPx() * centered.scale(), firing.offsetYPx() * centered.scale());
   }
@@ -276,6 +279,7 @@ public final class Astra extends Ship {
 
   /** Loads flight and firing variants once; the owning screen disposes all four textures. */
   public static final class Visuals implements Disposable {
+    private final AstraVariant variant;
     private final Texture normalTexture;
     private final Texture accelerateTexture;
     private final Texture normalFiringTexture;
@@ -286,15 +290,26 @@ public final class Astra extends Ship {
     private final TextureRegion[] accelerateFiring;
 
     public Visuals() {
-      normalTexture = new Texture(Gdx.files.internal(HeroShipSheet.NORMAL.internalPath()));
+      this(AstraVariant.ORIGINAL);
+    }
+
+    /** Loads the four texture sheets of the chosen Astra model. */
+    public Visuals(AstraVariant variant) {
+      this.variant = variant == null ? AstraVariant.ORIGINAL : variant;
+      HeroShipSheet.Family family = HeroShipSheet.family(this.variant);
+      HeroShipSheet.Sheet normalSheet = family.normal();
+      HeroShipSheet.Sheet accelerateSheet = family.accelerate();
+      HeroShipSheet.Sheet normalFiringSheet = family.normalFiring();
+      HeroShipSheet.Sheet accelerateFiringSheet = family.accelerateFiring();
+      normalTexture = new Texture(Gdx.files.internal(normalSheet.internalPath()));
       Texture loadedAccelerate = null;
       Texture loadedNormalFiring = null;
       Texture loadedAccelerateFiring = null;
       try {
-        loadedAccelerate = new Texture(Gdx.files.internal(HeroShipSheet.ACCELERATE.internalPath()));
-        loadedNormalFiring = new Texture(Gdx.files.internal(HeroShipSheet.NORMAL_FIRING.internalPath()));
+        loadedAccelerate = new Texture(Gdx.files.internal(accelerateSheet.internalPath()));
+        loadedNormalFiring = new Texture(Gdx.files.internal(normalFiringSheet.internalPath()));
         loadedAccelerateFiring = new Texture(
-            Gdx.files.internal(HeroShipSheet.ACCELERATE_FIRING.internalPath()));
+            Gdx.files.internal(accelerateFiringSheet.internalPath()));
       } catch (RuntimeException | Error error) {
         if (loadedAccelerateFiring != null) loadedAccelerateFiring.dispose();
         if (loadedNormalFiring != null) loadedNormalFiring.dispose();
@@ -305,10 +320,15 @@ public final class Astra extends Ship {
       accelerateTexture = loadedAccelerate;
       normalFiringTexture = loadedNormalFiring;
       accelerateFiringTexture = loadedAccelerateFiring;
-      normal = regions(HeroShipSheet.NORMAL, normalTexture);
-      accelerate = regions(HeroShipSheet.ACCELERATE, accelerateTexture);
-      normalFiring = regions(HeroShipSheet.NORMAL_FIRING, normalFiringTexture);
-      accelerateFiring = regions(HeroShipSheet.ACCELERATE_FIRING, accelerateFiringTexture);
+      normal = regions(normalSheet, normalTexture);
+      accelerate = regions(accelerateSheet, accelerateTexture);
+      normalFiring = regions(normalFiringSheet, normalFiringTexture);
+      accelerateFiring = regions(accelerateFiringSheet, accelerateFiringTexture);
+    }
+
+    /** The Astra model whose sheets these regions belong to. */
+    public AstraVariant variant() {
+      return variant;
     }
 
     private TextureRegion region(HeroShipSheet.Pose pose, boolean accelerating) {
