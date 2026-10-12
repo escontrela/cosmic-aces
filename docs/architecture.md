@@ -620,6 +620,30 @@ dibuja el `TextureRegion` por defecto con su fila superior arriba (mayor Y del m
 consulta la nave ni altera el mundo; la pantalla, el selector y el cargador de las hijas siguientes
 lo consumen. La comprobación visual de orientación y continuidad corresponde al PO humano.
 
+### Selección de tiles visibles y precarga (COS-83)
+
+`infrastructure.gdx.screen.PhaseOneTerrainPlanner` es la política pura de selección del mapa: sin
+`Texture`, sin LibGDX y sin estado mutable, se prueba sin arrancar la ventana y consume solo el
+catálogo de COS-82. Su `Camera(worldX, worldY, upX, upY, zoom, viewWidth, viewHeight)` replica lo
+que `FlightCamera` publica a LibGDX y `viewWidth/viewHeight` es el tamaño lógico real del
+`ScreenViewport` (ventana grande muestra más mundo). `visibleCorners` reconstruye el rectángulo
+rotado de la vista con `right=(upY,-upX)`, `up=(upX,upY)` y semiejes `viewWidth/2*zoom` y
+`viewHeight/2*zoom`, igual que `CameraVisibility`; `Bounds` calcula su AABB conservador y lo recorta
+a `[0,8192]×[0,12000]`, de modo que ninguna esquina visible queda fuera del conjunto y nunca se
+piden índices fuera de 1..16/1..8.
+
+`plan(camera)` y `plan(camera, travelX, travelY)` (por defecto la dirección de avance de la cámara)
+devuelven un `Plan` con tres zonas concéntricas que son la histéresis de la caché futura:
+`visible` (tiles que intersecan el AABB recortado, ordenados del más cercano a la cámara al más
+lejano), `prefetch` (un anillo de tiles alrededor de lo visible, ordenado delantero > lateral/trasero
+según la dirección de desplazamiento reciente) y `retained` (dos anillos alrededor de lo visible;
+`retains(tile)` es la condición de conservación, de modo que una oscilación sobre una frontera no
+recarga la textura). Visibles ⊂ precarga ⊂ retención; lo visible nunca se filtra por presupuesto
+fijo. El plano no dibuja, no carga texturas ni conecta con la pantalla: el cargador y la integración
+de render pertenecen a COS-84/COS-85. `PhaseOneTerrainPlannerTest` cubre yaw 0/45/90/135/180/270°,
+zoom 1/1,15/1,25, viewport 1024×768 y 1920×1080, fronteras del mundo, avance, inversión de rumbo y
+vuelta a tiles previos, y exige que toda esquina visible quede cubierta.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
