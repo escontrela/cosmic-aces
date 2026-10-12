@@ -45,6 +45,24 @@ public final class VesperRaider extends Ship {
   /** Whether the yaw pose is latched on, held with hysteresis around the angular dead band. */
   private boolean yawPoseActive;
 
+  /**
+   * Immutable snapshot of one emission instant: the stable body centre, the descent heading and the
+   * latched pose that selects the measured cannon mouths. The encounter records one per bounded
+   * substep so a fast frame can be sampled between its endpoints instead of freezing every shot on
+   * the frame's final state.
+   */
+  public record ShotSample(float centerX, float centerY, float headingDegrees,
+      VesperRaiderSheet.Pose pose) {
+    public ShotSample {
+      if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
+        throw new IllegalArgumentException("Shot sample centre and heading must be finite");
+      }
+      if (pose == null) {
+        throw new IllegalArgumentException("Shot sample pose is required");
+      }
+    }
+  }
+
   public VesperRaider(float speed, float width, float height, float x, float y,
       float headingDegrees) {
     super(speed, x, y, width, height, VesperRaiderSheet.maxSliceWidth(),
@@ -122,6 +140,11 @@ public final class VesperRaider extends Ship {
   /** World Y of the ship's stable body centre. */
   public float centerY() {
     return y() + drawHeight() / 2f;
+  }
+
+  /** Captures the current body centre, heading and latched pose for a later historical shot. */
+  public ShotSample captureShotSample() {
+    return new ShotSample(centerX(), centerY(), headingDegrees, pose());
   }
 
   /** Records the side of the current drift so the banked pose can reflect it. */
@@ -279,6 +302,24 @@ public final class VesperRaider extends Ship {
    * @param range travel distance frozen into each projectile
    */
   public GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees, float range) {
+    return shotAt(centerX, centerY, headingDegrees, pose(), range);
+  }
+
+  /**
+   * Builds a two-cannon emission snapshot from a previously {@link #captureShotSample() captured}
+   * sample, using its historical heading and latched pose instead of the live mutable state. A frame
+   * that turns or moves can therefore emit from the exact point and pose that was valid at each
+   * offset, and a later respawn can never rewrite an already-taken sample.
+   */
+  public GunBurst.Shot shotAt(ShotSample sample, float range) {
+    if (sample == null) {
+      throw new IllegalArgumentException("Shot sample is required");
+    }
+    return shotAt(sample.centerX(), sample.centerY(), sample.headingDegrees(), sample.pose(), range);
+  }
+
+  private GunBurst.Shot shotAt(float centerX, float centerY, float headingDegrees,
+      VesperRaiderSheet.Pose pose, float range) {
     if (!Float.isFinite(centerX) || !Float.isFinite(centerY) || !Float.isFinite(headingDegrees)) {
       throw new IllegalArgumentException("Shot center and heading must be finite");
     }
@@ -287,7 +328,7 @@ public final class VesperRaider extends Ship {
     float forwardY = (float) -Math.cos(radians);
     float rightX = (float) Math.cos(radians);
     float rightY = (float) Math.sin(radians);
-    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose());
+    List<VesperRaiderSheet.CannonMouth> mouths = VesperRaiderSheet.cannonMouths(pose);
     List<GunBurst.Muzzle> muzzles = new ArrayList<>(mouths.size());
     for (VesperRaiderSheet.CannonMouth mouth : mouths) {
       float lateral = mouth.lateral() * drawWidth();

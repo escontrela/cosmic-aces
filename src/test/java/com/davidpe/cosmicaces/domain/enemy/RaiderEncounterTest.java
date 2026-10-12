@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.domain.enemy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -9,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import java.util.EnumSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -728,6 +730,104 @@ class RaiderEncounterTest {
           "heading jumped from " + previous + " to " + current + " (" + turn + " deg)");
       previous = current;
     }
+  }
+
+  @Test
+  void shotSamplingInterpolatesTheMovementAndHeadingOfOneFrame() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3 s
+    encounter.advance(3f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+    float beforeCenterX = raider.centerX();
+    float beforeCenterY = raider.centerY();
+    float beforeHeading = raider.headingDegrees();
+
+    // A far target to the right forces a hard turn and a long displacement in this frame.
+    encounter.advance(0.85f, WORLD, raider.centerX() + 4000f, raider.centerY(),
+        0f, 0f, 0f, 0f);
+    float afterCenterX = raider.centerX();
+    float afterCenterY = raider.centerY();
+    float afterHeading = raider.headingDegrees();
+    assertNotEquals(beforeHeading, afterHeading, 1f, "the raider must turn this frame");
+    assertTrue(Math.abs(afterCenterX - beforeCenterX) > 5f, "the raider must move this frame");
+
+    VesperRaider.ShotSample start = encounter.shotSampleAt(0d);
+    VesperRaider.ShotSample middle = encounter.shotSampleAt(0.425d);
+    VesperRaider.ShotSample end = encounter.shotSampleAt(0.85d);
+    assertNotNull(start);
+    assertNotNull(middle);
+    assertNotNull(end);
+
+    // The endpoints match the frame's pre/post states; the middle instant lies strictly between.
+    assertEquals(beforeCenterX, start.centerX(), 0.01f);
+    assertEquals(beforeCenterY, start.centerY(), 0.01f);
+    assertEquals(beforeHeading, start.headingDegrees(), 0.01f);
+    assertEquals(afterCenterX, end.centerX(), 0.5f);
+    assertEquals(afterCenterY, end.centerY(), 0.5f);
+    assertEquals(afterHeading, end.headingDegrees(), 0.01f);
+    assertTrue(middle.centerX() > Math.min(beforeCenterX, afterCenterX) + 0.5f,
+        "the middle emission must be inside the flown segment");
+    assertTrue(middle.centerX() < Math.max(beforeCenterX, afterCenterX) - 0.5f);
+    assertTrue(Math.abs(normalizeYaw(middle.headingDegrees() - beforeHeading)) > 0.05f,
+        "the middle heading must be interpolated, not the final one");
+  }
+
+  @Test
+  void shotSamplingCrossesTheHeadingWrapWithoutFoldingThroughSouth() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0f)); // wait = 3 s
+    encounter.advance(3f, WORLD, TARGET_X, TARGET_Y);
+    VesperRaider raider = encounter.raider();
+    // Start just short of the +180/-180 seam and pull the nose to the far side of north.
+    raider.setHeadingDegrees(179f);
+    float targetX = raider.centerX() - 100f;
+    float targetY = raider.centerY() + 2000f;
+    encounter.advance(1f, WORLD, targetX, targetY, 0f, 0f, 0f, 0f);
+
+    int samples = 60;
+    float previousForwardX = Float.NaN;
+    float previousForwardY = Float.NaN;
+    for (int index = 0; index <= samples; index++) {
+      double offset = 1d * index / samples;
+      GunBurst.Shot shot = encounter.shotAt(offset, 1000f);
+      assertNotNull(shot);
+      assertTrue(shot.forwardY() > 0f,
+          "the arc must stay north of the seam, sample " + index + " pointed south");
+      if (!Float.isNaN(previousForwardX)) {
+        float dot = shot.forwardX() * previousForwardX + shot.forwardY() * previousForwardY;
+        assertTrue(dot > 0.9f,
+            "the sampled heading must not flip across the seam at sample " + index);
+      }
+      previousForwardX = shot.forwardX();
+      previousForwardY = shot.forwardY();
+    }
+  }
+
+  @Test
+  void shotSamplingDoesNotInterpolateAcrossARespawn() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f)); // wait = 5 s
+    encounter.advance(5f, WORLD, TARGET_X, TARGET_Y);
+    encounter.advance(0.5f, WORLD, TARGET_X, TARGET_Y, 0f, 0f, 0f, 0f); // records a moving path
+
+    encounter.destroyActive();
+    encounter.respawnAt(WORLD, TARGET_X, TARGET_Y, 30f);
+    VesperRaider raider = encounter.raider();
+
+    VesperRaider.ShotSample start = encounter.shotSampleAt(0d);
+    VesperRaider.ShotSample end = encounter.shotSampleAt(0.5d);
+    assertNotNull(start);
+    assertNotNull(end);
+    assertEquals(raider.centerX(), start.centerX(), EPSILON);
+    assertEquals(raider.centerY(), start.centerY(), EPSILON);
+    assertEquals(start.centerX(), end.centerX(), EPSILON,
+        "a respawned life must not interpolate from the previous path");
+    assertEquals(start.centerY(), end.centerY(), EPSILON);
+    assertEquals(raider.headingDegrees(), start.headingDegrees(), EPSILON);
+  }
+
+  @Test
+  void shotSamplingIsNullBeforeTheRaiderAppears() {
+    RaiderEncounter encounter = new RaiderEncounter(new ScriptedRandom(0.5f));
+    assertNull(encounter.shotAt(0d, 1000f));
+    assertNull(encounter.shotSampleAt(0d));
   }
 
   private static float distance(RaiderEncounter encounter, float targetX, float targetY) {

@@ -170,7 +170,7 @@ public final class PhaseOneGameController extends GameController {
     VesperRaider raider = activeRaider();
     boolean raiderEnabled = raider != null && shipsCoincidentVisible && raiderCombat.canAct();
     raiderGun.advance(frameDelta, emissionSeconds, raiderEnabled,
-        raiderEnabled ? raiderShotSource(raider, shotRange) : null, this::raiderProjectileStep);
+        raiderEnabled ? raiderShotSource(shotRange) : null, this::raiderProjectileStep);
     return drainCombatPoints();
   }
 
@@ -502,16 +502,14 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
-   * Snapshots the raider's box center, heading and measured side cannon mouths at the emission
-   * instant. Unlike Astra, the raider moves only a few units per frame, so no intra-frame
-   * interpolation is needed; each {@code Shot} still freezes origin and direction, and the
-   * resulting projectiles retain no ship reference.
+   * Emission-time snapshot provider for the raider cannon. It samples the trajectory the encounter
+   * recorded while flying this frame at each frame-local {@code offsetSeconds}, so a fast pass or
+   * turn emits from distinct points, headings and muzzle poses instead of repeating the final frame
+   * state. The encounter owns the kinematics and returns {@code null} when no raider exists; each
+   * {@code Shot} still freezes origin and direction, and no projectile retains a ship reference.
    */
-  private GunBurst.ShotSource raiderShotSource(VesperRaider raider, float shotRange) {
-    return offsetSeconds -> raider.shotAt(
-        raider.x() + raider.drawWidth() / 2f,
-        raider.y() + raider.drawHeight() / 2f,
-        raider.headingDegrees(), shotRange);
+  private GunBurst.ShotSource raiderShotSource(float shotRange) {
+    return offsetSeconds -> raiderEncounter.shotAt(offsetSeconds, shotRange);
   }
 
   /** Astra's box position and heading before and after this frame's bounded flight. */

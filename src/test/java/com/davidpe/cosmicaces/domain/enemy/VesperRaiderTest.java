@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.ship.Ship;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class VesperRaiderTest {
@@ -160,6 +161,52 @@ class VesperRaiderTest {
     for (GunBurst.Muzzle muzzle : shot.muzzles()) {
       assertTrue(Float.isFinite(muzzle.x()) && Float.isFinite(muzzle.y()));
     }
+  }
+
+  @Test
+  void shotAtSampleKeepsTheHistoricalHeadingAndPose() {
+    VesperRaider raider = raider(100f, 200f, 0f);
+    raider.steerTowards(30f, 10f); // a bounded right turn latches the yaw-right pose
+    assertEquals(VesperRaiderSheet.Pose.YAW_RIGHT, raider.pose());
+    VesperRaider.ShotSample sample = raider.captureShotSample();
+
+    // The live state changes after the capture; the sample must stay frozen.
+    raider.setHeadingDegrees(90f);
+    raider.setDriftDirection(0);
+    assertEquals(VesperRaiderSheet.Pose.NEUTRAL, raider.pose());
+    assertNotEquals(sample.headingDegrees(), raider.headingDegrees(), EPSILON);
+
+    GunBurst.Shot historical = raider.shotAt(sample, 1000f);
+    float radians = (float) Math.toRadians(sample.headingDegrees());
+    assertEquals((float) Math.sin(radians), historical.forwardX(), 1e-5f,
+        "the frozen direction must follow the sample heading");
+    assertEquals((float) -Math.cos(radians), historical.forwardY(), 1e-5f);
+
+    // Both mouths come from the captured yaw-right pose, not the live neutral pose.
+    List<VesperRaiderSheet.CannonMouth> mouths =
+        VesperRaiderSheet.cannonMouths(VesperRaiderSheet.Pose.YAW_RIGHT);
+    float rightX = (float) Math.cos(radians);
+    float rightY = (float) Math.sin(radians);
+    for (int index = 0; index < mouths.size(); index++) {
+      VesperRaiderSheet.CannonMouth mouth = mouths.get(index);
+      float expectedX = sample.centerX()
+          + rightX * mouth.lateral() * raider.drawWidth()
+          + historical.forwardX() * mouth.forward() * raider.drawHeight();
+      float expectedY = sample.centerY()
+          + rightY * mouth.lateral() * raider.drawWidth()
+          + historical.forwardY() * mouth.forward() * raider.drawHeight();
+      assertEquals(expectedX, historical.muzzles().get(index).x(), 1e-3f);
+      assertEquals(expectedY, historical.muzzles().get(index).y(), 1e-3f);
+    }
+    assertNotEquals(historical.muzzles().get(0).x(),
+        raider.shotAt(raider.captureShotSample(), 1000f).muzzles().get(0).x(), 1e-3f,
+        "the historical pose must not collapse to the live neutral pose");
+  }
+
+  @Test
+  void shotAtSampleRejectsAMissingSample() {
+    assertThrows(IllegalArgumentException.class,
+        () -> raider(0f, 0f, 0f).shotAt((VesperRaider.ShotSample) null, 100f));
   }
 
   @Test

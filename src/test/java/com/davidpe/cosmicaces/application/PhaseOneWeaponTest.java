@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import org.junit.jupiter.api.Test;
@@ -319,5 +320,81 @@ class PhaseOneWeaponTest {
     controller.advanceWeapons(1f / 60f, 0f, false, true, RANGE);
     assertTrue(controller.raiderGun().projectiles().isEmpty(),
         "the phase end cuts new autonomous shots");
+  }
+
+  @Test
+  void vesperFastTurnFrameEmitsFromDifferentPointsAndHeadings() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f); // spawn after 3 s
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    VesperRaider raider = controller.activeRaider();
+    float beforeHeading = raider.headingDegrees();
+
+    // Move Astra far aside so the raider must turn hard and fly a long way within one frame.
+    controller.placeAstra(6000f, 3000f, 0f);
+    controller.advanceEncounter(0.85f);
+    assertNotEquals(beforeHeading, raider.headingDegrees(), 1f, "the raider must turn this frame");
+
+    controller.advanceWeapons(0.85f, 0.85f, false, true, RANGE);
+
+    var shots = controller.raiderGun().projectiles();
+    assertEquals(6, shots.size(), "0.85 s at the 0.4 s cadence: events at 0, 0.4 and 0.8 s");
+    GunProjectile first = shots.get(0);   // event at 0.0 s, both side cannons
+    GunProjectile second = shots.get(2);  // event at 0.4 s
+    GunProjectile third = shots.get(4);   // event at 0.8 s
+    assertTrue(originDistance(first, second) > 5f,
+        "the second event must advance along the trajectory, not repeat the first origin");
+    assertTrue(originDistance(second, third) > 5f,
+        "the third event must advance along the trajectory");
+    assertTrue(directionGap(first, third) > 1f,
+        "the frozen heading must follow the fast turn, not freeze on the final frame state");
+  }
+
+  @Test
+  void vesperShotsAfterRespawnComeFromTheNewLife() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
+    controller.placeAstra(1600f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    VesperRaider raider = controller.activeRaider();
+
+    // Record a moving trajectory for the old life, then destroy and respawn the raider.
+    controller.advanceEncounter(0.5f);
+    controller.placeAstra(raider.x(), raider.y(), 0f);
+    controller.advanceCombat(1f / 60f); // hull contact destroys both ships
+    assertFalse(controller.isRaiderActive());
+    controller.advanceCombat(3f); // Astra returns
+    controller.advanceCombat(2f); // Vesper returns at the 5-second mark
+    assertTrue(controller.isRaiderActive());
+    VesperRaider respawned = controller.activeRaider();
+    float newCenterX = respawned.centerX();
+    float newCenterY = respawned.centerY();
+
+    controller.advanceWeapons(0.85f, 0.85f, false, true, RANGE);
+
+    var shots = controller.raiderGun().projectiles();
+    assertFalse(shots.isEmpty(), "the respawned raider fires while coincident");
+    for (GunProjectile projectile : shots) {
+      float distance = (float) Math.hypot(projectile.originX() - newCenterX,
+          projectile.originY() - newCenterY);
+      assertTrue(distance < 200f,
+          "every shot must originate at the new life, not the pre-death trajectory");
+    }
+  }
+
+  private static float originDistance(GunProjectile a, GunProjectile b) {
+    return (float) Math.hypot(a.originX() - b.originX(), a.originY() - b.originY());
+  }
+
+  private static float directionGap(GunProjectile a, GunProjectile b) {
+    float dot = a.forwardX() * b.forwardX() + a.forwardY() * b.forwardY();
+    if (dot >= 1f) {
+      return 0f;
+    }
+    if (dot <= -1f) {
+      return 180f;
+    }
+    return (float) Math.toDegrees(Math.acos(dot));
   }
 }

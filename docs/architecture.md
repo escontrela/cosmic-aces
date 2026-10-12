@@ -661,6 +661,25 @@ puntuación sigue usando la coincidencia muestreada antes del movimiento, de mod
 que su regla y valores no cambian y nunca se reutiliza una coincidencia obsoleta
 para disparar. El dibujo del HUD/arma visible sigue perteneciendo a la hija final.
 
+Con COS-64 el cañón del raider deja de congelar todas las emisiones en el estado
+final del frame. `RaiderEncounter.advance(...)` graba una `VesperRaider.ShotSample`
+(centro, rumbo y pose) por subpaso acotado (≤1/120 s), con tiempo local al frame, y
+`shotAt(offsetSeconds, range)` interpola el centro linealmente y el rumbo por arco
+corto entre las muestras que rodean ese instante, tomando la pose de la muestra más
+cercana; `shotSampleAt(...)` expone la muestra resultante al controlador y a las
+pruebas deterministas. Así un giro o una pasada rápida produce orígenes y `forward`
+distintos por evento sin añadir filtros por fase, cono de tiro, cadencia ni daño.
+`VesperRaider.captureShotSample()` y `shotAt(ShotSample, range)` construyen la
+instantánea desde la muestra histórica (la firma de 4 argumentos se conserva y usa la
+pose viva); `ShotSample` no retiene texturas ni referencias a Visuals. Un contador de
+vida (`lifeGeneration`, incrementado en `spawn`, `respawnAt` y `destroyActive`)
+invalida la grabación: tras una muerte o reaparición `shotAt` devuelve una única
+instantánea en la posición viva, de modo que nunca interpola a través del
+teletransporte, y sin raider devuelve `null`. `PhaseOneGameController.raiderShotSource(
+shotRange)` delega en el encuentro y conserva la autorización existente
+(`emissionSeconds`, coincidencia visible y `raiderCombat.canAct()`); `GunBurst` sigue
+siendo el único reloj de cadencia/pulso y `emissionCount` la única señal de audio.
+
 Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
@@ -814,11 +833,14 @@ com.davidpe.cosmicaces
 |   |   |   1. advance()  2. steerTowards()  3. setHeadingDegrees()
 |   |   |   4. placeAt()  5. centerX()  6. centerY()  7. setDriftDirection()
 |   |   |   8. clampToWorld()  9. pose()  10. setVisuals()
-|   |   |   11. setMuzzleFlashVisible()  12. shotAt(): instantánea de los dos cañones.
+|   |   |   11. setMuzzleFlashVisible()  12. shotAt() [instantánea de los dos cañones]
+|   |   |   13. captureShotSample()  14. shotAt(ShotSample)
+|   |   |   +-- ShotSample(centerX, centerY, headingDegrees, pose): instantánea inmutable de emisión.
 |   |   |   +-- Visuals: carga textura; dispose() la libera.
 |   |   +-- RaiderEncounter: aparición, muerte y reaparición del enemigo en el mundo.
 |   |   |   1. advance() [2 sobrecargas]  2. destroyActive()  3. respawnAt()
 |   |   |   4. isActive()  5. isDefeated()  6. raider()  7. setVisuals()
+|   |   |   8. shotAt()  9. shotSampleAt(): muestreo por offset del frame grabado.
 |   |   +-- VesperRaiderSheet: laminas v4 de vuelo/disparo y cinco recortes del enemigo.
 |   |   |   1. slice()  2. poseForBank()  3. poseForTurn()
 |   |   |   4. orientedForDescent()  5. maxSliceWidth()  6. maxSliceHeight()

@@ -1,7 +1,10 @@
 package com.davidpe.cosmicaces.domain.enemy;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -132,6 +135,18 @@ public final class RaiderEncounter {
   /** Persistent approach aim, re-planned at most every {@link #APPROACH_REPLAN_SECONDS}. */
   private float approachAimHeadingDegrees;
   private float approachReplanSeconds;
+  /**
+   * Kinematic samples recorded during the last {@link #advance} call, one per bounded substep, so
+   * {@link #shotAt(double, float)} can rebuild the raider's position, heading and muzzle pose at any
+   * frame-local emission instant instead of freezing every shot on the frame's final state.
+   */
+  private final List<TrajectorySample> shotTrajectory = new ArrayList<>();
+  private int shotTrajectoryGeneration;
+  /** Monotonic life counter; a spawn, death or respawn invalidates any recorded trajectory. */
+  private int lifeGeneration;
+
+  /** One recorded emission instant: its frame-local time plus the captured kinematics. */
+  private record TrajectorySample(float seconds, VesperRaider.ShotSample sample) {}
 
   /** Coarse dogfight phases: acquire a firing line, fly a committed pass, then reverse to re-engage. */
   enum Maneuver {
@@ -267,6 +282,7 @@ public final class RaiderEncounter {
     defeated = true;
     deathCenterX = raider.centerX();
     deathCenterY = raider.centerY();
+    lifeGeneration++;
     resetPlan();
   }
 
@@ -311,6 +327,7 @@ public final class RaiderEncounter {
     raider.placeAt(bestCenterX - half, bestCenterY - raider.drawHeight() / 2f,
         (float) Math.toDegrees(headingRadians), world);
     defeated = false;
+    lifeGeneration++;
     resetPlan();
   }
 
@@ -351,22 +368,109 @@ public final class RaiderEncounter {
       if (waitSeconds <= 0f) {
         spawn(world, targetX, targetY);
       }
+      beginTrajectory();
+      if (raider != null) {
+        // It appeared at the end of this frame and has not moved yet: one snapshot is exact.
+        recordTrajectory(deltaSeconds);
+      }
       return;
     }
+    beginTrajectory();
     if (defeated) {
       // The controller owns the 5 s respawn clock and repositions the raider with respawnAt.
       return;
     }
+    recordTrajectory(0f);
+    float elapsed = 0f;
     float remaining = deltaSeconds;
     while (remaining > 0f) {
       float step = Math.min(remaining, MAX_STEP_SECONDS);
       advanceStep(step, world, targetX, targetY, targetVelocityX, targetVelocityY,
           targetRadius, selfRadius);
       remaining -= step;
+      elapsed += step;
+      recordTrajectory(elapsed);
       if (remaining < 0.000001f) {
         break;
       }
     }
+  }
+
+  /** Starts a fresh trajectory for the frame, stamped with the current life generation. */
+  private void beginTrajectory() {
+    shotTrajectory.clear();
+    shotTrajectoryGeneration = lifeGeneration;
+  }
+
+  /** Records the raider's current kinematics at a frame-local instant. */
+  private void recordTrajectory(float seconds) {
+    if (raider == null) {
+      return;
+    }
+    shotTrajectory.add(new TrajectorySample(seconds, raider.captureShotSample()));
+  }
+
+  /**
+   * Emission-time snapshot for the frame-local {@code offsetSeconds} of the trajectory recorded by
+   * the last {@link #advance} call. The body centre is interpolated linearly along the substep that
+   * contains the instant and the heading along its shortest arc, so a fast turn produces distinct
+   * origins and directions per emission instead of repeating the final frame state; the muzzle pose
+   * comes from the nearest recorded sample (a historical pose, never the live mutable one).
+   *
+   * <p>A death or respawn since the recording invalidates it, so the live raider state is returned as
+   * a single snapshot and no shot is ever interpolated across a teleport. Returns {@code null} while
+   * the raider has not appeared yet; out-of-range or non-finite offsets are clamped to the recording.
+   */
+  public GunBurst.Shot shotAt(double offsetSeconds, float range) {
+    VesperRaider.ShotSample sample = shotSampleAt(offsetSeconds);
+    return sample == null ? null : raider.shotAt(sample, range);
+  }
+
+  /**
+   * The interpolated emission sample for a frame-local instant of the last recorded trajectory, or
+   * {@code null} while the raider has not appeared. Exposed so the controller and the deterministic
+   * tests can inspect the exact centre, heading and muzzle pose an emission at that instant used.
+   */
+  public VesperRaider.ShotSample shotSampleAt(double offsetSeconds) {
+    VesperRaider raider = this.raider;
+    if (raider == null) {
+      return null;
+    }
+    if (shotTrajectory.isEmpty() || shotTrajectoryGeneration != lifeGeneration) {
+      return raider.captureShotSample();
+    }
+    if (shotTrajectory.size() == 1) {
+      return shotTrajectory.get(0).sample();
+    }
+    float seconds = Double.isFinite(offsetSeconds) ? (float) offsetSeconds : 0f;
+    if (seconds <= 0f) {
+      return shotTrajectory.get(0).sample();
+    }
+    TrajectorySample previous = shotTrajectory.get(0);
+    for (int index = 1; index < shotTrajectory.size(); index++) {
+      TrajectorySample next = shotTrajectory.get(index);
+      if (seconds <= next.seconds()) {
+        return interpolate(previous, next, seconds);
+      }
+      previous = next;
+    }
+    return shotTrajectory.get(shotTrajectory.size() - 1).sample();
+  }
+
+  /** Interpolates a sample between two neighbouring recorded substeps at a frame-local instant. */
+  private static VesperRaider.ShotSample interpolate(TrajectorySample previous,
+      TrajectorySample next, float seconds) {
+    VesperRaider.ShotSample a = previous.sample();
+    VesperRaider.ShotSample b = next.sample();
+    float span = next.seconds() - previous.seconds();
+    float fraction = span <= 0f ? 1f
+        : Math.max(0f, Math.min(1f, (seconds - previous.seconds()) / span));
+    float centerX = a.centerX() + (b.centerX() - a.centerX()) * fraction;
+    float centerY = a.centerY() + (b.centerY() - a.centerY()) * fraction;
+    float heading = normalizeYaw(a.headingDegrees()
+        + normalizeYaw(b.headingDegrees() - a.headingDegrees()) * fraction);
+    VesperRaiderSheet.Pose pose = fraction < 0.5f ? a.pose() : b.pose();
+    return new VesperRaider.ShotSample(centerX, centerY, heading, pose);
   }
 
   private void advanceStep(float step, WorldBounds world, float targetX, float targetY,
@@ -456,6 +560,7 @@ public final class RaiderEncounter {
     float y = world.clampY(targetY + SPAWN_AHEAD_DISTANCE, RAIDER_HEIGHT);
     raider = new VesperRaider(CRUISE_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, x, y, 0f);
     raider.setVisuals(visuals);
+    lifeGeneration++;
     resetPlan();
   }
 
