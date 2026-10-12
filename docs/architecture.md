@@ -680,6 +680,26 @@ shotRange)` delega en el encuentro y conserva la autorización existente
 (`emissionSeconds`, coincidencia visible y `raiderCombat.canAct()`); `GunBurst` sigue
 siendo el único reloj de cadencia/pulso y `emissionCount` la única señal de audio.
 
+### Validación conjunta del dogfight (COS-65)
+
+Cierre de la raíz COS-61: no añade clases de producción ni cambia el tuning; consolida la
+verificación del comportamiento conjunto y publica tolerancias y guion de QA. El detalle (baseline,
+escenarios, tolerancias, parámetros finales y guion humano) vive en
+[docs/vesper-dogfight-validation.md](vesper-dogfight-validation.md).
+
+`VesperDogfightValidationTest` (domain.enemy) añade fixtures deterministas sin texturas: objetivo
+quieto y **en crucero** (Astra a 150 u/s) con dos pasadas geométricas que sobrepasan el plano del
+objetivo y dos ventanas de tiro, comparación de `PASS_SPEED` frente al baseline histórico
+documentado (180 u/s crucero, 270 u/s turbo, ya inexistente en este checkout), separación de casco
+con radios reales y un delta **irregular con pico de 0,1 s** frente a la rejilla 1/120 s con
+tolerancias publicadas (posición 1,0 u, rumbo 0,5°). `VesperDogfightIntegrationTest`
+(application) recorre el orden real de frame del controlador y exige que Vesper conserve una única
+instancia tras muerte/reaparición (`assertSame`), que su cañón no emita estando destruido ni sin
+coincidencia visible, y que los disparos de la vida nueva nazcan en la posición nueva. Las pruebas de
+las hijas COS-62/63/64 siguen cubriendo cinemática, pasadas/inversión, bordes y muestreo temporal.
+`PASS_SPEED`/`CRUISE_SPEED`/`REENGAGE_SPEED`, las rampas y el giro quedan como parámetros técnicos
+finales, ajustables por el PO. La QA visual sigue siendo del PO humano.
+
 Las láminas de vuelo mantienen sus cinco recortes: las tres poses de
 alabeo existentes y dos poses de guiñada (derecha, izquierda). Astra selecciona
 alabeo con laterales solos y guiñada con diagonales; la pantalla aplica la
