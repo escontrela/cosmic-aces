@@ -44,14 +44,14 @@ public final class ScreenFactory {
   }
 
   /**
-   * Creates a playable screen with a fresh per-run session, started and connected to the shared
-   * publisher. The persistent identity and phase are read from the coordinator, which also supplies
-   * the authoritative phase result when the run completes.
+   * Creates a playable screen with a fresh per-run session, connected to the shared publisher. The
+   * run is not started here: the objective panel waits for the player's SPACE press, which starts
+   * the controller. The persistent identity and phase are read from the coordinator, which also
+   * supplies the authoritative phase result when the mission ends.
    */
   public Screen createPhaseOneScreen() {
     GameState state = coordinator.state();
     PhaseOneGameController controller = new PhaseOneGameController(settingsStore.flightSpeeds());
-    controller.start();
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
         presentationSettings);

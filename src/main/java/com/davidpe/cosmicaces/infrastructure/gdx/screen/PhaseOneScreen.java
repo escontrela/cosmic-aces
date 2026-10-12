@@ -26,6 +26,7 @@ import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
@@ -56,7 +57,10 @@ import java.util.function.Supplier;
  */
 public final class PhaseOneScreen extends ScreenAdapter {
 
-  private static final String END_MESSAGE = "FIN DEL RECORRIDO - PULSA ESPACIO";
+  private static final String START_PROMPT = "PULSA ESPACIO PARA EMPEZAR";
+  private static final String RETURN_PROMPT = "PULSA ESPACIO PARA VOLVER A WELCOME";
+  private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
+  private static final String LOSE_DETAIL = "MISION FALLIDA";
   private static final float INITIAL_Y = VirtualScreenSize.HEIGHT;
   /** Explosion peak size as a multiple of each ship's largest draw dimension (visual tuning). */
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
@@ -88,8 +92,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final PhaseOneAudio audio;
   private final BitmapFont font;
   private final BitmapFont hudFont;
-  private final GlyphLayout endLayout;
-  private boolean runFinished;
+  private final GlyphLayout panelTitleLayout = new GlyphLayout();
+  private final GlyphLayout panelDetailLayout = new GlyphLayout();
+  private final GlyphLayout panelPromptLayout = new GlyphLayout();
+  /**
+   * Objective/playing/result lifecycle and the SPACE arming rule. It replaces the former
+   * {@code runFinished} boolean and keeps the mission from advancing or firing outside PLAYING.
+   */
+  private final PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
   private ActiveExplosion astraExplosion;
   private ActiveExplosion raiderExplosion;
   private boolean astraExplosionSpawned;
@@ -143,7 +153,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
     PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
-    GlyphLayout loadedLayout;
     try {
       loadedBatch = new SpriteBatch();
       loadedShapes = new ShapeRenderer();
@@ -158,7 +167,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
       loadedHudFont.getData().setScale(1.05f);
-      loadedLayout = new GlyphLayout(loadedFont, END_MESSAGE);
     } catch (RuntimeException | Error failure) {
       if (loadedHudFont != null) {
         loadedHudFont.dispose();
@@ -206,7 +214,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
     audio = loadedAudio;
     font = loadedFont;
     hudFont = loadedHudFont;
-    endLayout = loadedLayout;
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
   }
@@ -221,21 +228,40 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
       minimap.toggle();
     }
-    // Capture the still-active slice of this frame before the clock advances, so bursts stop
-    // exactly at the 10-minute mission limit while already-fired projectiles keep their straight path.
-    float emissionSeconds = runFinished ? 0f : activeEmissionSeconds(delta);
-    if (!runFinished) {
+    boolean spaceDown = Gdx.input.isKeyPressed(Input.Keys.SPACE);
+    boolean spaceJustPressed = Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
+    flow.observeSpace(spaceDown);
+    // INTRO: the objective panel waits for one SPACE press. That press starts the run but simulates
+    // zero seconds and fires no shot, so the clock and the world stay frozen until SPACE is released
+    // again.
+    boolean startedThisFrame = false;
+    if (flow.isIntro()) {
+      if (flow.consumeStartPress(spaceJustPressed)) {
+        controller.start();
+        startedThisFrame = true;
+      }
+    } else if (flow.isResult() && flow.consumeResultConfirm(spaceJustPressed)) {
+      // A fresh SPACE after the ending shot leaves the frozen panel for the welcome screen.
+      publisher.publish(new GameAbandoned(gameId, phase));
+      return;
+    }
+    // Only an already-running mission advances, and never on the frame that consumed the start press.
+    boolean simulate = flow.isPlaying() && !startedThisFrame;
+    // The still-active slice of this frame: it bounds the clock and every simulation step to the
+    // 10-minute limit, so an impact that would happen after 00:00 is never resolved in this frame.
+    float activeSeconds = simulate ? activeRunSeconds(delta) : 0f;
+    if (simulate) {
       // Authoritative lives at the start of the frame. The coordinator owns the pool; the screen
       // only reports deaths and never keeps a diverging counter.
       int astraLives = phaseSnapshot.get().lives();
-      int earned = applyMovementInput(delta, shipsCoincidentVisible());
-      controller.advanceEncounter(delta);
+      int earned = applyMovementInput(activeSeconds, shipsCoincidentVisible());
+      controller.advanceEncounter(activeSeconds);
       // Ghostwing groups are simulated in world coordinates during the active run only; their
       // presentation (sprites, explosions, minimap marker) belongs to the presentation child.
-      controller.advanceGhostwing(delta);
+      controller.advanceGhostwing(activeSeconds);
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
-      earned += controller.advanceCombat(delta, astraLives);
+      earned += controller.advanceCombat(activeSeconds, astraLives);
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
       // completion snapshot below) always sees the already-decremented pool.
       publishAstraLifeLosses();
@@ -243,67 +269,59 @@ public final class PhaseOneScreen extends ScreenAdapter {
         // Report points before the completion snapshot so the last second is never overwritten.
         publisher.publish(new PointsEarned(gameId, phase, earned));
       }
-      if (controller.isRunFinished()) {
-        runFinished = true;
-        // The run completed: report it once with the authoritative persistent snapshot. There is no
-        // game-over screen in this ticket, so the coordinator's GAME_OVER transition is a no-op and
-        // the end message stays until the player leaves.
-        publisher.publish(new PhaseCompleted(phaseSnapshot.get()));
-      }
-    }
-    if (runFinished && Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
-      publisher.publish(new GameAbandoned(gameId, phase));
-      return;
     }
     // The camera frames the current exploration view and widens into combat framing while the live
-    // enemy is inside it; it never receives a stale target after destruction,
-    // respawn wait or the end of the run.
+    // enemy is inside it; it never receives a stale target after destruction, respawn wait or once
+    // the mission is no longer playing.
     flightCamera.update(controller.astra(), delta, cameraCombatTarget(),
         viewport.getWorldWidth(), viewport.getWorldHeight());
-    // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
-    // encounter and the camera update) so Vesper fires only while both ships are really visible.
-    // The pre-movement sample above stays the scoring input and is never reused for the weapons.
-    boolean weaponsCoincident = shipsCoincidentVisible();
     // One hit-feedback advance per frame, before impacts are resolved so a pulse accepted this
-    // frame is drawn at its full first intensity. It also runs after the run finishes so the last
-    // pulse of an in-flight projectile keeps extinguishing.
+    // frame is drawn at its full first intensity. It also runs outside the active mission so the
+    // last pulse of an in-flight projectile keeps extinguishing on a frozen panel.
     controller.advanceHitFeedback(delta);
-    // One weapons update per frame, after the camera that this frame draws. Shot range remains tied
-    // to the 768-unit reference height, so a larger presentation viewport does not retune weapons.
-    // Impacts are resolved inside this call and the single raider destruction bonus is published
-    // once, before the HUD.
-    long astraBurstsBefore = controller.astraGun().emissionCount();
-    long raiderBurstsBefore = controller.raiderGun().emissionCount();
-    int weaponEarned = controller.advanceWeapons(delta, emissionSeconds,
-        Gdx.input.isKeyPressed(Input.Keys.SPACE), weaponsCoincident,
-        2f * VirtualScreenSize.HEIGHT * camera.zoom);
-    // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters, so
-    // a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays a shot
-    // that no burst actually produced. Astra and Vesper share the same short cue.
-    audio.playVulcanBursts(
-        PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
-            + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
-    if (weaponEarned > 0) {
-      publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
+    if (simulate) {
+      // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
+      // encounter and the camera update) so Vesper fires only while both ships are really visible.
+      boolean weaponsCoincident = shipsCoincidentVisible();
+      // One weapons update per frame, after the camera that this frame draws. Existing projectiles
+      // and new emissions share the active slice, so nothing crosses the 10-minute limit. Shot range
+      // remains tied to the 768-unit reference height; impacts and the raider destruction bonus are
+      // resolved inside this call.
+      long astraBurstsBefore = controller.astraGun().emissionCount();
+      long raiderBurstsBefore = controller.raiderGun().emissionCount();
+      int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
+          flow.fireTrigger(spaceDown), weaponsCoincident,
+          2f * VirtualScreenSize.HEIGHT * camera.zoom);
+      // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters,
+      // so a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays
+      // a shot that no burst actually produced. Astra and Vesper share the same short cue.
+      audio.playVulcanBursts(
+          PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
+              + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
+      if (weaponEarned > 0) {
+        publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
+      }
+      // A raider projectile can also destroy Astra inside advanceWeapons; publish that loss too
+      // before the mission decision and the HUD read the authoritative snapshot.
+      publishAstraLifeLosses();
+      // Decide the single mission outcome only after every movement, contact and projectile of the
+      // active slice has been resolved and its points and lives are already published. The priority
+      // lives in PhaseOneMission: 0 lives loses before the third kill, then the goal, then the clock.
+      if (controller.resolveMissionOutcome(phaseSnapshot.get().lives()).isFinished()) {
+        completeRun();
+      }
     }
-    // A raider projectile can also destroy Astra inside advanceWeapons; publish that loss too before
-    // the mission decision and the HUD read the authoritative snapshot.
-    publishAstraLifeLosses();
-    // Decide the single mission outcome from the now-decremented lives and the remaining clock. The
-    // visible WIN/LOSE panel belongs to the following screen-flow child; here the terminal state
-    // only fixes the pool (an exhausted pool never respawns) and keeps the result stable.
-    controller.resolveMissionOutcome(phaseSnapshot.get().lives());
     // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only
     // converts the destroyed state into a world-anchored animation.
     updateExplosions(delta);
     // Keep the single cabin ambience stream aligned with the real flight/run state of this frame
-    // (Astra active, run not finished, forward speed above zero). The adapter is idempotent, so the
+    // (Astra active, mission playing, forward speed above zero). The adapter is idempotent, so the
     // loop never restarts or stacks just because this method runs once per frame.
     audio.updateCabinAmbience(PhaseOneAudio.cabinAmbienceAudible(controller.isAstraActive(),
-        runFinished, controller.astra().flightSpeed()));
+        !flow.isPlaying(), controller.astra().flightSpeed()));
     astraLightEffect.update(controller.astra(), delta,
-        !runFinished && controller.isAstraActive());
+        flow.isPlaying() && controller.isAstraActive());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     float visibleRadius = (float) Math.hypot(viewport.getWorldWidth() / 2f,
@@ -327,7 +345,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
           controller.astraHitFlashIntensity());
     }
-    boolean enemyInViewport = !runFinished && controller.isRaiderActive() && raiderVisible();
+    boolean enemyInViewport = flow.isPlaying() && controller.isRaiderActive() && raiderVisible();
     if (enemyInViewport) {
       VesperRaider raider = controller.activeRaider();
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
@@ -371,8 +389,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
         controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
     hud.drawScore(batch, hudFont, phaseSnapshot.get().points(),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
-    if (runFinished) {
-      drawEndMessage();
+    // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
+    // and every reading above stay frozen underneath while either panel waits for SPACE.
+    if (flow.isIntro()) {
+      drawObjectivePanel();
+    } else if (flow.isResult()) {
+      drawResultPanel();
     }
   }
 
@@ -401,11 +423,22 @@ public final class PhaseOneScreen extends ScreenAdapter {
   }
 
   /** Portion of this frame still inside the 10-minute mission clock; zero before it starts or after it ends. */
-  private float activeEmissionSeconds(float delta) {
+  private float activeRunSeconds(float delta) {
     if (!controller.isRunStarted() || !Float.isFinite(delta) || delta <= 0f) {
       return 0f;
     }
     return Math.min(delta, controller.remainingRunSeconds());
+  }
+
+  /**
+   * Freezes the mission on its terminal result and reports the phase exactly once with the
+   * authoritative snapshot (points and lives already published this frame). The coordinator's
+   * {@code GAME_OVER} transition is a no-op screen-wise: the result panel stays until the player
+   * confirms with a fresh SPACE or leaves with ESC.
+   */
+  private void completeRun() {
+    flow.showResult();
+    publisher.publish(new PhaseCompleted(phaseSnapshot.get()));
   }
 
   /**
@@ -449,11 +482,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
   /**
    * The centre and half box of the enemy the combat camera should frame, or an inactive target when
-   * there is no live raider (destroyed, awaiting respawn, or the run has finished). Passed to the
-   * camera before it draws, so the framing decision uses only the enemy's world geometry.
+   * there is no live raider (destroyed, awaiting respawn, or the mission is not playing). Passed to
+   * the camera before it draws, so the framing decision uses only the enemy's world geometry.
    */
   private FlightCameraState.CombatTarget cameraCombatTarget() {
-    if (runFinished || !controller.isRaiderActive()) {
+    if (!flow.isPlaying() || !controller.isRaiderActive()) {
       return FlightCameraState.CombatTarget.none();
     }
     VesperRaider raider = controller.activeRaider();
@@ -479,7 +512,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * and remains untouched.
    */
   private void drawOffscreenIndicator() {
-    boolean enemyActive = !runFinished && controller.isRaiderActive();
+    boolean enemyActive = flow.isPlaying() && controller.isRaiderActive();
     if (!enemyActive) {
       return;
     }
@@ -521,12 +554,67 @@ public final class PhaseOneScreen extends ScreenAdapter {
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
   }
 
-  private void drawEndMessage() {
-    float x = Math.max(24f, (hudViewport.getWorldWidth() - endLayout.width) / 2f);
-    float y = hudViewport.getWorldHeight() * 0.62f;
+  /**
+   * Objective panel shown before the mission starts. It reuses the authoritative lives and the
+   * mission limit, restates the 3-kill goal and asks for the confirming SPACE press.
+   */
+  private void drawObjectivePanel() {
+    drawOverlayPanel("OBJETIVO: DESTRUYE " + controller.vesperKillGoal() + " VESPER RAIDER",
+        Color.CYAN, objectiveDetail(), START_PROMPT, Color.LIGHT_GRAY);
+  }
+
+  /**
+   * Frozen result panel: a clear WIN/LOSE read from the single terminal mission outcome, plus the
+   * prompt to return. The world and HUD stay visible under the translucent background.
+   */
+  private void drawResultPanel() {
+    boolean win = controller.missionOutcome() == PhaseOutcome.WIN;
+    drawOverlayPanel(win ? "WIN" : "LOSE", win ? Color.GOLD : Color.SCARLET,
+        win ? WIN_DETAIL : LOSE_DETAIL, RETURN_PROMPT, Color.LIGHT_GRAY);
+  }
+
+  /** Objective summary line: the authoritative lives left and the 10:00 mission limit. */
+  private String objectiveDetail() {
+    int lives = phaseSnapshot.get().lives();
+    int totalSeconds = Math.round(controller.missionTimeLimitSeconds());
+    int minutes = totalSeconds / 60;
+    int seconds = totalSeconds % 60;
+    return lives + (lives == 1 ? " VIDA · " : " VIDAS · ") + minutes + ":"
+        + (seconds < 10 ? "0" : "") + seconds;
+  }
+
+  /**
+   * Draws one centered, translucent panel under the already active HUD projection: a large title, a
+   * detail row and a prompt row. Every layout is re-measured against the current {@code hudViewport}
+   * so the panel stays centered and legible after a resize without owning new resources.
+   */
+  private void drawOverlayPanel(String title, Color titleColor, String detail, String prompt,
+      Color promptColor) {
+    float width = hudViewport.getWorldWidth();
+    float height = hudViewport.getWorldHeight();
+    panelTitleLayout.setText(font, title);
+    panelDetailLayout.setText(hudFont, detail);
+    panelPromptLayout.setText(hudFont, prompt);
+    float contentWidth = Math.max(panelTitleLayout.width,
+        Math.max(panelDetailLayout.width, panelPromptLayout.width));
+    float panelWidth = Math.min(Math.max(width - 64f, 0f), contentWidth + 96f);
+    float panelHeight = 184f;
+    float panelX = (width - panelWidth) / 2f;
+    float panelY = Math.max(48f, (height - panelHeight) / 2f);
+    shapes.begin(ShapeRenderer.ShapeType.Filled);
+    shapes.setColor(0.015f, 0.02f, 0.06f, 0.86f);
+    shapes.rect(panelX, panelY, panelWidth, panelHeight);
+    shapes.end();
     batch.begin();
-    font.setColor(Color.GOLD);
-    font.draw(batch, endLayout, x, y);
+    font.setColor(titleColor);
+    font.draw(batch, panelTitleLayout, panelX + (panelWidth - panelTitleLayout.width) / 2f,
+        panelY + panelHeight - 54f);
+    hudFont.setColor(Color.WHITE);
+    hudFont.draw(batch, panelDetailLayout, panelX + (panelWidth - panelDetailLayout.width) / 2f,
+        panelY + panelHeight - 98f);
+    hudFont.setColor(promptColor);
+    hudFont.draw(batch, panelPromptLayout, panelX + (panelWidth - panelPromptLayout.width) / 2f,
+        panelY + 40f);
     batch.end();
   }
 

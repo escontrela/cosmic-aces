@@ -502,6 +502,34 @@ vidas autoritativas (`resolveMissionOutcome`); la prioridad (0 vidas ⇒ LOSE an
 la meta, luego el reloj) vive en `PhaseOneMission.resolve`. El panel WIN/LOSE visible corresponde al
 hijo de flujo de pantalla.
 
+### Ciclo de misión en pantalla (COS-70)
+
+`infrastructure.gdx.screen.PhaseOneScreenFlow` es la regla pura (sin LibGDX) del ciclo de la
+pantalla: `Stage` = `INTRO` (panel de objetivo), `PLAYING` (misión activa) y `RESULT` (panel
+congelado). También posee el latch de ESPACIO: una pulsación solo actúa después de que la tecla se
+haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara y la que dispara el
+golpe final no confirma el panel. Sustituye al antiguo `boolean runFinished`. `ScreenFactory` ya no
+llama a `controller.start()` al construir la pantalla; el inicio ocurre en `PhaseOneScreen` al
+consumir la primera pulsación de ESPACIO, y ese mismo frame simula 0 segundos y no emite disparos.
+
+El orden del frame es: `activeSeconds = min(delta, remainingRunSeconds())` una vez; vuelo,
+encuentro, drones y combate con esa porción; publicación de `LifeLost`/`PointsEarned`; una sola
+llamada a `advanceWeapons(activeSeconds, activeSeconds, flow.fireTrigger(...), ...)` en la que
+proyectiles existentes y emisiones comparten el corte del reloj (así un impacto posterior a 00:00 no
+se resuelve y no puede otorgar victoria tardía); nuevas publicaciones de `LifeLost`/`PointsEarned`;
+y por último `resolveMissionOutcome` con las vidas autoritativas. Si el desenlace es terminal,
+`completeRun()` publica una única `PhaseCompleted` con el snapshot ya actualizado y congela el
+estado. `advanceHitFeedback` y las animaciones de explosión siguen avanzando por presentación. La
+prioridad del resultado (0 vidas ⇒ LOSE antes de la 3ª baja, meta ⇒ WIN, reloj expirado ⇒ LOSE) vive
+en `PhaseOneMission`.
+
+`PhaseOneScreen` dibuja ambos paneles bajo la proyección HUD existente con `GlyphLayout` medido
+contra `hudViewport` (soporta resize) y fondo translúcido, sin ocultar del todo los indicadores: el
+de objetivo resume la meta, las vidas y el límite; el de resultado lee `controller.missionOutcome()`
+y muestra `WIN`/`LOSE`. ESPACIO (pulsación nueva) publica `GameAbandoned` y vuelve a Welcome; ESC
+abandona desde cualquier estado. Al volver a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
+nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
@@ -986,6 +1014,11 @@ com.davidpe.cosmicaces
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
             |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
+            |   11. completeRun()  12. drawObjectivePanel()  13. drawResultPanel()
+            |   14. drawOverlayPanel()
+            +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
+            |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
+            |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
@@ -1014,9 +1047,10 @@ com.davidpe.cosmicaces
 ## Comportamiento provisional actual
 
 PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la misión de PhaseOne).
-Al terminar la fase, GameCoordinator
-cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el mensaje
-final hasta abandonar. Todavía no existe una pantalla de game over ni hall of fame.
+PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al terminar, GameCoordinator
+cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el panel WIN/LOSE hasta que una
+pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe una pantalla de game over ni
+hall of fame.
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.
 
