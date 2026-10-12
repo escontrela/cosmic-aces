@@ -42,9 +42,9 @@ class PlayableRunTest {
   void runFinishesWhenReachingDuration() {
     PlayableRun run = new PlayableRun();
     run.start();
-    run.advance(30f);
+    run.advance(PlayableRun.DURATION_SECONDS / 2f);
     assertFalse(run.isFinished());
-    run.advance(30f);
+    run.advance(PlayableRun.DURATION_SECONDS / 2f);
     assertTrue(run.isFinished());
     assertEquals(PlayableRun.DURATION_SECONDS, run.elapsedSeconds());
     assertEquals(0f, run.remainingSeconds());
@@ -61,14 +61,25 @@ class PlayableRunTest {
   }
 
   @Test
-  void nonPositiveOrNonFiniteDeltaIsIgnored() {
+  void nonPositiveNanAndNegativeInfinityDeltasAreIgnored() {
     PlayableRun run = new PlayableRun();
     run.start();
     run.advance(-5f);
     run.advance(0f);
     run.advance(Float.NaN);
+    run.advance(Float.NEGATIVE_INFINITY);
     assertFalse(run.isFinished());
     assertEquals(0f, run.elapsedSeconds());
+  }
+
+  @Test
+  void positiveInfinityClampsToTheEndOfTheRun() {
+    PlayableRun run = new PlayableRun();
+    run.start();
+    run.advance(Float.POSITIVE_INFINITY);
+    assertTrue(run.isFinished());
+    assertEquals(PlayableRun.DURATION_SECONDS, run.elapsedSeconds());
+    assertEquals(0f, run.remainingSeconds());
   }
 
   @Test

@@ -104,7 +104,7 @@ class PhaseOneCombatTest {
 
     assertEquals(frozenY, controller.astra().y(), 0.001f, "a wreck does not fly");
     assertEquals(remainingBefore - 1f, controller.remainingRunSeconds(), 0.001f,
-        "the 60-second run is not reset by death");
+        "the 10-minute mission clock is not reset by death");
     assertEquals(1, earned, "a dead Astra earns the base second but no coincidence bonus");
     assertEquals(1001, controller.scorePoints());
   }

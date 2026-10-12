@@ -8,6 +8,8 @@ import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
+import com.davidpe.cosmicaces.domain.game.PhaseOneMission;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PhaseScore;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
@@ -21,7 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Rules specific to phase one: timed run, autonomous Raider, scoring and the Astra cannon. */
+/**
+ * Rules specific to phase one: the 10-minute mission clock, autonomous Raider, scoring, mission
+ * outcome and the Astra cannon.
+ */
 public final class PhaseOneGameController extends GameController {
 
   public static final WorldBounds WORLD = new WorldBounds(8192f, 12000f);
@@ -39,6 +44,7 @@ public final class PhaseOneGameController extends GameController {
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
   private final PhaseScore score = new PhaseScore();
+  private final PhaseOneMission mission = new PhaseOneMission();
   private final GunBurst astraGun = new GunBurst();
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
   private final ShipCombatState astraCombat = ShipCombatState.astra();
@@ -93,9 +99,9 @@ public final class PhaseOneGameController extends GameController {
 
   /**
    * Advances Astra and the run clock using only the portion of this frame remaining in the
-   * 60-second run, and returns the points earned by this delta. Scoring shares the same clamped
-   * {@code activeSeconds} as the clock, so points freeze with the run and are never double counted.
-   * A destroyed Astra keeps the clock running but does not move or earn coincidence points.
+   * 10-minute mission limit, and returns the points earned by this delta. Scoring shares the same
+   * clamped {@code activeSeconds} as the clock, so points freeze with the run and are never double
+   * counted. A destroyed Astra keeps the clock running but does not move or earn coincidence points.
    *
    * @param coincident whether Astra and the raider were both visible during this delta
    */
@@ -552,6 +558,47 @@ public final class PhaseOneGameController extends GameController {
   /** Total points this run has awarded so far, including destruction bonuses. */
   public int scorePoints() {
     return score.totalPoints();
+  }
+
+  /** Vesper Raider destructions recorded by the mission, capped at the kill goal. */
+  public int vesperKills() {
+    return mission.vesperKills();
+  }
+
+  /** Vesper Raider destructions needed to win the mission. */
+  public int vesperKillGoal() {
+    return mission.vesperKillGoal();
+  }
+
+  /** Total game time the mission is allowed to last, in seconds (10:00). */
+  public float missionTimeLimitSeconds() {
+    return mission.timeLimitSeconds();
+  }
+
+  /** The mission outcome decided so far: in progress, or the single terminal WIN/LOSE result. */
+  public PhaseOutcome missionOutcome() {
+    return mission.outcome();
+  }
+
+  /**
+   * Resolves the mission for this frame from the authoritative lives and the time left in the run
+   * clock. Applies the approved priority (lives exhausted loses first, then the kill goal wins,
+   * then the expired clock loses) and is idempotent once an outcome is terminal. The screen and the
+   * lives child will call it once per active frame; this child only exposes the state and the rule.
+   */
+  public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
+    return mission.resolve(astraLivesRemaining, remainingRunSeconds());
+  }
+
+  /**
+   * Records one valid Vesper Raider destruction in the mission, counting each real kill exactly once
+   * up to the kill goal. Package-private seam used by the kill-counting and lives children and by
+   * the deterministic tests: the presentation must never mutate mission state on its own.
+   *
+   * @return {@code true} when this call advanced the kill counter
+   */
+  boolean recordVesperKill() {
+    return mission.recordVesperKill();
   }
 
   /**

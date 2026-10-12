@@ -221,7 +221,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       minimap.toggle();
     }
     // Capture the still-active slice of this frame before the clock advances, so bursts stop
-    // exactly at the 60-second boundary while already-fired projectiles keep their straight path.
+    // exactly at the 10-minute mission limit while already-fired projectiles keep their straight path.
     float emissionSeconds = runFinished ? 0f : activeEmissionSeconds(delta);
     if (!runFinished) {
       int earned = applyMovementInput(delta, shipsCoincidentVisible());
@@ -386,7 +386,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudFont.dispose();
   }
 
-  /** Portion of this frame still inside the 60-second run; zero before it starts or after it ends. */
+  /** Portion of this frame still inside the 10-minute mission clock; zero before it starts or after it ends. */
   private float activeEmissionSeconds(float delta) {
     if (!controller.isRunStarted() || !Float.isFinite(delta) || delta <= 0f) {
       return 0f;

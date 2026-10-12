@@ -64,7 +64,7 @@ class PhaseOneWeaponTest {
     assertTrue(controller.astraGun().projectiles().isEmpty(), "no shots before the run");
 
     controller.start();
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
 
     frame(controller, 1f / 60f, true);
@@ -140,7 +140,7 @@ class PhaseOneWeaponTest {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.placeAstra(1600f, 100f, 0f);
     controller.start();
-    controller.advanceRun(59.95f);
+    controller.advanceRun(599.95f);
 
     float remaining = controller.remainingRunSeconds();
     assertTrue(remaining > 0f && remaining < 0.08f, "next cadence step must fall past the run end");
@@ -276,7 +276,7 @@ class PhaseOneWeaponTest {
     assertEquals(afterBurst, controller.astraGun().emissionCount(),
         "a held key without a real emission must not produce cues");
 
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
     for (int frame = 0; frame < 30; frame++) {
       frame(controller, 1f / 60f, true); // trigger still held after the end
@@ -314,7 +314,7 @@ class PhaseOneWeaponTest {
     controller.placeAstra(1600f, 6000f, 0f);
     controller.start();
     controller.advanceEncounter(3f);
-    controller.advanceRun(60f);
+    controller.advanceRun(600f);
     assertTrue(controller.isRunFinished());
 
     controller.advanceWeapons(1f / 60f, 0f, false, true, RANGE);

@@ -394,7 +394,7 @@ destruye a ninguna (CA15). `destroyRaider()` llama a `score.awardRaiderDestroyed
 (+1000, una vez por vida) y el controlador expone el bonus pendiente con
 `drainCombatPoints()`, que la pantalla publica como `PointsEarned`; no se emite
 `LifeLost` por estas muertes. Astra destruida congela su posición (la cámara la sigue),
-no vuela ni dispara y el reloj de 60 s continúa; reaparece vía `placeAt` en la misma
+no vuela ni dispara y el reloj de 10:00 continúa; reaparece vía `placeAt` en la misma
 posición/rumbo. `RaiderEncounter.destroyActive()` conserva la instancia y sus
 Visuals; `respawnAt(world, targetCenterX, targetCenterY, targetRadius)` elige con
 `UnitRandom` un punto válido dentro del mundo, a ≥ 500 del centro de Astra y ≥ 800
@@ -776,7 +776,7 @@ com.davidpe.cosmicaces
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
-|   +-- PhaseOneGameController extends GameController: encuentros, armas y combate de PhaseOne.
+|   +-- PhaseOneGameController extends GameController: encuentros, armas, combate y misión de PhaseOne.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
 |       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
@@ -784,6 +784,8 @@ com.davidpe.cosmicaces
 |       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
 |       18. raiderGun()  19. advanceHitFeedback()
 |       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
+|       22. vesperKills()  23. vesperKillGoal()  24. missionTimeLimitSeconds()
+|       25. missionOutcome()  26. resolveMissionOutcome()
 |
 +-- domain
 |   +-- game
@@ -791,8 +793,11 @@ com.davidpe.cosmicaces
 |   |   |   1. changePhase()  2. addPoints()  3. loseLife()
 |   |   |   4. completePhase()  5. snapshot()
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
-|   |   +-- PlayableRun: recorrido actual de 60 segundos.
+|   |   +-- PlayableRun: reloj del recorrido, límite de 10 minutos (600 s).
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
+|   |   +-- PhaseOneMission: objetivo de la misión (3 bajas en 600 s) y desenlace único.
+|   |   |   1. recordVesperKill()  2. resolve()  3. vesperKills()  4. outcome()
+|   |   +-- PhaseOutcome [enum]: IN_PROGRESS | WIN | LOSE.
 |   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
 |   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
 |   |   |   4. awardGhostwingDestroyed()
@@ -970,7 +975,8 @@ com.davidpe.cosmicaces
 
 ## Comportamiento provisional actual
 
-PlayableRun fija la duración en 60 segundos. Al terminar la fase, GameCoordinator
+PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la misión de PhaseOne).
+Al terminar la fase, GameCoordinator
 cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el mensaje
 final hasta abandonar. Todavía no existe una pantalla de game over ni hall of fame.
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
