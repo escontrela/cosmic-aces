@@ -255,6 +255,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // 10-minute limit, so an impact that would happen after 00:00 is never resolved in this frame.
     float activeSeconds = simulate ? activeRunSeconds(delta) : 0f;
     if (simulate) {
+      // One authorized slice for the whole frame: the screen bounds it by the mission clock once and
+      // the controller shares it with every subsystem, so crossing 00:00 mid-frame cannot stop the
+      // encounter, Ghostwing or combat while letting the weapons run on.
+      controller.beginActiveFrame(activeSeconds);
       // Authoritative lives at the start of the frame. The coordinator owns the pool; the screen
       // only reports deaths and never keeps a diverging counter.
       int astraLives = phaseSnapshot.get().lives();
@@ -314,6 +318,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (controller.resolveMissionOutcome(phaseSnapshot.get().lives()).isFinished()) {
         completeRun();
       }
+      controller.endActiveFrame();
     }
     // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only

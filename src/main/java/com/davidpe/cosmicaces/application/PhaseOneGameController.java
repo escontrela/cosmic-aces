@@ -70,6 +70,19 @@ public final class PhaseOneGameController extends GameController {
    */
   private int pendingAstraLifeLosses;
   private final List<GhostwingDeath> pendingGhostwingDeaths = new ArrayList<>();
+  /**
+   * Sentinel for "no simulation frame is open": each direct call bounds itself with the run clock,
+   * which is the contract the deterministic tests use.
+   */
+  private static final float NO_ACTIVE_FRAME = -1f;
+  /**
+   * Authorized active slice of the frame being simulated, in seconds, or {@link #NO_ACTIVE_FRAME}
+   * outside a frame. The screen computes it once per frame from the mission clock and shares it with
+   * every subsystem through {@link #beginActiveFrame(float)}, so a delta that reaches 00:00 while
+   * flight advances cannot cut the same frame's encounter, Ghostwing, contact timers or collisions
+   * short. While a frame is open this value is zero or positive.
+   */
+  private float activeFrameSeconds = NO_ACTIVE_FRAME;
 
   public PhaseOneGameController() {
     this(ThreadLocalRandom.current()::nextFloat);
@@ -104,6 +117,43 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
+   * Opens the simulation frame with the slice the screen already bounded by the mission clock. While
+   * the frame is open, every subsystem advances exactly this slice instead of re-deriving it from
+   * the run clock, so the clock reaching 00:00 during flight cannot stop the encounter, Ghostwing,
+   * combat timers or collisions of the very same frame. A non-positive or non-finite slice opens an
+   * inert frame in which no subsystem advances.
+   */
+  public void beginActiveFrame(float activeSeconds) {
+    activeFrameSeconds = Float.isFinite(activeSeconds) && activeSeconds > 0f ? activeSeconds : 0f;
+  }
+
+  /**
+   * Closes the current simulation frame, restoring the direct-call contract in which every call
+   * bounds its delta with the run clock and an already finished run advances nothing.
+   */
+  public void endActiveFrame() {
+    activeFrameSeconds = NO_ACTIVE_FRAME;
+  }
+
+  /** True while a frame opened by {@link #beginActiveFrame(float)} is being simulated. */
+  private boolean isActiveFrameOpen() {
+    return activeFrameSeconds != NO_ACTIVE_FRAME;
+  }
+
+  /**
+   * Seconds a subsystem may simulate for this call. Inside an open frame it is exactly the
+   * authorized slice, never re-derived from a clock that may already read 00:00; outside a frame the
+   * run clock bounds the delta, so a direct call keeps the existing behavior.
+   */
+  private float boundedActiveSeconds(float deltaSeconds) {
+    if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) {
+      return 0f;
+    }
+    float limit = isActiveFrameOpen() ? activeFrameSeconds : remainingRunSeconds();
+    return Math.min(deltaSeconds, limit);
+  }
+
+  /**
    * Advances Astra and the run clock using only the portion of this frame remaining in the
    * 10-minute mission limit, and returns the points earned by this delta. Scoring shares the same
    * clamped {@code activeSeconds} as the clock, so points freeze with the run and are never double
@@ -112,11 +162,13 @@ public final class PhaseOneGameController extends GameController {
    * @param coincident whether Astra and the raider were both visible during this delta
    */
   public int advanceFlight(FlightControls controls, float deltaSeconds, boolean coincident) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return 0;
     }
-    float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return 0;
+    }
     if (astraCombat.canAct()) {
       float beforeX = astra().x();
       float beforeY = astra().y();
@@ -197,15 +249,18 @@ public final class PhaseOneGameController extends GameController {
    * @return points earned by this call (the raider destruction bonus, if any)
    */
   public int advanceCombat(float deltaSeconds, int astraLivesRemaining) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return 0;
     }
-    astraCombat.advance(deltaSeconds);
-    raiderCombat.advance(deltaSeconds);
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return 0;
+    }
+    astraCombat.advance(activeSeconds);
+    raiderCombat.advance(activeSeconds);
     handleRespawns(astraLivesRemaining);
     resolveShipContact();
-    resolveGhostwingContact(deltaSeconds);
+    resolveGhostwingContact(activeSeconds);
     return drainCombatPoints();
   }
 
@@ -280,18 +335,17 @@ public final class PhaseOneGameController extends GameController {
    * relative sweep of both translating circles over the same frame so fast ships and long frames do
    * not pass through each other. Astra sweeps the motion captured this frame by {@code advanceFlight}
    * ({@link AstraMotion}); each drone sweeps its fixed cardinal travel for the same active-seconds
-   * clamp that {@code advanceGhostwing} used this frame (the run clock does not advance between both
-   * calls, so the reconstruction is exact). A destroyed or protected Astra never collides; on a
+   * slice passed by {@code advanceCombat} (the run clock does not advance between both calls, so the
+   * reconstruction is exact). A destroyed or protected Astra never collides; on a
    * valid contact only the involved drone is removed, {@code destroyAstra()} runs once (idempotent)
    * and {@link #handleRespawns()} keeps the existing 3 s respawn with its 2 s invulnerability. Other
    * drones are not dragged by the explosion: each contacting drone is destroyed on its own and
    * nothing else receives area damage.
    */
-  private void resolveGhostwingContact(float frameDelta) {
+  private void resolveGhostwingContact(float activeSeconds) {
     if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
       return;
     }
-    float activeSeconds = Math.min(frameDelta, remainingRunSeconds());
     CollisionDetector.Circle astraFrom;
     CollisionDetector.Circle astraTo;
     AstraMotion motion = astraMotion;
@@ -646,7 +700,11 @@ public final class PhaseOneGameController extends GameController {
    * in flight are untouched by ship movement.
    */
   public void advanceEncounter(float deltaSeconds) {
-    if (!isRunStarted() || isRunFinished()) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
+      return;
+    }
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
       return;
     }
     float targetCenterX = astra().x() + astra().drawWidth() / 2f;
@@ -658,7 +716,7 @@ public final class PhaseOneGameController extends GameController {
       velocityX = (motion.afterX() - motion.beforeX()) / motion.duration();
       velocityY = (motion.afterY() - motion.beforeY()) / motion.duration();
     }
-    raiderEncounter.advance(deltaSeconds, WORLD, targetCenterX, targetCenterY,
+    raiderEncounter.advance(activeSeconds, WORLD, targetCenterX, targetCenterY,
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
   }
 
@@ -669,11 +727,13 @@ public final class PhaseOneGameController extends GameController {
    * positive or non-finite deltas are ignored, like every other phase-advance method.
    */
   public void advanceGhostwing(float deltaSeconds) {
-    if (!isRunStarted() || isRunFinished() || !Float.isFinite(deltaSeconds)
-        || deltaSeconds <= 0f) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
       return;
     }
-    float activeSeconds = Math.min(deltaSeconds, remainingRunSeconds());
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return;
+    }
     ghostwingEncounter.advance(activeSeconds, WORLD);
   }
 

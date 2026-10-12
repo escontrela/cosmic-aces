@@ -174,12 +174,12 @@ símbolo único por grupo del minimapa.
 
 `PhaseOneGameController` posee un `GhostwingEncounter` con fuente de aleatoriedad
 propia (constructor de dos `UnitRandom`, uno por encuentro). `advanceGhostwing(dt)`
-alimenta solo la porción activa de la fase (`Math.min(dt, remainingRunSeconds())`) y
-no toca armas, puntuación, cámara ni el Raider; `ghostwingEncounter()` expone el
-encuentro para presentación y pruebas. `PhaseOneScreen` llama a
-`advanceGhostwing(delta)` una vez por frame dentro del recorrido, junto a
-`advanceEncounter`; dibujar sprites, explosiones y marcador de minimapa pertenece a
-la hija de presentación.
+alimenta solo el tramo activo de la fase (acotado por el frame abierto o, fuera de
+él, por `remainingRunSeconds()`) y no toca armas, puntuación, cámara ni el Raider;
+`ghostwingEncounter()` expone el encuentro para presentación y pruebas.
+`PhaseOneScreen` llama a `advanceGhostwing(delta)` una vez por frame dentro del
+recorrido, junto a `advanceEncounter`; dibujar sprites, explosiones y marcador de
+minimapa pertenece a la hija de presentación.
 
 ### Combate Ghostwing en PhaseOne (COS-47)
 
@@ -200,7 +200,7 @@ bonus de 1000 puntos. `destroyGhostwingDrone(id, cause)` elimina el dron vivo, e
 existente y solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de
 ambos círculos traslatorios sobre el mismo frame (`CollisionDetector.sweep`): Astra
 barre su `AstraMotion` recién capturada por `advanceFlight` y cada dron se reconstruye
-restando su vector cardinal fijo × `DRONE_SPEED` × los mismos segundos activos que usó
+restando su vector cardinal fijo × `DRONE_SPEED` × el mismo tramo activo que recibió
 `advanceGhostwing`, por lo que ni la velocidad ni los frames largos atraviesan el casco.
 En un contacto válido se destruye solo el dron implicado (causa `COLLISION`, cero
 puntos) y se llama al `destroyAstra()` existente; `handleRespawns()` mantiene la
@@ -582,6 +582,24 @@ al reutilizarla (devuelve `false` sin Raider activo) y `shipsCoincidentVisible()
 visibilidad (INTRO/RESULT, antes de spawn, tras destrucción esperando respawn, Astra no visible y
 coincidencia real), el formato con clamp y el layout sin colisiones; la legibilidad visual es del PO.
 
+### Tramo activo autorizado del frame (COS-73)
+
+`PhaseOneGameController.beginActiveFrame(activeSeconds)` / `endActiveFrame()` abren y cierran el
+frame de simulación. `PhaseOneScreen.render()` calcula el tramo activo una sola vez
+(`activeRunSeconds(delta)`, acotado por el tiempo restante), lo abre al empezar a simular y lo cierra
+tras resolver el desenlace; mientras el frame está abierto, `advanceFlight`, `advanceEncounter`,
+`advanceGhostwing` y `advanceCombat` (y `resolveGhostwingContact`) consumen exactamente ese tramo
+mediante `boundedActiveSeconds`, sin volver a derivarlo de `PlayableRun.remainingRunSeconds()` ni
+salir por `isRunFinished()`. Así, un delta que alcanza 00:00 durante el vuelo no recorta el
+movimiento, el encuentro, los drones, los temporizadores, las colisiones ni las armas del mismo
+frame: todos simulan el tramo autorizado una sola vez y después se resuelve el desenlace
+(`PhaseOneMission` conserva la prioridad 0 vidas → LOSE, 3 bajas → WIN, reloj 0 → LOSE). Fuera de un
+frame (llamadas directas, p. ej. pruebas deterministas) no hay tramo autorizado: cada método acota el
+delta con el reloj y un recorrido ya terminado no avanza nada, preservando el contrato previo. En los
+frames siguientes el tramo es cero y ningún subsistema avanza naves, combate, disparos ni puntos.
+`PhaseOneActiveSliceTest` cubre el cruce del límite (mismo tramo para todos, tope del tramo,
+congelación con tramo cero) y el tercer derribo dentro del tramo hacia WIN o LOSE.
+
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
 `domain.effect.ShipExplosionSheet` describe el PNG original de 1774×887 con ocho
@@ -895,6 +913,7 @@ com.davidpe.cosmicaces
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
 |   +-- PhaseOneGameController extends GameController: encuentros, armas, combate y misión de PhaseOne.
+|       0. beginActiveFrame() / endActiveFrame(): tramo activo autorizado del frame.
 |       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
 |       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
