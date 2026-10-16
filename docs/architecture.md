@@ -16,9 +16,9 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
-| `domain.scenery` | Elementos reutilizables del escenario | Starfield para la bienvenida y WorldScenery para estrellas/isletas fijas de PhaseOne. |
+| `domain.scenery` | Elementos reutilizables del escenario | `Starfield` para la pantalla de bienvenida. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.screen` | Pantallas concretas | Input, cámara, viewport, layout, fuentes y ciclo de vida de recursos. |
+| `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
@@ -56,12 +56,20 @@ Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
-PhaseOne crea `WorldScenery` una vez por recorrido con semilla propia: las
-estrellas cubren todo el mapa y las isletas de bloques permanecen en las mismas
-coordenadas al regresar. El dibujo filtra los elementos fuera de la región
-visible. `Starfield` conserva el scroll de la pantalla de bienvenida y redistribuye sus
-estrellas dentro del tamaño lógico nuevo cuando `WelcomeScreen.resize` cambia el
-viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
+PhaseOne dibuja los PNG del mapa desde `PhaseOneTerrainCatalog`: cada tile ocupa su rectángulo
+determinista de 1024×768 unidades y el último recorta su origen/alto para terminar en y=12000 sin
+estirar la imagen. `PhaseOneTerrainPlanner` calcula la cobertura conservadora del rectángulo real
+de cámara, incluidos giro, zoom y dimensiones actuales del `ScreenViewport`; `PhaseOneScreen`
+observa el desplazamiento entre frames para ordenar el anillo de precarga hacia delante, actualiza
+`PhaseOneTerrainCache<Texture>` en el hilo de render y dibuja los visibles primero con `SpriteBatch`.
+Los sprites, explosiones y trazadores quedan encima; el HUD mantiene su cámara independiente.
+El cache carga de forma síncrona solo lo visible para garantizar fondo en el primer frame, salto o
+resize, limita la precarga normal a 2 ms por frame, retiene dos anillos para evitar thrashing y
+expulsa recursos al alejarse. `estimatedBytes()` informa el coste RGBA aproximado y `dispose()` es
+idempotente; cada PhaseOne nueva crea un cache limpio. El minimapa conserva su marco y marcadores
+de Astra, Vesper y Ghostwing, sin isletas procedurales ni miniatura de los tiles. `WelcomeScreen`
+mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
+`WelcomeScreen.resize` cambia el viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
 dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
@@ -467,7 +475,8 @@ quedan descritos en la sección «Explosiones, parpadeo y energía integrados (C
 ### Bajas de Vesper conectadas a la misión (COS-68)
 
 `PhaseOneGameController.destroyRaider()` es el único punto de transición «vida → destruido» del
-Raider, se invoque por proyectil de Astra o por contacto de cascos. Ahí, tras validar
+Raider, se invoca por proyectiles de Astra. El contacto entre cascos solo destruye a Astra y no
+daña, cuenta ni puntúa a Vesper. En una baja válida, tras validar
 ACTIVE→DESTROYED, guardar el centro de muerte, destruir el encuentro y limpiar el destello, la baja
 pasa por `PhaseOneMission.recordVesperKill()`: cada destrucción real cuenta una sola vez hasta la
 meta de 3, y el bonus de 1000 de `PhaseScore.awardRaiderDestroyed()` se concede **solo si la baja
@@ -599,6 +608,80 @@ delta con el reloj y un recorrido ya terminado no avanza nada, preservando el co
 frames siguientes el tramo es cero y ningún subsistema avanza naves, combate, disparos ni puntos.
 `PhaseOneActiveSliceTest` cubre el cruce del límite (mismo tramo para todos, tope del tramo,
 congelación con tramo cero) y el tercer derribo dentro del tramo hacia WIN o LOSE.
+
+### Catálogo de terreno de PhaseOne (COS-82)
+
+`infrastructure.gdx.screen.PhaseOneTerrainCatalog` es un catálogo puro de los 128 tiles del mapa
+(8 columnas × 16 filas), sin `Texture`, sin E/S y sin estado mutable; se construye y consulta sin
+arrancar LibGDX. Fija la correspondencia de COS-81: `row-01-col-01` en el suroeste (inicio del
+recorrido, y=0) y `row-16-col-08` en el noreste (final). Cada `Tile` describe su ruta
+(`assets/images/map-phase-one/row-%02d-col-%02d.png`), el rectángulo destino en unidades de mundo
+(1024 × 768 por celda) y el sub-rectángulo fuente del PNG que le corresponde 1 píxel a 1 unidad de
+mundo, de modo que dibujar la fuente en el destino nunca estira la imagen. La última fila rebasa el
+mundo (y=12288) en 288 unidades: su rectángulo visible y su recorte miden 480 (desde `sourceY=288`)
+para cubrir exactamente `[0,8192]×[0,12000]`. `tiles()`, `tile(row,col)` y `pathFor(...)` validan
+los índices 1..16/1..8; `tileAt(x,y)` resuelve un punto con fronteras interiores semiabiertas y
+devuelve vacío fuera del mundo (sin solicitar recursos); `tilesIn(minX,minY,maxX,maxY)` devuelve en
+orden fila-mayor los tiles que intersecan el rectángulo recortado al mundo, contando los bordes
+compartidos para no perder vecinos en la precarga. La orientación es explícita:
+`requiresVerticalFlip()` devuelve `false` porque el borde superior del PNG es el norte y LibGDX ya
+dibuja el `TextureRegion` por defecto con su fila superior arriba (mayor Y del mundo). El catálogo no
+consulta la nave ni altera el mundo; la pantalla, el selector y el cargador de las hijas siguientes
+lo consumen. La comprobación visual de orientación y continuidad corresponde al PO humano.
+
+### Selección de tiles visibles y precarga (COS-83)
+
+`infrastructure.gdx.screen.PhaseOneTerrainPlanner` es la política pura de selección del mapa: sin
+`Texture`, sin LibGDX y sin estado mutable, se prueba sin arrancar la ventana y consume solo el
+catálogo de COS-82. Su `Camera(worldX, worldY, upX, upY, zoom, viewWidth, viewHeight)` replica lo
+que `FlightCamera` publica a LibGDX y `viewWidth/viewHeight` es el tamaño lógico real del
+`ScreenViewport` (ventana grande muestra más mundo). `visibleCorners` reconstruye el rectángulo
+rotado de la vista con `right=(upY,-upX)`, `up=(upX,upY)` y semiejes `viewWidth/2*zoom` y
+`viewHeight/2*zoom`, igual que `CameraVisibility`; `Bounds` calcula su AABB conservador y lo recorta
+a `[0,8192]×[0,12000]`, de modo que ninguna esquina visible queda fuera del conjunto y nunca se
+piden índices fuera de 1..16/1..8.
+
+`plan(camera)` y `plan(camera, travelX, travelY)` (por defecto la dirección de avance de la cámara)
+devuelven un `Plan` con tres zonas concéntricas que son la histéresis de la caché futura:
+`visible` (tiles que intersecan el AABB recortado, ordenados del más cercano a la cámara al más
+lejano), `prefetch` (un anillo de tiles alrededor de lo visible, ordenado delantero > lateral/trasero
+según la dirección de desplazamiento reciente) y `retained` (dos anillos alrededor de lo visible;
+`retains(tile)` es la condición de conservación, de modo que una oscilación sobre una frontera no
+recarga la textura). Visibles ⊂ precarga ⊂ retención; lo visible nunca se filtra por presupuesto
+fijo. El plano no dibuja, no carga texturas ni conoce la pantalla; `PhaseOneScreen` consume el plan
+después de actualizar `FlightCamera`. `PhaseOneTerrainPlannerTest` cubre yaw 0/45/90/135/180/270°,
+zoom 1/1,15/1,25, viewport 1024×768 y 1920×1080, fronteras del mundo, avance, inversión de rumbo y
+vuelta a tiles previos, y exige que toda esquina visible quede cubierta.
+
+### Cargador anticipado y caché acotada del terreno (COS-84)
+
+`infrastructure.gdx.screen.PhaseOneTerrainCache<T>` es el dueño único de los recursos del mapa: no
+dibuja ni conoce `Texture`, es genérico sobre el recurso y recibe un `ResourceFactory<T>`
+(crear/liberar/estimar bytes), de modo que toda la política se prueba con un cargador falso sin
+contexto LibGDX. Consume el `Plan` de COS-83 tal cual: primero crea **todos** los `visible` (sin
+presupuesto, para que un salto de cámara o un resize nunca muestren hueco), después recorre
+`prefetch` —ya ordenado delantero primero— mientras el tiempo transcurrido desde el inicio de la
+llamada no supere el presupuesto `budgetNanos` del frame, y expone los tiles que quedan pendientes.
+`primeVisible(plan)` es la carga bloqueante previa al primer dibujo: sirve solo lo visible y deja el
+anillo como pendiente, sin decodificar la matriz entera al entrar. Cada `Tile` tiene como máximo un
+recurso residente (`Map<Tile,T>`), así que nunca hay dos copias GL del mismo PNG.
+
+La memoria se acota por la zona de **retención** del plan, no por un número fijo: tras cargar, solo
+se liberan los residentes para los que `plan.retains(tile)` es falso (visible + dos anillos). Como
+lo visible siempre está dentro de su propia retención, una textura dibujable no se expulsa y una
+oscilación sobre una junta no recarga (histéresis). El límite se adapta al viewport: una ventana
+grande mueve más tiles a `visible` y amplía la retención. Contadores internos
+(`residentCount`, `pendingCount`, `totalLoaded`, `totalEvictions`, `estimatedBytes`) y el
+`FrameResult` de cada llamada sirven a pruebas y diagnóstico, sin HUD de depuración.
+`dispose()` libera todos los residentes y limpia los pendientes de forma idempotente; entrar y
+salir repetidamente no deja recursos ni solicitudes. `PhaseOneTerrainTextureFactory` es el adaptador
+GL concreto (`Texture` desde `path`, `dispose`, bytes RGBA8888), propiedad de `PhaseOneScreen` a
+través de la caché.
+Medición del banco con cargador falso sobre el vuelo completo: 1024×768 retiene como máximo 24
+texturas (~72 MiB) y 1920×1080 un máximo de 30 (~90 MiB), muy por debajo de las 128 (~384 MiB).
+`PhaseOneTerrainCacheTest` cubre carga inicial, salto/resize/giro/bordes/regreso sin hueco,
+presupuesto y pendientes, prioridad delantera, oscilación sin recarga, expulsión fuera de retención,
+bytes y cierre. La QA visual de orientación, continuidad y capas queda para el PO.
 
 ### Explosiones, parpadeo y energía integrados (COS-33)
 
@@ -859,9 +942,8 @@ jugador con una respuesta suave en los
 bordes. La posición se recorta al mundo solo como salvaguarda. `PhaseOneScreen`
 dibuja al raider cuando su círculo envolvente intersecta la vista real de la
 cámara, sin destruirlo al salir de cámara, y no pasa ninguna `PlayArea` al
-controlador. `Starfield.draw(shapes)` y `WorldScenery.draw(shapes,...)`
-abren y cierran el dibujo con el ShapeRenderer recibido, que pertenece a la
-pantalla. El coordinador cambia de pantalla después del render del
+controlador. `Starfield.draw(shapes)` abre y cierra el dibujo con el ShapeRenderer recibido, que
+pertenece a la pantalla de bienvenida. El coordinador cambia de pantalla después del render del
 frame y libera la anterior.
 
 Con COS-39 `PhaseOneScreen` dibuja además un indicador de enemigo fuera de
@@ -1046,8 +1128,6 @@ com.davidpe.cosmicaces
 |       +-- Starfield: estrellas con scroll de la bienvenida.
 |       |   1. update(): mueve y recicla estrellas.
 |       |   2. draw(): dibuja con ShapeRenderer.
-|       +-- WorldScenery: estrellas e isletas persistentes de PhaseOne.
-|           1. stars()  2. islands()  3. visibleStarCount()  4. draw()
 |
 +-- infrastructure
     +-- gdx
@@ -1109,6 +1189,15 @@ com.davidpe.cosmicaces
             |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
             +-- EnemyStatusHud: VESPER RAIDER + energía % durante el enfrentamiento (COS-72).
             |   1. show()  2. Readout.energyLabel()  3. layout()  4. draw()
+            +-- PhaseOneTerrainCatalog: catálogo puro de los 128 tiles de terreno 8×16 (COS-82).
+            |   1. tiles()  2. tile()  3. pathFor()  4. tileAt()  5. tilesIn()
+            |   6. requiresVerticalFlip()
+            +-- PhaseOneTerrainPlanner: selección visible, precarga y retención para cámara rotada (COS-83).
+            |   1. plan()  2. visibleCorners()
+            +-- PhaseOneTerrainCache: dueño acotado de texturas, presupuesto, eviction y métricas (COS-84–86).
+            |   1. primeVisible()  2. update()  3. resource()  4. dispose()
+            +-- PhaseOneTerrainTextureFactory: creación/liberación GL y estimación RGBA8888 (COS-84–86).
+                1. create()  2. dispose()  3. estimatedBytes()
             +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
                 4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF

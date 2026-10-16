@@ -32,11 +32,17 @@ class VesperDogfightIntegrationTest {
     assertTrue(controller.isRaiderActive());
     VesperRaider first = controller.activeRaider();
 
-    // Force a hull-to-hull contact by placing Astra on the raider: both ships are destroyed once.
-    controller.placeAstra(first.x(), first.y(), 0f);
-    controller.advanceCombat(DT, 3);
-    assertFalse(controller.isRaiderActive(), "the hull contact destroys the raider");
-    assertTrue(controller.raiderCombat().isDestroyed());
+    // Shoot Vesper down; a hull collision is not a way to defeat an enemy.
+    float astraX = first.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = first.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+    int guard = 0;
+    while (!controller.raiderCombat().isDestroyed() && guard < 1200) {
+      controller.advanceWeapons(DT, DT, true, false, RANGE);
+      guard++;
+    }
+    assertTrue(controller.raiderCombat().isDestroyed(), "Astra's shots defeat Vesper");
+    assertFalse(controller.isRaiderActive());
 
     // While the raider is defeated, its cannon must not emit even with the coincidence permission.
     for (int frame = 0; frame < 60; frame++) {

@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
@@ -120,13 +121,12 @@ class PhaseOneActiveSliceTest {
     controller.advanceFlight(FlightControls.neutral(), slice, false);
     controller.advanceEncounter(slice);
     controller.advanceGhostwing(slice);
-    int earned = contactThirdKill(controller, slice);
+    assertTrue(controller.recordVesperKill(), "third accepted kill lands inside the final slice");
     controller.advanceWeapons(slice, slice, false, false, RANGE);
     controller.endActiveFrame();
 
     assertEquals(3, controller.vesperKills(), "the third kill lands inside the final slice");
-    assertEquals(1000, earned, "the third destruction still awards its single bonus");
-    assertEquals(1, controller.drainAstraLifeLosses(), "the contact costs exactly one life");
+    assertEquals(0, controller.drainAstraLifeLosses(), "no Astra collision occurred");
     assertEquals(PhaseOutcome.WIN, controller.resolveMissionOutcome(2),
         "three kills with lives remaining win inside the final slice");
   }
@@ -140,7 +140,8 @@ class PhaseOneActiveSliceTest {
     controller.advanceFlight(FlightControls.neutral(), slice, false);
     controller.advanceEncounter(slice);
     controller.advanceGhostwing(slice);
-    contactThirdKill(controller, slice);
+    contactAstraDuringFinalSlice(controller, slice);
+    assertTrue(controller.recordVesperKill(), "third accepted kill lands inside the final slice");
     controller.advanceWeapons(slice, slice, false, false, RANGE);
     controller.endActiveFrame();
 
@@ -150,7 +151,7 @@ class PhaseOneActiveSliceTest {
         "the exhausted pool loses even when the third kill lands in the same slice");
   }
 
-  /** Opens the run at two prior kills and exactly 2 s left, ready for one final-slice contact. */
+  /** Opens the run at two prior kills and exactly 2 s left for final-slice outcome checks. */
   private static PhaseOneGameController finalSliceWithTwoPriorKills() {
     PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
     controller.placeAstra(2000f, 1000f, 0f);
@@ -162,15 +163,13 @@ class PhaseOneActiveSliceTest {
     return controller;
   }
 
-  /**
-   * Resolves the third kill by hull contact inside the open final slice, forcing the overlap the
-   * same way the deterministic combat tests do. Returns the points earned by the contact.
-   */
-  private static int contactThirdKill(PhaseOneGameController controller, float slice) {
+  /** Causes an Astra-only hull collision inside the open final slice. */
+  private static void contactAstraDuringFinalSlice(PhaseOneGameController controller, float slice) {
     VesperRaider raider = controller.activeRaider();
     raider.placeAt(2000f - raider.drawWidth() / 2f, 1500f - raider.drawHeight() / 2f, 0f,
         PhaseOneGameController.WORLD);
     controller.placeAstra(raider.x(), raider.y(), 0f);
-    return controller.advanceCombat(slice, 3);
+    assertEquals(0, controller.advanceCombat(slice, 3));
+    assertFalse(controller.raiderCombat().isDestroyed(), "collision leaves Vesper alive");
   }
 }

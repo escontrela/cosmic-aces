@@ -29,39 +29,43 @@ class PhaseOneCombatTest {
   }
 
   @Test
-  void vulnerableContactDestroysBothShipsAndAwardsTheBonusOnce() {
+  void vulnerableContactDestroysOnlyAstraAndAwardsNoKillOrBonus() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
     // Drop Astra's box exactly on the raider's box: both bodies overlap.
     controller.placeAstra(raider.x(), raider.y(), 0f);
 
-    assertEquals(1000, controller.advanceCombat(DELTA, 3));
+    assertEquals(0, controller.advanceCombat(DELTA, 3));
     assertTrue(controller.astraCombat().isDestroyed());
-    assertTrue(controller.raiderCombat().isDestroyed());
+    assertFalse(controller.raiderCombat().isDestroyed());
     assertFalse(controller.isAstraActive());
-    assertFalse(controller.isRaiderActive());
+    assertTrue(controller.isRaiderActive());
+    assertEquals(100, controller.raiderCombat().energyPercent());
+    assertEquals(0, controller.vesperKills());
+    assertEquals(1, controller.drainAstraLifeLosses());
 
     assertEquals(0, controller.advanceCombat(DELTA, 3), "a wreck earns nothing more");
-    assertEquals(1000, controller.scorePoints());
+    assertEquals(0, controller.scorePoints());
   }
 
   @Test
-  void resurrectionsFollowThreeAndFiveSecondsWithAstraInvulnerability() {
+  void astraRespawnsAfterThreeSecondsWithInvulnerabilityAndVesperStaysAlive() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
     controller.placeAstra(raider.x(), raider.y(), 0f);
-    controller.advanceCombat(DELTA, 3); // both destroyed
+    controller.advanceCombat(DELTA, 3); // only Astra is destroyed by contact
 
     /// Astra comes back after exactly 3 seconds, invulnerable and at full energy.
     assertEquals(0, controller.advanceCombat(3f, 3));
     assertTrue(controller.isAstraActive());
     assertTrue(controller.astraCombat().isInvulnerable());
     assertEquals(100, controller.astraCombat().energyPercent());
-    assertFalse(controller.isRaiderActive(), "Vesper still needs 5 seconds");
+    assertTrue(controller.isRaiderActive(), "contact must not destroy Vesper");
+    assertEquals(100, controller.raiderCombat().energyPercent());
 
-    /// Astra's protection lasts exactly 2 seconds and Vesper respawns at exactly 5.
+    /// Astra's protection lasts exactly 2 seconds; Vesper remains alive throughout.
     assertEquals(0, controller.advanceCombat(2f, 3));
-    assertTrue(controller.isRaiderActive(), "Vesper must respawn at the 5-second mark");
+    assertTrue(controller.isRaiderActive(), "Vesper remains active after the collision");
     assertFalse(controller.astraCombat().isInvulnerable(), "Astra protection ends at 2 seconds");
     assertEquals(100, controller.raiderCombat().energyPercent());
   }
@@ -108,25 +112,22 @@ class PhaseOneCombatTest {
     assertEquals(remainingBefore - 1f, controller.remainingRunSeconds(), 0.001f,
         "the 10-minute mission clock is not reset by death");
     assertEquals(1, earned, "a dead Astra earns the base second but no coincidence bonus");
-    assertEquals(1001, controller.scorePoints());
+    assertEquals(1, controller.scorePoints(), "Astra's collision adds no Vesper kill bonus");
   }
 
   @Test
-  void deathCentersExposeTheFrozenWorldPositionOfEachShip() {
+  void astraContactRecordsOnlyAstrasDeathCenter() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
     float astraCenterX = raider.x() + controller.astra().drawWidth() / 2f;
     float astraCenterY = raider.y() + controller.astra().drawHeight() / 2f;
-    float raiderCenterX = raider.centerX();
-    float raiderCenterY = raider.centerY();
     controller.placeAstra(raider.x(), raider.y(), 0f);
 
     controller.advanceCombat(DELTA, 3);
 
     assertEquals(astraCenterX, controller.astraDeathCenterX(), 0.01f);
     assertEquals(astraCenterY, controller.astraDeathCenterY(), 0.01f);
-    assertEquals(raiderCenterX, controller.raiderDeathCenterX(), 0.01f);
-    assertEquals(raiderCenterY, controller.raiderDeathCenterY(), 0.01f);
+    assertFalse(controller.raiderCombat().isDestroyed());
 
     // Reappearing moves the ship but never rewrites the death centre used by its explosion.
     controller.advanceCombat(3f, 3);
@@ -141,6 +142,23 @@ class PhaseOneCombatTest {
       controller.advanceWeapons(DELTA, DELTA, true, false, 10_000f);
       guard++;
     }
+  }
+
+  private static void alignAstraForBurst(PhaseOneGameController controller, VesperRaider raider) {
+    float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
+    float astraY = raider.centerY() - 200f - controller.astra().drawHeight() / 2f;
+    controller.placeAstra(astraX, astraY, 0f);
+  }
+
+  private static int fireUntilRaiderDestroyed(PhaseOneGameController controller) {
+    int points = 0;
+    int guard = 0;
+    while (!controller.raiderCombat().isDestroyed() && guard < 1200) {
+      points += controller.advanceWeapons(DELTA, DELTA, true, false, 10_000f);
+      guard++;
+    }
+    assertTrue(controller.raiderCombat().isDestroyed(), "Vesper must fall to Astra's burst");
+    return points;
   }
 
   @Test
@@ -209,7 +227,7 @@ class PhaseOneCombatTest {
   }
 
   @Test
-  void destructionClearsAnActivePulseSoTheExplosionStaysUncluttered() {
+  void astraContactDoesNotClearVespersActiveHitPulse() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
     float astraX = raider.centerX() - controller.astra().drawWidth() / 2f;
@@ -218,21 +236,22 @@ class PhaseOneCombatTest {
     fireUntilFirstRaiderFlash(controller);
     assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f);
 
-    // A vulnerable hull-to-hull contact destroys both ships: death outranks the flash.
+    // Hull contact destroys Astra only; Vesper's hit pulse belongs to its own earlier hit.
     controller.placeAstra(raider.x(), raider.y(), 0f);
     controller.advanceCombat(DELTA, 3);
 
     assertTrue(controller.astraCombat().isDestroyed());
-    assertTrue(controller.raiderCombat().isDestroyed());
-    assertEquals(0f, controller.raiderHitFlashIntensity(), 0.0001f,
-        "death clears the raider pulse before the explosion");
+    assertFalse(controller.raiderCombat().isDestroyed());
+    assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f,
+        "Astra's collision must not clear Vesper's hit pulse");
     assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f);
 
-    // Respawn restarts neither pulse.
+    // Astra's respawn clears her pulse; Vesper's independent pulse keeps decaying only when
+    // hit-feedback time advances.
     controller.advanceCombat(3f, 3);
     controller.advanceCombat(2f, 3);
     assertEquals(0f, controller.astraHitFlashIntensity(), 0.0001f);
-    assertEquals(0f, controller.raiderHitFlashIntensity(), 0.0001f);
+    assertEquals(1f, controller.raiderHitFlashIntensity(), 0.0001f);
   }
 
   @Test
@@ -274,26 +293,26 @@ class PhaseOneCombatTest {
   }
 
   @Test
-  void eachVesperDestructionCountsOnceAndTheThirdOneClosesRespawns() {
+  void eachShotVesperDestructionCountsOnceAndTheThirdOneClosesRespawns() {
     PhaseOneGameController controller = spawnRaider();
     assertEquals(0, controller.vesperKills());
 
     for (int kill = 1; kill <= 3; kill++) {
       VesperRaider raider = controller.activeRaider();
       assertNotNull(raider, "Vesper must be present before kill " + kill);
-      // Park the raider at a known open spot so the contact geometry is deterministic.
+      // Park Vesper at a known open spot so the firing geometry is deterministic.
       raider.placeAt(4000f - raider.drawWidth() / 2f, 6000f - raider.drawHeight() / 2f, 0f,
           PhaseOneGameController.WORLD);
-      // Drop Astra's box on the raider: a vulnerable hull contact destroys both ships once.
-      controller.placeAstra(raider.x(), raider.y(), 0f);
-      assertEquals(1000, controller.advanceCombat(DELTA, 3), "kill " + kill + " awards one bonus");
+      alignAstraForBurst(controller, raider);
+      assertEquals(1000, fireUntilRaiderDestroyed(controller),
+          "kill " + kill + " awards one bonus");
       assertEquals(kill, controller.vesperKills(), "exactly one kill per destruction");
       assertEquals(kill * 1000, controller.scorePoints(), "no double bonus");
       assertEquals(0, controller.raiderCombat().energyPercent());
       assertFalse(controller.isRaiderActive());
 
       if (kill < 3) {
-        // Astra returns at 3 s (invulnerable) and Vesper at 5 s at full energy and a valid point.
+        // Vesper returns after five seconds at full energy; Astra took no collision damage.
         controller.advanceCombat(5f, 3);
         assertTrue(controller.isRaiderActive(), "Vesper reappears after kill " + kill);
         assertEquals(100, controller.raiderCombat().energyPercent(),
@@ -303,8 +322,6 @@ class PhaseOneCombatTest {
             && next.centerX() <= PhaseOneGameController.WORLD.width());
         assertTrue(next.centerY() >= 0f
             && next.centerY() <= PhaseOneGameController.WORLD.height());
-        controller.advanceCombat(2f, 3); // Astra's post-respawn protection ends
-        assertFalse(controller.astraCombat().isInvulnerable());
       }
     }
 
@@ -316,29 +333,26 @@ class PhaseOneCombatTest {
   }
 
   @Test
-  void aMissionLostByLivesIgnoresLaterDestructionsAndStopsRespawns() {
+  void aMissionLostByLivesDoesNotRespawnADefeatedVesper() {
     PhaseOneGameController controller = spawnRaider();
-    // The lives child resolves the terminal LOSE when the authoritative pool reaches zero.
-    assertEquals(PhaseOutcome.LOSE, controller.resolveMissionOutcome(0));
-
     VesperRaider raider = controller.activeRaider();
-    controller.placeAstra(raider.x(), raider.y(), 0f);
-    assertEquals(0, controller.advanceCombat(DELTA, 3),
-        "a destruction after the mission is already lost awards nothing");
-    assertEquals(0, controller.vesperKills(),
-        "and never advances the mission counter");
-    assertFalse(controller.isRaiderActive());
+    alignAstraForBurst(controller, raider);
+    assertEquals(1000, fireUntilRaiderDestroyed(controller));
+    assertEquals(1, controller.vesperKills());
 
+    // The lives child resolves terminal LOSE even if Vesper was previously destroyed.
+    assertEquals(PhaseOutcome.LOSE, controller.resolveMissionOutcome(0));
     controller.advanceCombat(60f, 3);
     assertFalse(controller.isRaiderActive(), "a terminal mission never respawns Vesper");
+    assertEquals(1, controller.vesperKills());
   }
 
   @Test
   void anExpiredRunNeverRespawnsAVesperKilledDuringTheRun() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
-    controller.placeAstra(raider.x(), raider.y(), 0f);
-    controller.advanceCombat(DELTA, 3);
+    alignAstraForBurst(controller, raider);
+    assertEquals(1000, fireUntilRaiderDestroyed(controller));
     assertEquals(1, controller.vesperKills());
 
     controller.advanceRun(600f);
@@ -357,23 +371,24 @@ class PhaseOneCombatTest {
     for (int death = 1; death <= 3; death++) {
       VesperRaider raider = controller.activeRaider();
       assertNotNull(raider, "Vesper must be present before Astra death " + death);
-      // Park the raider at a known open spot so the contact geometry and the respawn point are
-      // deterministic (the scripted random would otherwise respawn Vesper on Astra's death spot).
+      // Park Vesper at a known open spot so the collision geometry is deterministic.
       raider.placeAt(4000f - raider.drawWidth() / 2f, 6000f - raider.drawHeight() / 2f, 0f,
           PhaseOneGameController.WORLD);
-      // Drop Astra's box on the raider: a vulnerable hull contact destroys both ships once.
+      // A vulnerable hull contact destroys Astra only; Vesper remains in the encounter.
       controller.placeAstra(raider.x(), raider.y(), 0f);
       controller.advanceCombat(DELTA, livesRemaining);
       assertEquals(1, controller.drainAstraLifeLosses(),
           "each real destruction costs exactly one life");
       assertFalse(controller.isAstraActive());
-      assertEquals(death, controller.vesperKills(), "one Vesper kill per mutual destruction");
+      assertEquals(0, controller.vesperKills(), "collision must not count a Vesper kill");
+      assertTrue(controller.isRaiderActive(), "Vesper survives Astra's collision");
       livesRemaining--;
 
-      // Astra returns after 3 s (with 2 s of protection) and Vesper after 5 s.
-      controller.advanceCombat(5f, livesRemaining);
+      // Astra returns after 3 s with protection; move her away before that protection ends.
+      controller.advanceCombat(3f, livesRemaining);
       if (livesRemaining > 0) {
         assertTrue(controller.isAstraActive(), "Astra reappears while lives remain");
+        controller.placeAstra(1600f, 6000f, 0f);
         controller.advanceCombat(2f, livesRemaining); // the protection window ends
         assertFalse(controller.astraCombat().isInvulnerable());
       }
@@ -388,14 +403,16 @@ class PhaseOneCombatTest {
   }
 
   @Test
-  void aMutualDestructionCostsOneLifeAndOneKill() {
+  void aVesperContactCostsOneAstraLifeAndDoesNotKillVesper() {
     PhaseOneGameController controller = spawnRaider();
     VesperRaider raider = controller.activeRaider();
     controller.placeAstra(raider.x(), raider.y(), 0f);
 
-    assertEquals(1000, controller.advanceCombat(DELTA, 3));
-    assertEquals(1, controller.drainAstraLifeLosses(), "the mutual destruction costs one life");
-    assertEquals(1, controller.vesperKills(), "and counts one Vesper kill");
+    assertEquals(0, controller.advanceCombat(DELTA, 3));
+    assertEquals(1, controller.drainAstraLifeLosses(), "the collision costs Astra one life");
+    assertFalse(controller.raiderCombat().isDestroyed(), "Vesper takes no collision damage");
+    assertEquals(0, controller.vesperKills(), "collision does not count a Vesper kill");
+    assertEquals(0, controller.scorePoints(), "collision awards no kill bonus");
     assertEquals(0, controller.drainAstraLifeLosses(), "the transition is drained exactly once");
   }
 
