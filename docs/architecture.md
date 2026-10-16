@@ -475,7 +475,8 @@ quedan descritos en la sección «Explosiones, parpadeo y energía integrados (C
 ### Bajas de Vesper conectadas a la misión (COS-68)
 
 `PhaseOneGameController.destroyRaider()` es el único punto de transición «vida → destruido» del
-Raider, se invoque por proyectil de Astra o por contacto de cascos. Ahí, tras validar
+Raider, se invoca por proyectiles de Astra. El contacto entre cascos solo destruye a Astra y no
+daña, cuenta ni puntúa a Vesper. En una baja válida, tras validar
 ACTIVE→DESTROYED, guardar el centro de muerte, destruir el encuentro y limpiar el destello, la baja
 pasa por `PhaseOneMission.recordVesperKill()`: cada destrucción real cuenta una sola vez hasta la
 meta de 3, y el bonus de 1000 de `PhaseScore.awardRaiderDestroyed()` se concede **solo si la baja

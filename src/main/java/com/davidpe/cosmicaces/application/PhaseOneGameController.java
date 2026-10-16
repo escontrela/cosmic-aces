@@ -240,8 +240,8 @@ public final class PhaseOneGameController extends GameController {
 
   /**
    * Advances both ships' combat timers, resolves a vulnerable hull-to-hull contact and places any
-   * ship whose respawn delay has elapsed. Called once per frame inside the run; it can award the
-   * single destruction bonus if the contact destroys the raider. The authoritative lives remaining
+   * ship whose respawn delay has elapsed. Hull contact only destroys Astra; Vesper takes no damage
+   * from the collision and cannot award a kill or points this way. The authoritative lives remaining
    * are supplied by the caller from the coordinator snapshot: Astra only reappears while the pool is
    * above zero, so an exhausted pool leaves her defeated with no extra damage.
    *
@@ -326,7 +326,6 @@ public final class PhaseOneGameController extends GameController {
     }
     if (CollisionDetector.overlaps(bodyCircle(astra()), bodyCircle(raider))) {
       destroyAstra();
-      destroyRaider();
     }
   }
 
