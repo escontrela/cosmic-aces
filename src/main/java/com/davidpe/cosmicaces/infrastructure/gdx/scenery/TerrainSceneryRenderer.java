@@ -28,9 +28,8 @@ public final class TerrainSceneryRenderer implements Disposable {
 
     private final TerrainAtlasOwner<TextureAtlas> atlasOwner;
     private final TextureAtlas atlas;
-    private final List<GroundRegions> groundVariants;
+    private final GroundRegions ground;
     private final Map<String, TextureRegion> sceneryRegions;
-    private final long groundSeed;
     private final int worldWidth;
     private final int worldHeight;
     private final TerrainGroundPlanner groundPlanner;
@@ -40,7 +39,6 @@ public final class TerrainSceneryRenderer implements Disposable {
         Objects.requireNonNull(config, "config");
         worldWidth = config.worldWidth();
         worldHeight = config.worldHeight();
-        groundSeed = config.seed();
         groundPlanner = new TerrainGroundPlanner(worldWidth, worldHeight);
         int tileSize = TerrainAtlasCatalog.GRASS_TILE_SIZE;
 
@@ -81,11 +79,8 @@ public final class TerrainSceneryRenderer implements Disposable {
                 }
                 regions.put(expected.id(), region);
             }
-            groundVariants = List.of(
-                    groundRegions(regions.get(TerrainAtlasCatalog.GRASS_ID), partialWidth(worldWidth, tileSize),
-                            partialHeight(worldHeight, tileSize), tileSize),
-                    groundRegions(regions.get(TerrainAtlasCatalog.GRASS_V2_ID), partialWidth(worldWidth, tileSize),
-                            partialHeight(worldHeight, tileSize), tileSize));
+            ground = groundRegions(regions.get(TerrainAtlasCatalog.GRASS_ID), partialWidth(worldWidth, tileSize),
+                    partialHeight(worldHeight, tileSize), tileSize);
             sceneryRegions = Map.copyOf(regions);
         } catch (RuntimeException | Error failure) {
             owner.dispose();
@@ -104,7 +99,6 @@ public final class TerrainSceneryRenderer implements Disposable {
         for (TerrainGroundPlanner.Tile tile : groundPlanner.plan(visibleArea)) {
             boolean rightEdge = tile.width() != TerrainAtlasCatalog.GRASS_TILE_SIZE;
             boolean topEdge = tile.height() != TerrainAtlasCatalog.GRASS_TILE_SIZE;
-            GroundRegions ground = groundVariants.get(selectGroundVariant(tile));
             TextureRegion region = rightEdge && topEdge ? ground.partialCorner()
                     : rightEdge ? ground.partialRight() : topEdge ? ground.partialTop() : ground.full();
             batch.draw(region, (float) tile.x(), (float) tile.y(), tile.width(), tile.height());
@@ -166,14 +160,6 @@ public final class TerrainSceneryRenderer implements Disposable {
     private static int partialWidth(int worldWidth, int tileSize) { return worldWidth % tileSize; }
 
     private static int partialHeight(int worldHeight, int tileSize) { return worldHeight % tileSize; }
-
-    private int selectGroundVariant(TerrainGroundPlanner.Tile tile) {
-        long value = groundSeed ^ ((long) tile.column() << 32) ^ (tile.row() & 0xffffffffL);
-        value = (value ^ (value >>> 30)) * 0xBF58476D1CE4E5B9L;
-        value = (value ^ (value >>> 27)) * 0x94D049BB133111EBL;
-        value ^= value >>> 31;
-        return (value & 3L) == 0L ? 1 : 0;
-    }
 
     private static int layer(SceneryType type) {
         return switch (type) {

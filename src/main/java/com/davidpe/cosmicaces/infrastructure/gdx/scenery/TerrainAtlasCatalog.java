@@ -6,15 +6,13 @@ import java.util.Map;
 /** Resource ids and dimensions for the generated, single-page terrain atlas. */
 public final class TerrainAtlasCatalog {
     public static final String ATLAS_PATH = "assets/images/terrain/terrain.atlas";
-    public static final String GRASS_ID = "grass-01";
-    public static final String GRASS_V2_ID = "grass-02";
+    public static final String GRASS_ID = "grass-02";
     public static final int PAGE_WIDTH = 1040;
     public static final int PAGE_HEIGHT = 1300;
     public static final int PAGE_COUNT = 1;
     public static final int GRASS_TILE_SIZE = 512;
     private static final Map<String, Region> REGIONS = Map.ofEntries(
-            Map.entry(GRASS_ID, new Region(GRASS_ID, 512, 512, "assets/images/terrain/grass-01.png")),
-            Map.entry(GRASS_V2_ID, new Region(GRASS_V2_ID, 512, 512, "assets/images/terrain/v2/grass-02.png")),
+            Map.entry(GRASS_ID, new Region(GRASS_ID, 512, 512, "assets/images/terrain/v2/grass-02.png")),
             Map.entry("tree-01", new Region("tree-01", 256, 256, "assets/images/terrain/tree-01.png")),
             Map.entry("tree-02", new Region("tree-02", 256, 256, "assets/images/terrain/v2/tree-02.png")),
             Map.entry("bush-01", new Region("bush-01", 256, 256, "assets/images/terrain/bush-01.png")),

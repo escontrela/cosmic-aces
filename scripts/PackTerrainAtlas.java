@@ -20,8 +20,7 @@ public final class PackTerrainAtlas {
     private static final Path PREVIEW = Path.of("target/grass-repeat-preview.png");
     private static final Path SPRITE_PREVIEW = Path.of("target/terrain-sprite-preview.png");
     private static final List<Sprite> SPRITES = List.of(
-            new Sprite("grass-01", "grass-01.png", 2, 2, 512, 512, false),
-            new Sprite("grass-02", "v2/grass-02.png", 522, 2, 512, 512, false),
+            new Sprite("grass-02", "v2/grass-02.png", 2, 2, 512, 512, false),
             new Sprite("tree-01", "tree-01.png", 2, 522, 256, 256, true),
             new Sprite("bush-01", "bush-01.png", 262, 522, 256, 256, true),
             new Sprite("puddle-01", "puddle-01.png", 522, 522, 256, 256, true),
@@ -39,7 +38,6 @@ public final class PackTerrainAtlas {
     public static void main(String[] args) throws IOException {
         BufferedImage page = new BufferedImage(PAGE_WIDTH, PAGE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         BufferedImage packedGrass = null;
-        BufferedImage packedGrassV2 = null;
         for (Sprite sprite : SPRITES) {
             Path source = ASSET_DIR.resolve(sprite.fileName());
             BufferedImage image = ImageIO.read(source.toFile());
@@ -51,10 +49,9 @@ public final class PackTerrainAtlas {
             } else {
                 image = fitToRegion(image, sprite.width(), sprite.height());
             }
-            if (sprite.region().startsWith("grass-")) {
-                image = softenOppositeEdges(image, GRASS_SEAM_BLEND);
-                if (sprite.region().equals("grass-01")) packedGrass = image;
-                else packedGrassV2 = image;
+            if (sprite.region().equals("grass-02")) {
+                packedGrass = softenOppositeEdges(image, GRASS_SEAM_BLEND);
+                image = packedGrass;
             }
             extrude(page, image, sprite);
             System.out.printf("%s: %dx%d, alpha=%s%n", source.getFileName(), image.getWidth(), image.getHeight(),
@@ -66,15 +63,13 @@ public final class PackTerrainAtlas {
         Files.writeString(MANIFEST, manifest());
         Files.createDirectories(PREVIEW.getParent());
         ImageIO.write(repeatPreview(packedGrass), "png", PREVIEW.toFile());
-        ImageIO.write(spritePreview(packedGrassV2), "png", SPRITE_PREVIEW.toFile());
+        ImageIO.write(spritePreview(packedGrass), "png", SPRITE_PREVIEW.toFile());
         System.out.printf("Wrote %s (%d x %d, RGBA8888, one page, estimated %d bytes)%n",
                 OUTPUT, PAGE_WIDTH, PAGE_HEIGHT, (long) PAGE_WIDTH * PAGE_HEIGHT * 4);
-        System.out.printf("Grass edge difference per channel: v1 source %.2f -> atlas %.2f; "
-                        + "v2 source %.2f -> atlas %.2f (inspect %s)%n",
-                meanOppositeEdgeDifference(ImageIO.read(ASSET_DIR.resolve("grass-01.png").toFile())),
-                meanOppositeEdgeDifference(packedGrass),
+        System.out.printf("Dark grass mean opposite-edge difference: source %.2f -> atlas %.2f "
+                        + "per channel (inspect %s)%n",
                 meanOppositeEdgeDifference(ImageIO.read(ASSET_DIR.resolve("v2/grass-02.png").toFile())),
-                meanOppositeEdgeDifference(packedGrassV2), PREVIEW);
+                meanOppositeEdgeDifference(packedGrass), PREVIEW);
         System.out.println("Wrote sprite-on-grass preview to " + SPRITE_PREVIEW);
     }
 

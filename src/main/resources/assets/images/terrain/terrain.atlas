@@ -3,16 +3,9 @@ size: 1040, 1300
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
-grass-01
-  rotate: false
-  xy: 2, 2
-  size: 512, 512
-  orig: 512, 512
-  offset: 0, 0
-  index: -1
 grass-02
   rotate: false
-  xy: 522, 2
+  xy: 2, 2
   size: 512, 512
   orig: 512, 512
   offset: 0, 0

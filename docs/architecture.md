@@ -33,11 +33,11 @@ pueden encapsular su dibujo. El dominio no importa clases de `application`,
 `infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
 al objeto, como hace Starfield con el tamaño del área.
 
-`scripts/PackTerrainAtlas.java` empaqueta los doce recursos de terreno en una página
+`scripts/PackTerrainAtlas.java` empaqueta los once recursos de terreno en una página
 RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales,
 normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 píxeles
-de los bordes opuestos de ambas praderas. El renderer elige la variante de suelo de
-forma determinista según semilla y posición. Vive en `infrastructure.gdx.scenery`; una
+de los bordes opuestos de la única textura de pradera activa. El renderer la repite
+en todo el mapa, evitando cambios visibles entre mosaicos. Vive en `infrastructure.gdx.scenery`; una
 pantalla lo crea en el hilo LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator

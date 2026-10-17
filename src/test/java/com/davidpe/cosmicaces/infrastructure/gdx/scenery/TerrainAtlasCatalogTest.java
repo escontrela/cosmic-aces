@@ -16,12 +16,12 @@ import org.junit.jupiter.api.Test;
 
 class TerrainAtlasCatalogTest {
     private static final Set<String> EXPECTED_IDS = Set.of(
-            "grass-01", "grass-02", "tree-01", "tree-02", "bush-01", "bush-02",
+            "grass-02", "tree-01", "tree-02", "bush-01", "bush-02",
             "puddle-01", "puddle-02", "puddle-03", "puddle-04", "rock-cluster-01", "rock-cluster-02"
     );
 
     @Test
-    void atlasContainsOnePageAndEveryExpectedResourceAtItsSourceDimensions() throws IOException {
+    void atlasContainsOnePageAndEveryExpectedResourceAtItsPackedDimensions() throws IOException {
         assertEquals(1, TerrainAtlasCatalog.PAGE_COUNT);
         assertEquals(1040, TerrainAtlasCatalog.PAGE_WIDTH);
         assertEquals(1300, TerrainAtlasCatalog.PAGE_HEIGHT);
@@ -50,12 +50,11 @@ class TerrainAtlasCatalogTest {
     }
 
     @Test
-    void bothGrassVariantsHaveLowMeanOppositeEdgeDifferenceForSeamlessRepeating() throws IOException {
+    void darkGrassHasLowMeanOppositeEdgeDifferenceForSeamlessRepeating() throws IOException {
         BufferedImage atlas = read("/assets/images/terrain/terrain-atlas.png");
         assertGrassEdges(atlas, 2, 2);
-        assertGrassEdges(atlas, 522, 2);
-        BufferedImage grass = read("/assets/images/terrain/grass-01.png");
-        assertEquals(TerrainAtlasCatalog.GRASS_TILE_SIZE, grass.getWidth());
+        BufferedImage grass = read("/assets/images/terrain/v2/grass-02.png");
+        assertTrue(grass.getWidth() >= TerrainAtlasCatalog.GRASS_TILE_SIZE);
     }
 
     private static void assertGrassEdges(BufferedImage atlas, int regionX, int regionY) {
