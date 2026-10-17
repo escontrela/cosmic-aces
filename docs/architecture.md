@@ -16,7 +16,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
-| `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; configuración, clasificación y generación determinista de regiones. Sin carga de imágenes ni dependencia de pantallas. |
+| `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -1136,6 +1136,14 @@ com.davidpe.cosmicaces
 |       +-- TerrainGenerator: muestreo OpenSimplex2S determinista fuera del render.
 |       |   1. generate(TerrainConfig)
 |       +-- OpenSimplex2S: implementación Java pura 2D adaptada del código CC0 oficial.
+|       +-- TreePatternGenerator: lattice irregular, variantes, orientación, escala, separación y reservas.
+|       |   1. generate(TerrainMap)  2. generate(TerrainMap, List<SceneryPlacement>)
+|       +-- SceneryField: colección inmutable de decoración con consulta por rectángulo.
+|       |   1. instances()  2. query(WorldRect)
+|       +-- SceneryInstance: id, recurso lógico, tipo, posición, tamaño, giro, escala y huella.
+|       +-- SceneryType: árbol, arbusto, charco o grupo de rocas y catálogo lógico de variantes.
+|       +-- SceneryPlacement: contrato futuro de asset, anclaje, rectángulo, orden y margen reservado.
+|       +-- WorldRect: rectángulo mundial inmutable, expansión de reserva e intersección.
 |
 +-- infrastructure
     +-- gdx
