@@ -173,7 +173,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
       loadedSceneryRenderer = new TerrainSceneryRenderer(
-          phaseScenery.config(), phaseScenery.operationsBasePlacement());
+          phaseScenery.config(), phaseScenery.operationsBasePlacement(),
+          phaseScenery.enemyBasePlacement());
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -428,6 +429,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
           ghostwingGroupPoints(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
+          (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
+          (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
           hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
@@ -519,6 +522,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.begin();
     sceneryRenderer.drawGround(batch, visibleArea);
     sceneryRenderer.drawOperationsBase(batch, visibleArea);
+    sceneryRenderer.drawEnemyOperationsBase(batch, visibleArea);
     sceneryRenderer.drawScenery(batch, sceneryField, visibleArea);
     batch.end();
   }

@@ -18,14 +18,14 @@ class TerrainAtlasCatalogTest {
     private static final Set<String> EXPECTED_IDS = Set.of(
             "grass-02", "tree-01", "tree-02", "bush-01", "bush-02",
             "puddle-01", "puddle-02", "puddle-03", "puddle-04", "rock-cluster-01", "rock-cluster-02",
-            "operations-base-01"
+            "operations-base-01", "enemy-operations-base-01"
     );
 
     @Test
     void atlasContainsOnePageAndEveryExpectedResourceAtItsPackedDimensions() throws IOException {
         assertEquals(1, TerrainAtlasCatalog.PAGE_COUNT);
         assertEquals(2560, TerrainAtlasCatalog.PAGE_WIDTH);
-        assertEquals(1300, TerrainAtlasCatalog.PAGE_HEIGHT);
+        assertEquals(2200, TerrainAtlasCatalog.PAGE_HEIGHT);
         assertEquals(EXPECTED_IDS, TerrainAtlasCatalog.regions().stream()
                 .map(TerrainAtlasCatalog.Region::id).collect(java.util.stream.Collectors.toSet()));
 

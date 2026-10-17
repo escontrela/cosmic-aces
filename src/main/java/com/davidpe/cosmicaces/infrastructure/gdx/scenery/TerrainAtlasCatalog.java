@@ -8,8 +8,9 @@ public final class TerrainAtlasCatalog {
     public static final String ATLAS_PATH = "assets/images/terrain/terrain.atlas";
     public static final String GRASS_ID = "grass-02";
     public static final String OPERATIONS_BASE_ID = "operations-base-01";
+    public static final String ENEMY_OPERATIONS_BASE_ID = "enemy-operations-base-01";
     public static final int PAGE_WIDTH = 2560;
-    public static final int PAGE_HEIGHT = 1300;
+    public static final int PAGE_HEIGHT = 2200;
     public static final int PAGE_COUNT = 1;
     public static final int GRASS_TILE_SIZE = 512;
     private static final Map<String, Region> REGIONS = Map.ofEntries(
@@ -27,7 +28,9 @@ public final class TerrainAtlasCatalog {
             Map.entry("rock-cluster-02", new Region("rock-cluster-02", 256, 256,
                     "assets/images/terrain/v2/rock-cluster-02.png")),
             Map.entry(OPERATIONS_BASE_ID, new Region(OPERATIONS_BASE_ID, 1448, 1086,
-                    "assets/images/bases/operations-base-01.png"))
+                    "assets/images/bases/operations-base-01.png")),
+            Map.entry(ENEMY_OPERATIONS_BASE_ID, new Region(ENEMY_OPERATIONS_BASE_ID, 1448, 1086,
+                    "assets/images/bases/enemy-operations-base-01.png"))
     );
 
     private TerrainAtlasCatalog() {}

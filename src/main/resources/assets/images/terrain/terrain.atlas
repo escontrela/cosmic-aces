@@ -1,5 +1,5 @@
 terrain-atlas.png
-size: 2560, 1300
+size: 2560, 2200
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
@@ -83,6 +83,13 @@ rock-cluster-02
 operations-base-01
   rotate: false
   xy: 1042, 2
+  size: 1448, 1086
+  orig: 1448, 1086
+  offset: 0, 0
+  index: -1
+enemy-operations-base-01
+  rotate: false
+  xy: 1042, 1092
   size: 1448, 1086
   orig: 1448, 1086
   offset: 0, 0

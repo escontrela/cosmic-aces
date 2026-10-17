@@ -21,7 +21,7 @@ class PhaseOneSceneryTest {
     }
 
     @Test
-    void operationsBaseCoversThreeReferenceViewportsAndKeepsDecorationsOutOfItsReservation() {
+    void bothBasesCoverThreeReferenceViewportsAndKeepDecorationsOutOfTheirReservations() {
         PhaseOneScenery scenery = new PhaseOneScenery(PhaseOneScenery.DEFAULT_SEED, 8192, 12000);
         var placement = scenery.operationsBasePlacement();
         var bounds = placement.bounds();
@@ -31,7 +31,15 @@ class PhaseOneSceneryTest {
         assertEquals(0, bounds.y());
         assertEquals(SceneryPlacement.Anchor.BOTTOM_CENTER, placement.anchor());
         assertEquals("operations-base-01", placement.assetId());
+        var enemyPlacement = scenery.enemyBasePlacement();
+        assertEquals(PhaseOneScenery.OPERATIONS_BASE_WIDTH, enemyPlacement.bounds().width());
+        assertEquals(PhaseOneScenery.OPERATIONS_BASE_HEIGHT, enemyPlacement.bounds().height());
+        assertEquals(bounds.centerX(), enemyPlacement.bounds().centerX());
+        assertEquals(12000.0 - PhaseOneScenery.OPERATIONS_BASE_HEIGHT,
+                enemyPlacement.bounds().y());
+        assertEquals(PhaseOneScenery.ENEMY_BASE_ASSET_ID, enemyPlacement.assetId());
         assertFalse(scenery.sceneryField().instances().stream()
-                .anyMatch(instance -> placement.reservation().intersects(instance.footprint())));
+                .anyMatch(instance -> placement.reservation().intersects(instance.footprint())
+                        || enemyPlacement.reservation().intersects(instance.footprint())));
     }
 }

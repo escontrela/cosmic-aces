@@ -31,16 +31,20 @@ public final class TerrainSceneryRenderer implements Disposable {
     private final TextureAtlas atlas;
     private final GroundRegions ground;
     private final TextureRegion operationsBase;
+    private final TextureRegion enemyOperationsBase;
     private final SceneryPlacement operationsBasePlacement;
+    private final SceneryPlacement enemyBasePlacement;
     private final Map<String, TextureRegion> sceneryRegions;
     private final int worldWidth;
     private final int worldHeight;
     private final TerrainGroundPlanner groundPlanner;
     private boolean disposed;
 
-    public TerrainSceneryRenderer(TerrainConfig config, SceneryPlacement operationsBasePlacement) {
+    public TerrainSceneryRenderer(TerrainConfig config, SceneryPlacement operationsBasePlacement,
+                                 SceneryPlacement enemyBasePlacement) {
         Objects.requireNonNull(config, "config");
         this.operationsBasePlacement = Objects.requireNonNull(operationsBasePlacement, "operationsBasePlacement");
+        this.enemyBasePlacement = Objects.requireNonNull(enemyBasePlacement, "enemyBasePlacement");
         worldWidth = config.worldWidth();
         worldHeight = config.worldHeight();
         groundPlanner = new TerrainGroundPlanner(worldWidth, worldHeight);
@@ -86,6 +90,7 @@ public final class TerrainSceneryRenderer implements Disposable {
             ground = groundRegions(regions.get(TerrainAtlasCatalog.GRASS_ID), partialWidth(worldWidth, tileSize),
                     partialHeight(worldHeight, tileSize), tileSize);
             operationsBase = regions.get(TerrainAtlasCatalog.OPERATIONS_BASE_ID);
+            enemyOperationsBase = regions.get(TerrainAtlasCatalog.ENEMY_OPERATIONS_BASE_ID);
             sceneryRegions = Map.copyOf(regions);
         } catch (RuntimeException | Error failure) {
             owner.dispose();
@@ -120,6 +125,18 @@ public final class TerrainSceneryRenderer implements Disposable {
         WorldRect bounds = operationsBasePlacement.bounds();
         if (!bounds.intersects(visibleArea)) return false;
         batch.draw(operationsBase, (float) bounds.x(), (float) bounds.y(),
+                (float) bounds.width(), (float) bounds.height());
+        return true;
+    }
+
+    /** Draws the enemy installation over the single grass layer when it is visible. */
+    public boolean drawEnemyOperationsBase(SpriteBatch batch, WorldRect visibleArea) {
+        requireActive();
+        Objects.requireNonNull(batch, "batch");
+        Objects.requireNonNull(visibleArea, "visibleArea");
+        WorldRect bounds = enemyBasePlacement.bounds();
+        if (!bounds.intersects(visibleArea)) return false;
+        batch.draw(enemyOperationsBase, (float) bounds.x(), (float) bounds.y(),
                 (float) bounds.width(), (float) bounds.height());
         return true;
     }

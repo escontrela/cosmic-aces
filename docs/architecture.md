@@ -33,14 +33,15 @@ pueden encapsular su dibujo. El dominio no importa clases de `application`,
 `infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
 al objeto, como hace Starfield con el tamaño del área.
 
-`scripts/PackTerrainAtlas.java` empaqueta los doce recursos de terreno en una página
-RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales,
+`scripts/PackTerrainAtlas.java` empaqueta los trece recursos de terreno en una página
+RGBA8888 de 2560×2200 con extrusión de dos píxeles para filtrado lineal; conserva los originales,
 normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 píxeles
-de los bordes opuestos de la única textura de pradera activa. El atlas incluye la base
-de operaciones, centrada en el borde sur en un área de 3072×2304 unidades y reservada
-para que la decoración no invada sus edificios ni la pista. Vive en
-`infrastructure.gdx.scenery`; una pantalla lo crea en el hilo LibGDX y libera su atlas
-compartido al salir.
+de los bordes opuestos de la única textura de pradera activa. El atlas incluye las bases aliada y
+enemiga, ambas de 3072×2304 unidades y alineadas en X en los extremos sur y norte respectivamente;
+las dos zonas se reservan para que la decoración no invada edificios ni pistas. `TerrainSceneryRenderer`
+dibuja ambas desde el atlas. `FlightMinimap` señala el centro aliado con un punto cian y el enemigo
+con una X roja. El renderer vive en `infrastructure.gdx.scenery`; una pantalla lo crea en el hilo
+LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
 mantiene el estado global y decide las transiciones. CosmicAcesGame es la excepción
@@ -136,8 +137,8 @@ sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
-lecturas. Marca el centro de la base con un único punto cian, además de Astra,
-Vesper y Ghostwing. `GoForwardPrompt`, propiedad de `PhaseOneScreen`, crea y
+lecturas. Marca el centro aliado con un punto cian y el enemigo con una X roja,
+además de Astra, Vesper y Ghostwing. `GoForwardPrompt`, propiedad de `PhaseOneScreen`, crea y
 libera una textura procedural con aro azul degradado y dispone “GO FORWARD” en
 un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier
 tecla o clic lo oculta. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un

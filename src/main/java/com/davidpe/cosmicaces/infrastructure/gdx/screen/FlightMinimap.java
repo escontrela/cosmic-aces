@@ -23,6 +23,7 @@ final class FlightMinimap {
   private static final Color RAIDER_TRAIL_COLOR = new Color(1f, 0.48f, 0.20f, 1f);
   private static final Color GROUP_COLOR = new Color(1f, 0.72f, 0.12f, 1f);
   private static final Color BASE_COLOR = new Color(0.30f, 0.92f, 1f, 1f);
+  private static final Color ENEMY_BASE_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
@@ -41,7 +42,8 @@ final class FlightMinimap {
 
   void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
       VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
-      float baseCenterX, float baseCenterY, float viewportWidth, float viewportHeight) {
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
+      float viewportWidth, float viewportHeight) {
     if (!visible) return;
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
     MinimapProjection.Rectangle panel = projection.panel();
@@ -64,6 +66,7 @@ final class FlightMinimap {
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     drawAstra(shapes, projection, astra);
+    drawEnemyBaseMarker(shapes, projection, enemyBaseCenterX, enemyBaseCenterY);
     if (raider != null) {
       MinimapProjection.Point point = projection.projectMarker(
           raider.x() + raider.drawWidth() / 2f,
@@ -72,6 +75,34 @@ final class FlightMinimap {
       shapes.circle(point.x(), point.y(), 4f, 12);
     }
     shapes.end();
+  }
+
+  private static void drawEnemyBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
+      float centerX, float centerY) {
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 8f);
+    shapes.setColor(ENEMY_BASE_COLOR);
+    drawThickLine(shapes, point.x() - 5f, point.y() - 5f,
+        point.x() + 5f, point.y() + 5f, 3f);
+    drawThickLine(shapes, point.x() - 5f, point.y() + 5f,
+        point.x() + 5f, point.y() - 5f, 3f);
+  }
+
+  private static void drawThickLine(ShapeRenderer shapes, float startX, float startY,
+      float endX, float endY, float thickness) {
+    float dx = endX - startX;
+    float dy = endY - startY;
+    float halfOffsetX = -dy / (float) Math.sqrt(dx * dx + dy * dy) * thickness / 2f;
+    float halfOffsetY = dx / (float) Math.sqrt(dx * dx + dy * dy) * thickness / 2f;
+    float ax = startX + halfOffsetX;
+    float ay = startY + halfOffsetY;
+    float bx = startX - halfOffsetX;
+    float by = startY - halfOffsetY;
+    float cx = endX - halfOffsetX;
+    float cy = endY - halfOffsetY;
+    float dx2 = endX + halfOffsetX;
+    float dy2 = endY + halfOffsetY;
+    shapes.triangle(ax, ay, bx, by, cx, cy);
+    shapes.triangle(ax, ay, cx, cy, dx2, dy2);
   }
 
   private static void drawBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
