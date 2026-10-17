@@ -78,7 +78,7 @@ cercanos y se recortan los sprites que cruzan el límite del mundo. El atlas com
 se carga al crear la pantalla y se libera al salir. El terreno y la decoración se dibujan antes de
 naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame y
 la pantalla no abre los 128 PNG históricos. El minimapa conserva su marco y marcadores de Astra,
-Vesper y Ghostwing. `WelcomeScreen`
+Vesper, Ghostwing, las dos bases y el Bastion Bomber tras despegar. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
 `WelcomeScreen.resize` cambia el viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
 dimensiones efectivas; el arte y la tipografía mantienen su escala.
@@ -273,6 +273,20 @@ reciben drones, de modo que Ghostwing no genera triángulo de dogfight ni activa
 Raider (CA8), y la cámara, HUD y señalización de Vesper quedan intactos (CA9). La comprobación
 visual de tamaño/color/legibilidad/audio y ritmo pertenece al PO humano.
 Ship.draw(batch) mantiene la proporción de las regiones dentro de una caja estable.
+
+### Bastion Bomber en PhaseOne
+
+`domain.enemy.BastionBomberSheet` describe los cinco recortes del PNG de giro del bombardero,
+medidos desde la esquina superior izquierda; `BastionBomber.Visuals` convierte esa coordenada al
+origen inferior de `TextureRegion`, comparte una textura por pantalla y la libera en `dispose()`.
+`BastionBomber` es una `Ship` sin armas: permanece en la pista enemiga durante 10 s de tiempo activo,
+vuela hacia la pista aliada a velocidad fija y, al entrar en un radio de 330 u del centro, mantiene
+una órbita circular. El estado, rumbo y fotograma se pueden probar sin contexto gráfico.
+`ShipCombatState.bastionBomber()` requiere tres veces los impactos de Vesper para agotar la energía;
+el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` integra su avance,
+impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
+su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador rojo
+intermitente con intervalos de 0,3 s.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
 `HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
@@ -580,31 +594,19 @@ derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redim
 batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
 inicial autoritativa; la legibilidad visual es del PO.
 
-### HUD de enfrentamiento del Vesper (COS-72)
+### HUD de enemigos visibles en PhaseOne (COS-72)
 
-`infrastructure.gdx.screen.EnemyStatusHud` es el bloque de combate enemigo de PhaseOne, dibujado
-bajo la misma proyección HUD de `hudViewport` solo cuando Astra y el Vesper Raider vivo coinciden en
-la vista rotada real de la cámara: el título `VESPER RAIDER` y su energía restante como porcentaje
-entero (`100% … 0%`). No posee recursos nativos ni lectura dual: la pantalla calcula una sola vez por
-frame (`astraInCamera()` y `raiderVisible()`, hechos de presencia+visibilidad por nave bajo la cámara
-que ese frame dibuja) y los combina con `flow.isPlaying()` en la regla pura
-`EnemyStatusHud.show(playing, astraInCombat, raiderInCombat)`. El bloque queda oculto durante INTRO,
-RESULT, antes de la primera aparición, fuera de cámara, con Astra destruida o fuera de vista, entre
-respawns y tras la destrucción final; el porcentaje se lee de `raiderCombat().energyPercent()` (pasos
-100→65→30→0, respawn a 100) después de resolver los impactos del frame y antes de pintar el HUD, con
-clamp 0–100 en el `record Readout`. Es independiente del `ENERGIA NN%` de Astra (`FlightHud`): el
-bloque enemigo lleva su propio título y color para que no puedan confundirse y no crea ninguna barra
-de jefe.
-
-El layout es una función pura del `hudViewport` y de los anchos medidos con `GlyphLayout`: ambas
-líneas quedan centradas en la banda superior-media, por debajo de los contadores/reloj de COS-71 y de
-la fila del score, y por encima de la banda inferior (rumbo/velocidad/energía/arma) y del minimapa,
-también al redimensionar (800×600, 1024×768, 1920×1080). El dibujo respeta `begin/end` del
-`SpriteBatch` y restaura color de fuente y batch; `PhaseOneScreen.raiderVisible()` se hizo null-safe
-al reutilizarla (devuelve `false` sin Raider activo) y `shipsCoincidentVisible()` delega ahora en
-`astraInCamera() && raiderVisible()` sin cambiar su semántica. `EnemyStatusHudTest` cubre la regla de
-visibilidad (INTRO/RESULT, antes de spawn, tras destrucción esperando respawn, Astra no visible y
-coincidencia real), el formato con clamp y el layout sin colisiones; la legibilidad visual es del PO.
+`infrastructure.gdx.screen.EnemyStatusHud` dibuja nombre y energía de los enemigos bajo la misma
+proyección HUD de `hudViewport`, con `Readout(title, energyPercent)` y porcentaje entero con clamp
+0–100. Vesper conserva su regla actual: Astra y el Raider vivo deben coincidir en la vista rotada
+real de cámara durante PLAYING. Bastion se muestra durante PLAYING cuando su nave activa intersecta
+esa cámara, incluso si Astra no coincide con él. Si ambos son visibles, los dos bloques ocupan
+slots verticales separados; el bloque de Bastion dice `BASTION B-52`. La pantalla calcula la
+visibilidad para el fotograma dibujado y lee la energía después de resolver impactos, de modo que el
+HUD coincide con el estado del avión. No posee recursos nativos y es independiente del porcentaje
+de Astra (`FlightHud`). El layout puro mide cada nombre con `GlyphLayout`, queda bajo los contadores,
+reloj y score, y encima de la banda inferior y el minimapa; `EnemyStatusHudTest` cubre las reglas de
+visibilidad, títulos, energía y slots.
 
 ### Tramo activo autorizado del frame (COS-73)
 
@@ -1083,6 +1085,12 @@ com.davidpe.cosmicaces
 |   |   |   +-- CannonMouth(lateral, forward): boca de cañon medida por pose.
 |   |   |   +-- FiringPlacement(offsetXPx, offsetYPx): ancla del fogonazo por pose/familia.
 |   +-- enemy
+|   |   +-- BastionBomberSheet: ruta, tamaño y cinco recortes del PNG de giro.
+|   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
+|   |   +-- BastionBomber extends Ship: bombardero sin armas con espera, vuelo y órbita.
+|   |   |   1. advance()  2. flightState()  3. hasTakenOff()  4. frameIndex()
+|   |   |   5. headingDegrees()  6. centerX()  7. centerY()  8. setVisuals()
+|   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
 |   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- GhostwingDrone extends Ship: dron sin arma con dirección cardinal fija y hélice.
@@ -1232,8 +1240,8 @@ com.davidpe.cosmicaces
             |   5. draw()  6. drawScore()
             +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
             |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
-            +-- EnemyStatusHud: VESPER RAIDER + energía % durante el enfrentamiento (COS-72).
-            |   1. show()  2. Readout.energyLabel()  3. layout()  4. draw()
+            +-- EnemyStatusHud: nombre + energía % de enemigos visibles (Vesper/Bastion, COS-72).
+            |   1. show()  2. Readout.titleLabel()/energyLabel()  3. layout()  4. draw()
             +-- PhaseOneTerrainCatalog: catálogo histórico de 128 PNG (COS-82; sin uso activo).
             |   1. tiles()  2. tile()  3. pathFor()  4. tileAt()  5. tilesIn()
             |   6. requiresVerticalFlip()
@@ -1243,9 +1251,10 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, centro de base, Astra, Vesper y grupos Ghostwing.
+            +-- FlightMinimap: overlay opcional del mundo, bases, Astra, Vesper, Bastion y grupos Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
-                4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
+                4. bomberBlinkVisible()  5. diamondVertices() [geom. pura del rombo]
+                6. GROUP_MARKER_HALF
             +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
                 1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.

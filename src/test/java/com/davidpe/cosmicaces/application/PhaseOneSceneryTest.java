@@ -2,11 +2,39 @@ package com.davidpe.cosmicaces.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
+import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
 import com.davidpe.cosmicaces.domain.scenery.SceneryPlacement;
 import org.junit.jupiter.api.Test;
 
 class PhaseOneSceneryTest {
+    @Test
+    void bomberWaitsOnTheEnemyRunwayThenTakesOffDuringTheActiveRun() {
+        PhaseOneGameController controller = new PhaseOneGameController();
+        PhaseOneScenery scenery = controller.phaseOneScenery();
+        BastionBomber bomber = controller.bastionBomber();
+
+        assertEquals(scenery.enemyBasePlacement().bounds().centerX(), bomber.centerX(), 0.01);
+        assertEquals(scenery.enemyBasePlacement().bounds().y() + PhaseOneScenery.RUNWAY_SPAWN_INSET,
+                bomber.centerY(), 0.01);
+        assertEquals(BastionBomber.FlightState.PARKED, bomber.flightState());
+
+        controller.start();
+        controller.advanceEncounter(BastionBomber.PARKED_SECONDS - 0.01f);
+        assertEquals(BastionBomber.FlightState.PARKED, bomber.flightState());
+        controller.advanceEncounter(0.02f);
+        assertTrue(bomber.hasTakenOff());
+        assertEquals(BastionBomber.FlightState.INBOUND, bomber.flightState());
+        assertEquals(2, controller.bastionEscorts().stream().filter(BastionEscort::isDeployed).count());
+        assertEquals(-BastionEscort.FORMATION_OFFSET,
+                controller.bastionEscorts().get(0).raider().centerX() - bomber.centerX(), 0.01);
+        assertEquals(BastionEscort.FORMATION_OFFSET,
+                controller.bastionEscorts().get(1).raider().centerX() - bomber.centerX(), 0.01);
+        assertTrue(controller.bastionEscorts().stream().noneMatch(BastionEscort::isAttacking));
+    }
+
     @Test
     void controllerPlacesAstraOnTheSouthRunwayFacingNorth() {
         PhaseOneGameController controller = new PhaseOneGameController();

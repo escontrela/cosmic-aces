@@ -271,6 +271,24 @@ public final class RaiderEncounter {
     }
   }
 
+  /** Creates a live Raider at a prescribed world point, bypassing the normal timed spawn. */
+  public void spawnAt(WorldBounds world, float centerX, float centerY, float headingDegrees) {
+    if (world == null || !Float.isFinite(centerX) || !Float.isFinite(centerY)
+        || !Float.isFinite(headingDegrees)) {
+      throw new IllegalArgumentException("World and finite Raider spawn coordinates are required");
+    }
+    float x = world.clampX(centerX - RAIDER_WIDTH / 2f, RAIDER_WIDTH);
+    float y = world.clampY(centerY - RAIDER_HEIGHT / 2f, RAIDER_HEIGHT);
+    raider = new VesperRaider(CRUISE_SPEED, RAIDER_WIDTH, RAIDER_HEIGHT, x, y, headingDegrees);
+    raider.setVisuals(visuals);
+    waitSeconds = 0f;
+    defeated = false;
+    lifeGeneration++;
+    beginTrajectory();
+    recordTrajectory(0f);
+    resetPlan();
+  }
+
   /**
    * Marks the current raider destroyed without discarding its instance or visuals. It freezes its
    * last centre so the next {@link #respawnAt} can choose a genuinely different point.

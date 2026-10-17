@@ -2,6 +2,8 @@ package com.davidpe.cosmicaces.application;
 
 import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
 import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
+import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
+import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -40,9 +42,15 @@ public final class PhaseOneGameController extends GameController {
   private static final int TARGET_GHOSTWING = 0;
   private static final int TARGET_RAIDER_SHIELD = 1;
   private static final int TARGET_RAIDER = 2;
+  private static final int TARGET_BASTION_ESCORT = 3;
+  private static final int TARGET_BASTION_BOMBER = 4;
 
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
+  private final List<BastionEscort> bastionEscorts = List.of(
+      new BastionEscort(-1, ThreadLocalRandom.current()::nextFloat),
+      new BastionEscort(1, ThreadLocalRandom.current()::nextFloat));
+  private BastionBomber bastionBomber;
   private PhaseOneScenery phaseOneScenery;
   private final PhaseScore score = new PhaseScore();
   private final PhaseOneMission mission = new PhaseOneMission();
@@ -50,6 +58,7 @@ public final class PhaseOneGameController extends GameController {
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
+  private final ShipCombatState bastionBomberCombat = ShipCombatState.bastionBomber();
   /**
    * Independent hit-flash pulses for presentation: each valid projectile impact renews the pulse of
    * the ship actually hit; the screen converts {@link #astraHitFlashIntensity()} and {@link
@@ -57,11 +66,14 @@ public final class PhaseOneGameController extends GameController {
    */
   private final ShipHitFlash astraHitFlash = new ShipHitFlash();
   private final ShipHitFlash raiderHitFlash = new ShipHitFlash();
+  private final ShipHitFlash bastionBomberHitFlash = new ShipHitFlash();
   private AstraMotion astraMotion;
   private float astraDeathX;
   private float astraDeathY;
   private float raiderDeathCenterX;
   private float raiderDeathCenterY;
+  private float bastionBomberDeathCenterX;
+  private float bastionBomberDeathCenterY;
   private int pendingCombatPoints;
   /**
    * Astra destructions recorded since the last drain: exactly one per real ACTIVE→DESTROYED
@@ -109,6 +121,16 @@ public final class PhaseOneGameController extends GameController {
 
   public void setRaiderVisuals(VesperRaider.Visuals visuals) {
     raiderEncounter.setVisuals(visuals);
+    for (BastionEscort escort : bastionEscorts) {
+      escort.setVisuals(visuals);
+    }
+  }
+
+  public void setBastionBomberVisuals(BastionBomber.Visuals visuals) {
+    if (bastionBomber == null) {
+      throw new IllegalStateException("Phase scenery must be initialized before bomber visuals");
+    }
+    bastionBomber.setVisuals(visuals);
   }
 
   /** Returns the landscape shared by this run, generating it once on first request. */
@@ -116,6 +138,13 @@ public final class PhaseOneGameController extends GameController {
     if (phaseOneScenery == null) {
       phaseOneScenery = new PhaseOneScenery(PhaseOneScenery.DEFAULT_SEED,
           (int) WORLD.width(), (int) WORLD.height());
+      var enemyBounds = phaseOneScenery.enemyBasePlacement().bounds();
+      var alliedBounds = phaseOneScenery.operationsBasePlacement().bounds();
+      bastionBomber = new BastionBomber(
+          (float) enemyBounds.centerX(),
+          (float) (enemyBounds.y() + PhaseOneScenery.RUNWAY_SPAWN_INSET),
+          (float) alliedBounds.centerX(), (float) alliedBounds.centerY(),
+          (float) alliedBounds.centerX(), (float) alliedBounds.centerY());
     }
     return phaseOneScenery;
   }
@@ -244,6 +273,13 @@ public final class PhaseOneGameController extends GameController {
    */
   public int advanceWeapons(float frameDelta, float emissionSeconds, boolean astraTrigger,
       boolean shipsCoincidentVisible, float shotRange) {
+    return advanceWeapons(frameDelta, emissionSeconds, astraTrigger,
+        shipsCoincidentVisible, shipsCoincidentVisible, shotRange);
+  }
+
+  /** Same combat step with independent visibility for the primary Raider and bomber escorts. */
+  public int advanceWeapons(float frameDelta, float emissionSeconds, boolean astraTrigger,
+      boolean shipsCoincidentVisible, boolean escortsCoincidentVisible, float shotRange) {
     boolean astraEnabled = astraTrigger && astraCombat.canAct();
     astraGun.advance(frameDelta, emissionSeconds, astraEnabled,
         astraEnabled ? astraShotSource(shotRange) : null, this::astraProjectileStep);
@@ -251,6 +287,14 @@ public final class PhaseOneGameController extends GameController {
     boolean raiderEnabled = raider != null && shipsCoincidentVisible && raiderCombat.canAct();
     raiderGun.advance(frameDelta, emissionSeconds, raiderEnabled,
         raiderEnabled ? raiderShotSource(shotRange) : null, this::raiderProjectileStep);
+    for (BastionEscort escort : bastionEscorts) {
+      VesperRaider wingman = escort.isActive() ? escort.raider() : null;
+      boolean escortEnabled = wingman != null && escort.isAttacking()
+          && escortsCoincidentVisible && escort.combat().canAct();
+      escort.gun().advance(frameDelta, emissionSeconds, escortEnabled,
+          escortEnabled ? escortShotSource(escort, shotRange) : null,
+          this::raiderProjectileStep);
+    }
     return drainCombatPoints();
   }
 
@@ -274,6 +318,10 @@ public final class PhaseOneGameController extends GameController {
     }
     astraCombat.advance(activeSeconds);
     raiderCombat.advance(activeSeconds);
+    bastionBomberCombat.advance(activeSeconds);
+    for (BastionEscort escort : bastionEscorts) {
+      escort.combat().advance(activeSeconds);
+    }
     handleRespawns(astraLivesRemaining);
     resolveShipContact();
     resolveGhostwingContact(activeSeconds);
@@ -319,6 +367,10 @@ public final class PhaseOneGameController extends GameController {
   public void advanceHitFeedback(float deltaSeconds) {
     astraHitFlash.advance(deltaSeconds);
     raiderHitFlash.advance(deltaSeconds);
+    bastionBomberHitFlash.advance(deltaSeconds);
+    for (BastionEscort escort : bastionEscorts) {
+      escort.hitFlash().advance(deltaSeconds);
+    }
   }
 
   /** Presentation white intensity (0–1) of Astra's current hit-flash pulse. */
@@ -331,17 +383,28 @@ public final class PhaseOneGameController extends GameController {
     return raiderHitFlash.intensity();
   }
 
+  public float bastionBomberHitFlashIntensity() {
+    return bastionBomberHitFlash.intensity();
+  }
+
   private void resolveShipContact() {
     VesperRaider raider = activeRaider();
-    if (raider == null || astraCombat.isDestroyed() || raiderCombat.isDestroyed()) {
+    if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
       return;
     }
     // An invulnerable Astra also protects against contact, so neither ship is destroyed.
-    if (!astraCombat.canBeHit() || !raiderCombat.canBeHit()) {
+    if (raider != null && raiderCombat.canBeHit()
+        && CollisionDetector.overlaps(bodyCircle(astra()), bodyCircle(raider))) {
+      destroyAstra();
       return;
     }
-    if (CollisionDetector.overlaps(bodyCircle(astra()), bodyCircle(raider))) {
-      destroyAstra();
+    for (BastionEscort escort : bastionEscorts) {
+      VesperRaider wingman = escort.isActive() ? escort.raider() : null;
+      if (wingman != null && escort.combat().canBeHit()
+          && CollisionDetector.overlaps(bodyCircle(astra()), bodyCircle(wingman))) {
+        destroyAstra();
+        return;
+      }
     }
   }
 
@@ -448,6 +511,16 @@ public final class PhaseOneGameController extends GameController {
     }
   }
 
+  private void destroyBastionBomber() {
+    if (bastionBomberCombat.isDestroyed()) return;
+    if (bastionBomber != null) {
+      bastionBomberDeathCenterX = bastionBomber.centerX();
+      bastionBomberDeathCenterY = bastionBomber.centerY();
+    }
+    bastionBomberCombat.destroy();
+    bastionBomberHitFlash.clear();
+  }
+
   /**
    * Destroys exactly the live drone with the given id and records its death exactly once. The drone
    * leaves {@code activeDrones()}, movement, collision and the group marker immediately, never
@@ -495,6 +568,7 @@ public final class PhaseOneGameController extends GameController {
     CollisionDetector.Segment segment = new CollisionDetector.Segment(fromX, fromY, toX, toY);
     ProjectileTarget best = null;
     GhostwingDrone bestDrone = null;
+    BastionEscort bestEscort = null;
     VesperRaider raider = activeRaider();
     if (raider != null && !raiderCombat.isDestroyed()) {
       double fraction = CollisionDetector.firstHit(segment, bodyCircle(raider))
@@ -506,6 +580,27 @@ public final class PhaseOneGameController extends GameController {
         if (candidate.precedes(best)) {
           best = candidate;
         }
+      }
+    }
+    for (BastionEscort escort : bastionEscorts) {
+      VesperRaider wingman = escort.isActive() ? escort.raider() : null;
+      if (wingman == null) continue;
+      double fraction = CollisionDetector.firstHit(segment, bodyCircle(wingman))
+          .orElse(Double.POSITIVE_INFINITY);
+      if (!Double.isFinite(fraction)) continue;
+      ProjectileTarget candidate = ProjectileTarget.escort(fraction, escort.side());
+      if (candidate.precedes(best)) {
+        best = candidate;
+        bestEscort = escort;
+      }
+    }
+    BastionBomber bomber = activeBastionBomber();
+    if (bomber != null) {
+      double fraction = CollisionDetector.firstHit(segment, bodyCircle(bomber))
+          .orElse(Double.POSITIVE_INFINITY);
+      if (Double.isFinite(fraction)) {
+        ProjectileTarget candidate = ProjectileTarget.bastionBomber(fraction);
+        if (candidate.precedes(best)) best = candidate;
       }
     }
     for (GhostwingDrone drone : ghostwingEncounter.activeDrones()) {
@@ -530,8 +625,24 @@ public final class PhaseOneGameController extends GameController {
       destroyGhostwingDrone(bestDrone.id(), GhostwingDeath.Cause.SHOT);
       return;
     }
+    if (bestEscort != null) {
+      if (bestEscort.combat().canBeHit()) {
+        bestEscort.hitFlash().trigger();
+        bestEscort.combat().receiveProjectileHit();
+        if (bestEscort.combat().energyPercent() <= 0) {
+          destroyBastionEscort(bestEscort);
+        }
+      }
+      return;
+    }
     if (best.kind() == TARGET_RAIDER_SHIELD) {
       // Protected hull: the projectile is spent on contact but deals no damage.
+      return;
+    }
+    if (best.kind() == TARGET_BASTION_BOMBER) {
+      bastionBomberHitFlash.trigger();
+      bastionBomberCombat.receiveProjectileHit();
+      if (bastionBomberCombat.energyPercent() <= 0) destroyBastionBomber();
       return;
     }
     // Every counted impact flashes the ship actually hit, even the first nine that do not yet
@@ -625,6 +736,17 @@ public final class PhaseOneGameController extends GameController {
     return offsetSeconds -> raiderEncounter.shotAt(offsetSeconds, shotRange);
   }
 
+  private GunBurst.ShotSource escortShotSource(BastionEscort escort, float shotRange) {
+    return offsetSeconds -> escort.encounter().shotAt(offsetSeconds, shotRange);
+  }
+
+  private void destroyBastionEscort(BastionEscort escort) {
+    escort.destroy();
+    if (mission.recordVesperKill()) {
+      pendingCombatPoints += score.awardRaiderDestroyed();
+    }
+  }
+
   /** Astra's box position and heading before and after this frame's bounded flight. */
   private record AstraMotion(float beforeX, float beforeY, float beforeYaw,
       float afterX, float afterY, float afterYaw, float duration) {}
@@ -646,6 +768,14 @@ public final class PhaseOneGameController extends GameController {
 
     static ProjectileTarget raiderShield(double fraction) {
       return new ProjectileTarget(fraction, TARGET_RAIDER_SHIELD, 0L);
+    }
+
+    static ProjectileTarget bastionBomber(double fraction) {
+      return new ProjectileTarget(fraction, TARGET_BASTION_BOMBER, 0L);
+    }
+
+    static ProjectileTarget escort(double fraction, int side) {
+      return new ProjectileTarget(fraction, TARGET_BASTION_ESCORT, side < 0 ? 0L : 1L);
     }
 
     boolean precedes(ProjectileTarget other) {
@@ -732,6 +862,16 @@ public final class PhaseOneGameController extends GameController {
     }
     raiderEncounter.advance(activeSeconds, WORLD, targetCenterX, targetCenterY,
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
+    if (bastionBomber != null && !bastionBomberCombat.isDestroyed()) {
+      bastionBomber.advance(activeSeconds);
+    }
+    if (bastionBomber != null && bastionBomber.hasTakenOff()) {
+      for (BastionEscort escort : bastionEscorts) {
+        if (!escort.isDeployed()) escort.deploy(bastionBomber, WORLD);
+        escort.advance(activeSeconds, bastionBomber, WORLD, targetCenterX, targetCenterY,
+            velocityX, velocityY, bodyRadius(astra()));
+      }
+    }
   }
 
   /**
@@ -754,6 +894,37 @@ public final class PhaseOneGameController extends GameController {
   /** The Ghostwing group encounter owned by this controller, for presentation and tests. */
   public GhostwingEncounter ghostwingEncounter() {
     return ghostwingEncounter;
+  }
+
+  /** The phase's single parked, inbound or orbiting Bastion bomber. */
+  public BastionBomber bastionBomber() {
+    phaseOneScenery();
+    return bastionBomber;
+  }
+
+  public ShipCombatState bastionBomberCombat() {
+    return bastionBomberCombat;
+  }
+
+  public boolean isBastionBomberActive() {
+    return bastionBomber != null && !bastionBomberCombat.isDestroyed();
+  }
+
+  /** The two fixed escort slots, including ships not yet deployed or already destroyed. */
+  public List<BastionEscort> bastionEscorts() {
+    return bastionEscorts;
+  }
+
+  public float bastionBomberDeathCenterX() {
+    return bastionBomberDeathCenterX;
+  }
+
+  public float bastionBomberDeathCenterY() {
+    return bastionBomberDeathCenterY;
+  }
+
+  private BastionBomber activeBastionBomber() {
+    return isBastionBomberActive() ? bastionBomber : null;
   }
 
   public boolean isRaiderActive() {

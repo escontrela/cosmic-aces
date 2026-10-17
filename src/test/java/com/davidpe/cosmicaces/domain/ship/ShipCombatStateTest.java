@@ -67,6 +67,22 @@ class ShipCombatStateTest {
   }
 
   @Test
+  void bastionBomberNeedsThreeTimesVespersImpactsToBeDestroyed() {
+    ShipCombatState bomber = ShipCombatState.bastionBomber();
+
+    for (int impact = 0; impact < 89; impact++) {
+      bomber.receiveProjectileHit();
+    }
+    assertEquals(30, bomber.energyPercent());
+    assertFalse(bomber.isDestroyed());
+
+    bomber.receiveProjectileHit();
+    assertEquals(0, bomber.energyPercent());
+    assertFalse(bomber.isDestroyed(), "the controller owns the destruction transition");
+    assertFalse(bomber.readyToRespawn(), "the bomber never respawns");
+  }
+
+  @Test
   void residualImpactsSurviveFramesButResetOnRespawn() {
     ShipCombatState vesper = ShipCombatState.vesper();
     for (int impact = 0; impact < 9; impact++) {

@@ -17,6 +17,8 @@ import com.davidpe.cosmicaces.application.PhaseOneScenery;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
+import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
+import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -91,6 +93,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final SceneryField sceneryField;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
+  private final BastionBomber.Visuals bastionBomberVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
@@ -111,8 +114,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private int observedAstraLifeGeneration;
   private ActiveExplosion astraExplosion;
   private ActiveExplosion raiderExplosion;
+  private ActiveExplosion bastionBomberExplosion;
   private boolean astraExplosionSpawned;
   private boolean raiderExplosionSpawned;
+  private boolean bastionBomberExplosionSpawned;
   /** One pool for every concurrent Ghostwing explosion: a drone can die on any frame. */
   private final ShipExplosions ghostwingExplosions = new ShipExplosions();
 
@@ -153,6 +158,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ShapeRenderer loadedShapes = null;
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
+    BastionBomber.Visuals loadedBastionBomber = null;
     GhostwingDrone.Visuals loadedGhostwing = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
@@ -167,6 +173,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedShapes = new ShapeRenderer();
       loadedAstra = new Astra.Visuals(presentationSettings.astraVariant());
       loadedRaider = new VesperRaider.Visuals();
+      loadedBastionBomber = new BastionBomber.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
@@ -202,6 +209,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedRaider != null) {
         loadedRaider.dispose();
       }
+      if (loadedBastionBomber != null) {
+        loadedBastionBomber.dispose();
+      }
       if (loadedGhostwing != null) {
         loadedGhostwing.dispose();
       }
@@ -228,6 +238,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     sceneryRenderer = loadedSceneryRenderer;
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
+    bastionBomberVisuals = loadedBastionBomber;
     ghostwingVisuals = loadedGhostwing;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
@@ -239,6 +250,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     observedAstraLifeGeneration = controller.astraCombat().lifeGeneration();
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
+    controller.setBastionBomberVisuals(bastionBomberVisuals);
   }
 
   @Override
@@ -317,14 +329,19 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
       // encounter and the camera update) so Vesper fires only while both ships are really visible.
       boolean weaponsCoincident = shipsCoincidentVisible();
+      boolean escortsCoincident = astraInCamera() && controller.bastionEscorts().stream()
+          .anyMatch(escort -> escort.isActive() && escort.isAttacking()
+              && shipVisible(escort.raider().centerX(), escort.raider().centerY(),
+                  Math.max(escort.raider().drawWidth(), escort.raider().drawHeight()) / 2f));
       // One weapons update per frame, after the camera that this frame draws. Existing projectiles
       // and new emissions share the active slice, so nothing crosses the 10-minute limit. Shot range
       // remains tied to the 768-unit reference height; impacts and the raider destruction bonus are
       // resolved inside this call.
       long astraBurstsBefore = controller.astraGun().emissionCount();
       long raiderBurstsBefore = controller.raiderGun().emissionCount();
+      long escortBurstsBefore = escortEmissionCount();
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
-          flow.fireTrigger(spaceDown), weaponsCoincident,
+          flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
       // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters,
       // so a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays
@@ -332,6 +349,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       audio.playVulcanBursts(
           PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
               + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
+      audio.playVulcanBursts(PhaseOneAudio.burstsSince(escortBurstsBefore, escortEmissionCount()));
       if (weaponEarned > 0) {
         publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
       }
@@ -369,6 +387,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (controller.isRaiderActive()) {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (escort.isActive()) escort.raider().setMuzzleFlashVisible(escort.gun().flashVisible());
+    }
     batch.begin();
     if (goForwardPromptVisible && controller.isAstraActive()) {
       goForwardPrompt.draw(batch, hudFont,
@@ -395,6 +416,27 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
           controller.raiderHitFlashIntensity());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (!escort.isActive()) continue;
+      VesperRaider wingman = escort.raider();
+      if (shipVisible(wingman.centerX(), wingman.centerY(),
+          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f)) {
+        hitFlashRenderer.draw(batch, wingman, wingman.headingDegrees(), escort.hitFlash().intensity());
+      }
+    }
+    BastionBomber bomber = controller.bastionBomber();
+    boolean bomberVisible = controller.isBastionBomberActive()
+        && shipVisible(bomber.centerX(), bomber.centerY(),
+            Math.max(bomber.drawWidth(), bomber.drawHeight()) / 2f);
+    boolean bomberInViewport = flow.isPlaying() && bomberVisible;
+    if (bomberVisible) {
+      if (controller.bastionBomberHitFlashIntensity() > 0f) {
+        hitFlashRenderer.draw(batch, bomber, bomber.headingDegrees(),
+            controller.bastionBomberHitFlashIntensity());
+      } else {
+        bomber.draw(batch, bomber.headingDegrees());
+      }
+    }
     // Every live Ghostwing drone attaches the same shared visuals, so newly spawned groups are
     // always drawable; only drones intersecting the real rotated camera view are batched.
     drawGhostwingDrones(batch);
@@ -413,6 +455,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       tracer.draw(shapes, projectile.x(), projectile.y(),
           projectile.forwardX(), projectile.forwardY());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      for (GunProjectile projectile : escort.gun().projectiles()) {
+        tracer.draw(shapes, projectile.x(), projectile.y(),
+            projectile.forwardX(), projectile.forwardY());
+      }
+    }
     shapes.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
@@ -427,6 +475,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
           ghostwingGroupPoints(),
+          controller.isBastionBomberActive() ? controller.bastionBomber() : null,
+          controller.missionTimeLimitSeconds() - controller.remainingRunSeconds(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
@@ -454,6 +504,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
       enemyStatusHud.draw(batch, hudFont,
           new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()),
           hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+    }
+    if (EnemyStatusHud.show(flow.isPlaying(), bomberInViewport)) {
+      int bomberHudSlot = EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)
+          ? 1 : 0;
+      enemyStatusHud.draw(batch, hudFont,
+          new EnemyStatusHud.Readout("BASTION B-52",
+              controller.bastionBomberCombat().energyPercent()),
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), bomberHudSlot);
     }
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.
@@ -486,6 +544,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.dispose();
     astraVisuals.dispose();
     raiderVisuals.dispose();
+    bastionBomberVisuals.dispose();
     ghostwingVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
@@ -648,6 +707,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.end();
   }
 
+  private long escortEmissionCount() {
+    long emissions = 0L;
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      emissions += escort.gun().emissionCount();
+    }
+    return emissions;
+  }
+
   /**
    * Projects a world point into the camera's rotated view frame and checks it against the visible
    * half extents, including the ship's half box as margin. Delegates to the shared pure rule so the
@@ -742,6 +809,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     int explosionCues = PhaseOneAudio.explosionCues(
         controller.astraCombat().isDestroyed(), astraExplosionSpawned,
         controller.raiderCombat().isDestroyed(), raiderExplosionSpawned);
+    int bomberExplosionCues = controller.bastionBomberCombat().isDestroyed()
+        && !bastionBomberExplosionSpawned ? 1 : 0;
     if (!controller.astraCombat().isDestroyed()) {
       astraExplosion = null;
       astraExplosionSpawned = false;
@@ -776,9 +845,26 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
     }
 
+    if (!controller.bastionBomberCombat().isDestroyed()) {
+      bastionBomberExplosion = null;
+      bastionBomberExplosionSpawned = false;
+    } else if (!bastionBomberExplosionSpawned) {
+      float peak = EXPLOSION_PEAK_FACTOR
+          * Math.max(BastionBomber.DRAW_WIDTH, BastionBomber.DRAW_HEIGHT);
+      bastionBomberExplosion = new ActiveExplosion(new ShipExplosion(
+          controller.bastionBomberDeathCenterX(), controller.bastionBomberDeathCenterY()), peak);
+      bastionBomberExplosionSpawned = true;
+    }
+    if (bastionBomberExplosion != null) {
+      bastionBomberExplosion.animation().advance(delta);
+      if (bastionBomberExplosion.animation().isFinished()) {
+        bastionBomberExplosion = null;
+      }
+    }
+
     int ghostwingCues = spawnGhostwingExplosions();
     ghostwingExplosions.advance(delta);
-    audio.playExplosions(explosionCues + ghostwingCues);
+    audio.playExplosions(explosionCues + bomberExplosionCues + ghostwingCues);
   }
 
   /**
@@ -811,6 +897,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       explosionVisuals.draw(batch, raiderExplosion.animation().frameIndex(),
           raiderExplosion.animation().centerX(), raiderExplosion.animation().centerY(),
           raiderExplosion.peakSize());
+    }
+    if (bastionBomberExplosion != null) {
+      explosionVisuals.draw(batch, bastionBomberExplosion.animation().frameIndex(),
+          bastionBomberExplosion.animation().centerX(), bastionBomberExplosion.animation().centerY(),
+          bastionBomberExplosion.peakSize());
     }
     for (ShipExplosions.Entry ghostwing : ghostwingExplosions.active()) {
       explosionVisuals.draw(batch, ghostwing.animation().frameIndex(),
