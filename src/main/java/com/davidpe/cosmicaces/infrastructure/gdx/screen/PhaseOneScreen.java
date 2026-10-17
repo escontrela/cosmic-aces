@@ -476,6 +476,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
           controller.isRaiderActive() ? controller.activeRaider() : null,
           ghostwingGroupPoints(),
           controller.isBastionBomberActive() ? controller.bastionBomber() : null,
+          controller.bastionEscorts(),
           controller.missionTimeLimitSeconds() - controller.remainingRunSeconds(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
@@ -500,18 +501,29 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // resolved by this frame's impacts, so name and percentage always match the encounter actually
     // drawn; it stays hidden on INTRO, RESULT, before the first spawn, between respawns and after
     // the final destruction.
+    int enemyHudSlot = 0;
     if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)) {
       enemyStatusHud.draw(batch, hudFont,
           new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
     }
     if (EnemyStatusHud.show(flow.isPlaying(), bomberInViewport)) {
-      int bomberHudSlot = EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)
-          ? 1 : 0;
       enemyStatusHud.draw(batch, hudFont,
           new EnemyStatusHud.Readout("BASTION B-52",
               controller.bastionBomberCombat().energyPercent()),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), bomberHudSlot);
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
+    }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (!escort.isActive()) continue;
+      VesperRaider wingman = escort.raider();
+      boolean escortVisible = shipVisible(wingman.centerX(), wingman.centerY(),
+          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f);
+      if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat && escortVisible)) {
+        enemyStatusHud.draw(batch, hudFont,
+            new EnemyStatusHud.Readout("BASTION ESCORT",
+                escort.combat().energyPercent()), hudViewport.getWorldWidth(),
+            hudViewport.getWorldHeight(), enemyHudSlot++);
+      }
     }
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.

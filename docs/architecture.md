@@ -287,6 +287,12 @@ el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` i
 impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
 su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador rojo
 intermitente con intervalos de 0,3 s.
+`BastionEscort` mantiene dos encuentros Vesper adicionales: se despliegan a izquierda y derecha
+cuando el bombardero despega y conservan esos puestos mientras Astra está fuera de 1800 u. Al
+detectar a Astra pasan al mismo encuentro de aproximación, pasadas y disparo que el Raider normal.
+El controlador resuelve por separado su energía, impactos, cañones, puntos y muertes; la pantalla
+reutiliza las texturas compartidas de Vesper y solo emite disparos cuando escolta y Astra coinciden
+en cámara. La aparición inicial del Raider principal permanece independiente.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
 alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
 `HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
@@ -1091,6 +1097,8 @@ com.davidpe.cosmicaces
 |   |   |   1. advance()  2. flightState()  3. hasTakenOff()  4. frameIndex()
 |   |   |   5. headingDegrees()  6. centerX()  7. centerY()  8. setVisuals()
 |   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
+|   |   +-- BastionEscort: Vesper adicional que conserva formación y activa su encuentro al detectar Astra.
+|   |   |   1. deploy()  2. advance()  3. isAttacking()  4. combat()  5. gun()  6. destroy()
 |   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- GhostwingDrone extends Ship: dron sin arma con dirección cardinal fija y hélice.

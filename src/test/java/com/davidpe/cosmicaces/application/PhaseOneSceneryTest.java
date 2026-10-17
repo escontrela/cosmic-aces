@@ -33,6 +33,11 @@ class PhaseOneSceneryTest {
         assertEquals(BastionEscort.FORMATION_OFFSET,
                 controller.bastionEscorts().get(1).raider().centerX() - bomber.centerX(), 0.01);
         assertTrue(controller.bastionEscorts().stream().noneMatch(BastionEscort::isAttacking));
+
+        var leftEscort = controller.bastionEscorts().get(0);
+        controller.placeAstra(leftEscort.raider().centerX(), leftEscort.raider().centerY(), 0f);
+        controller.advanceEncounter(0.1f);
+        assertTrue(leftEscort.isAttacking());
     }
 
     @Test
