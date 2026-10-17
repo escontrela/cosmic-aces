@@ -18,6 +18,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
+| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo y dibujo de instancias; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
@@ -31,6 +32,12 @@ LibGDX está permitido en el dominio: las naves y los elementos del escenario
 pueden encapsular su dibujo. El dominio no importa clases de `application`,
 `infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
 al objeto, como hace Starfield con el tamaño del área.
+
+`scripts/PackTerrainAtlas.java` empaqueta los siete PNG de terreno en una página
+RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales
+y mezcla 32 píxeles de los bordes opuestos del césped para que se repita sin junta.
+El renderer reutilizable vive en `infrastructure.gdx.scenery`; una pantalla lo crea
+en el hilo LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
 mantiene el estado global y decide las transiciones. CosmicAcesGame es la excepción
@@ -1147,6 +1154,13 @@ com.davidpe.cosmicaces
 |
 +-- infrastructure
     +-- gdx
+        +-- scenery
+        |   +-- TerrainAtlasCatalog: ids lógicos, dimensiones y ruta del atlas de una página.
+        |   +-- TerrainAtlasOwner: carga diferida y liberación idempotente del recurso compartido.
+        |   +-- TerrainGroundPlanner: selección de tiles visibles y recorte de bordes mundiales.
+        |   |   1. plan(WorldRect)
+        |   +-- TerrainSceneryRenderer: repetición del césped y dibujo de sprites visibles con SpriteBatch.
+        |       1. drawGround()  2. drawScenery()  3. pageCount()  4. estimatedBytes()  5. dispose()
         +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.

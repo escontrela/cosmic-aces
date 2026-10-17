@@ -67,6 +67,7 @@ class TreePatternGeneratorTest {
         for (SceneryInstance item : field.instances()) {
             assertTrue(item.width() >= item.type().minSize() && item.width() <= item.type().maxSize());
             assertTrue(item.height() >= item.type().minSize() && item.height() <= item.type().maxSize());
+            assertEquals(item.width(), 256 * item.scale(), 1.0e-9);
             TerrainType region = TERRAIN.terrainAtWorld(item.x(), item.y());
             if (item.type() == SceneryType.TREE) assertEquals(TerrainType.FOREST, region);
             if (item.type() == SceneryType.ROCK) assertEquals(TerrainType.ROCKY, region);
@@ -86,6 +87,18 @@ class TreePatternGeneratorTest {
                 assertFalse(current.footprint().expanded(7).intersects(nearby.footprint().expanded(7)));
             }
         }
+    }
+
+    @Test
+    void sceneryQueryKeepsSpritesWhoseFootprintCrossesTheVisibleEdge() {
+        SceneryInstance tree = new SceneryInstance(
+                "tree:edge", SceneryType.TREE, "tree-01", 100, 100, 80, 70, 0, 80.0 / 256
+        );
+        SceneryField field = new SceneryField(List.of(tree));
+
+        assertTrue(field.query(new WorldRect(135, 90, 20, 20)).contains(tree));
+        assertTrue(field.query(new WorldRect(135, 90, 20, 20)).stream()
+                .allMatch(instance -> instance.x() < 135));
     }
 
     @Test

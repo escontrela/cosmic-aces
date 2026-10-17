@@ -102,11 +102,10 @@ public final class TreePatternGenerator {
         double sizeRoll = unit(mix(choiceHash ^ VARIANT_CHANNEL));
         int variant = (int) (unit(mix(choiceHash ^ Long.rotateLeft(VARIANT_CHANNEL, 17))) * type.variantCount());
         variant = Math.min(variant, type.variantCount() - 1);
-        double nominalSize = (type.minSize() + type.maxSize()) / 2;
         double width = type.minSize() + sizeRoll * (type.maxSize() - type.minSize());
         double heightRoll = unit(mix(choiceHash ^ 0xD1B54A32D192ED03L));
         double height = type.minSize() + heightRoll * (type.maxSize() - type.minSize());
-        double scale = width / nominalSize;
+        double scale = width / 256.0;
         double rotation = unit(mix(choiceHash ^ 0x94D049BB133111EBL)) * 360.0;
         String id = type.name().toLowerCase() + ":" + column + ":" + row;
         SceneryInstance instance = new SceneryInstance(
