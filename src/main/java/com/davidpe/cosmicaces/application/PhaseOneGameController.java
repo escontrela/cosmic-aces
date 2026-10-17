@@ -43,6 +43,7 @@ public final class PhaseOneGameController extends GameController {
 
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
+  private PhaseOneScenery phaseOneScenery;
   private final PhaseScore score = new PhaseScore();
   private final PhaseOneMission mission = new PhaseOneMission();
   private final GunBurst astraGun = new GunBurst();
@@ -109,6 +110,15 @@ public final class PhaseOneGameController extends GameController {
 
   public void setRaiderVisuals(VesperRaider.Visuals visuals) {
     raiderEncounter.setVisuals(visuals);
+  }
+
+  /** Returns the landscape shared by this run, generating it once on first request. */
+  public PhaseOneScenery phaseOneScenery() {
+    if (phaseOneScenery == null) {
+      phaseOneScenery = new PhaseOneScenery(PhaseOneScenery.DEFAULT_SEED,
+          (int) WORLD.width(), (int) WORLD.height());
+    }
+    return phaseOneScenery;
   }
 
   /** Starts Astra in the world; placement is independent of viewport coordinates. */
