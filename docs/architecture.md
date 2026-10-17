@@ -16,7 +16,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
-| `domain.scenery` | Elementos reutilizables del escenario | `Starfield` para la pantalla de bienvenida. |
+| `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; configuración, clasificación y generación determinista de regiones. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -1128,6 +1128,14 @@ com.davidpe.cosmicaces
 |       +-- Starfield: estrellas con scroll de la bienvenida.
 |       |   1. update(): mueve y recicla estrellas.
 |       |   2. draw(): dibuja con ShapeRenderer.
+|       +-- TerrainConfig: seed/version, dimensiones, tamaño de celda, escalas y umbrales del terreno.
+|       +-- TerrainType: clasificación de celda MEADOW, FOREST o ROCKY.
+|       +-- TerrainMap: rejilla inmutable y consultas por celda/coordenada mundial.
+|       |   1. terrainAtCell()  2. forestDensityAtCell()  3. terrainAtWorld()
+|       |   4. forestDensityAtWorld()  5. columns()  6. rows()
+|       +-- TerrainGenerator: muestreo OpenSimplex2S determinista fuera del render.
+|       |   1. generate(TerrainConfig)
+|       +-- OpenSimplex2S: implementación Java pura 2D adaptada del código CC0 oficial.
 |
 +-- infrastructure
     +-- gdx
