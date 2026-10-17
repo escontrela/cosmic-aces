@@ -33,12 +33,14 @@ pueden encapsular su dibujo. El dominio no importa clases de `application`,
 `infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
 al objeto, como hace Starfield con el tamaño del área.
 
-`scripts/PackTerrainAtlas.java` empaqueta los once recursos de terreno en una página
+`scripts/PackTerrainAtlas.java` empaqueta los doce recursos de terreno en una página
 RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales,
 normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 píxeles
-de los bordes opuestos de la única textura de pradera activa. El renderer la repite
-en todo el mapa, evitando cambios visibles entre mosaicos. Vive en `infrastructure.gdx.scenery`; una
-pantalla lo crea en el hilo LibGDX y libera su atlas compartido al salir.
+de los bordes opuestos de la única textura de pradera activa. El atlas incluye la base
+de operaciones, centrada en el borde sur en un área de 3072×2304 unidades y reservada
+para que la decoración no invada sus edificios ni la pista. Vive en
+`infrastructure.gdx.scenery`; una pantalla lo crea en el hilo LibGDX y libera su atlas
+compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
 mantiene el estado global y decide las transiciones. CosmicAcesGame es la excepción
@@ -65,8 +67,10 @@ Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne conserva un `PhaseOneScenery` determinista por ejecución en el controlador: un mapa de
-terreno y un campo de decoración se generan una sola vez con semilla fija. `PhaseOneScreen` usa
-`TerrainSceneryRenderer` para repetir el césped y dibujar árboles, arbustos, charcos y rocas dentro
+terreno y un campo de decoración con reserva para la base se generan una sola vez con semilla fija.
+La pista ocupa el extremo sur, Astra despega desde su umbral y cada reaparición vuelve allí, orientada
+al norte. `PhaseOneScreen` usa `TerrainSceneryRenderer` para repetir el césped, dibujar la base y
+dibujar árboles, arbustos, charcos y rocas dentro
 de la caja visible de la cámara. `PhaseOneTerrainPlanner.visibleBounds` calcula la caja conservadora
 de cámara con giro, zoom y dimensiones reales del `ScreenViewport`; así se consultan solo adornos
 cercanos y se recortan los sprites que cruzan el límite del mundo. El atlas compartido de una página
@@ -132,7 +136,11 @@ sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
-lecturas. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un
+lecturas. Marca el centro de la base con un único punto cian, además de Astra,
+Vesper y Ghostwing. `GoForwardPrompt`, propiedad de `PhaseOneScreen`, crea y
+libera una textura procedural con aro azul degradado y dispone “GO FORWARD” en
+un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier
+tecla o clic lo oculta. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un
 Vesper activo intersecta el viewport, usando la misma comprobación de cámara
 rotada y zoom que decide dibujar al enemigo. Al salir del viewport o quedar
 destruido, el mapa recupera la preferencia elegida con M; la ocultación temporal
@@ -1004,7 +1012,8 @@ com.davidpe.cosmicaces
 |   |   4. astra()
 |   +-- PhaseOneGameController extends GameController: encuentros, armas, combate y misión de PhaseOne.
 |       0. beginActiveFrame() / endActiveFrame(): tramo activo autorizado del frame.
-|       1. placeAstra()  2. advanceFlight()  3. advanceEncounter()  4. advanceGhostwing()
+|       1. placeAstra()  2. placeAstraAtOperationsBase()  3. advanceFlight()  4. advanceEncounter()
+|       5. advanceGhostwing()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
 |       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
 |       11. ghostwingEncounter()  12. setRaiderVisuals()  13. astraCombat()
@@ -1014,8 +1023,9 @@ com.davidpe.cosmicaces
 |       22. vesperKills()  23. vesperKillGoal()  24. missionTimeLimitSeconds()
 |       25. missionOutcome()  26. resolveMissionOutcome()
 |       27. phaseOneScenery(): paisaje procedural determinista compartido durante la ejecución.
-|   +-- PhaseOneScenery: mapa de terreno y decoración inmutables preparados una vez por ejecución.
-|       1. config()  2. terrainMap()  3. sceneryField()
+|   +-- PhaseOneScenery: mapa, decoración y reserva de base preparados una vez por ejecución.
+|       1. config()  2. terrainMap()  3. sceneryField()  4. operationsBasePlacement()
+|       5. operationsBaseSpawnCenterX()  6. operationsBaseSpawnCenterY()
 |
 +-- domain
 |   +-- game
@@ -1059,9 +1069,9 @@ com.davidpe.cosmicaces
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
 |   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
-|   |   |   1. placeAt()  2. fly()  3. yawDegrees()  4. flightSpeed()  5. speeds()
-|   |   |   5. ultraRemainingSeconds()  6. setVisuals()  7. setMuzzleFlashVisible()
-|   |   |   8. currentRegion()  9. shotAt(): instantánea de los dos cañones para una emisión.
+|   |   |   1. placeAt()  2. respawnAt()  3. fly()  4. yawDegrees()  5. flightSpeed()  6. speeds()
+|   |   |   7. ultraRemainingSeconds()  8. setVisuals()  9. setMuzzleFlashVisible()
+|   |   |   10. currentRegion()  11. shotAt(): instantánea de los dos cañones para una emisión.
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
 |   |   +-- FlightControls: teclas de pilotaje y activación puntual de Ultra.
 |   |   |   1. neutral()  2. lateral()  3. turning()
@@ -1153,7 +1163,7 @@ com.davidpe.cosmicaces
 |       |   1. instances()  2. query(WorldRect)
 |       +-- SceneryInstance: id, recurso lógico, tipo, posición, tamaño, giro, escala y huella.
 |       +-- SceneryType: árbol, arbusto, charco o grupo de rocas y catálogo lógico de variantes.
-|       +-- SceneryPlacement: contrato futuro de asset, anclaje, rectángulo, orden y margen reservado.
+|       +-- SceneryPlacement: asset, anclaje, rectángulo, orden de dibujo y margen reservado.
 |       +-- WorldRect: rectángulo mundial inmutable, expansión de reserva e intersección.
 |
 +-- infrastructure
@@ -1163,8 +1173,8 @@ com.davidpe.cosmicaces
         |   +-- TerrainAtlasOwner: carga diferida y liberación idempotente del recurso compartido.
         |   +-- TerrainGroundPlanner: selección de tiles visibles y recorte de bordes mundiales.
         |   |   1. plan(WorldRect)
-        |   +-- TerrainSceneryRenderer: repetición del césped y dibujo de sprites visibles con SpriteBatch.
-        |       1. drawGround()  2. drawScenery()  3. pageCount()  4. estimatedBytes()  5. dispose()
+        |   +-- TerrainSceneryRenderer: repetición del césped, base y sprites visibles con SpriteBatch.
+        |       1. drawGround()  2. drawOperationsBase()  3. drawScenery()  4. pageCount()  5. estimatedBytes()  6. dispose()
         +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
@@ -1232,9 +1242,11 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, Astra, Vesper Raider y un rombo por grupo Ghostwing.
+            +-- FlightMinimap: overlay opcional del mundo, centro de base, Astra, Vesper y grupos Ghostwing.
                 1. toggle()  2. isVisible()  3. draw()
                 4. diamondVertices() [geom. pura del rombo]  5. GROUP_MARKER_HALF
+            +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
+                1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
             |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]

@@ -60,7 +60,6 @@ public final class PhaseOneGameController extends GameController {
   private AstraMotion astraMotion;
   private float astraDeathX;
   private float astraDeathY;
-  private float astraDeathYaw;
   private float raiderDeathCenterX;
   private float raiderDeathCenterY;
   private int pendingCombatPoints;
@@ -124,6 +123,13 @@ public final class PhaseOneGameController extends GameController {
   /** Starts Astra in the world; placement is independent of viewport coordinates. */
   public void placeAstra(float x, float y, float yawDegrees) {
     astra().placeAt(x, y, yawDegrees, WORLD);
+  }
+
+  /** Places Astra on the operations-base runway for the first sortie. */
+  public void placeAstraAtOperationsBase() {
+    PhaseOneScenery scenery = phaseOneScenery();
+    astra().respawnAt((float) scenery.operationsBaseSpawnCenterX(),
+        (float) scenery.operationsBaseSpawnCenterY(), WORLD);
   }
 
   /**
@@ -388,7 +394,7 @@ public final class PhaseOneGameController extends GameController {
     if (astraCombat.readyToRespawn() && astraLivesRemaining > 0) {
       astraCombat.respawn();
       astraHitFlash.clear();
-      astra().placeAt(astraDeathX, astraDeathY, astraDeathYaw, WORLD);
+      placeAstraAtOperationsBase();
       astraMotion = null;
     }
     if (raiderCombat.readyToRespawn() && raiderEncounter.raider() != null
@@ -417,7 +423,6 @@ public final class PhaseOneGameController extends GameController {
     astraHitFlash.clear();
     astraDeathX = astra().x();
     astraDeathY = astra().y();
-    astraDeathYaw = astra().yawDegrees();
     // The idempotent guard above makes this the single ACTIVE→DESTROYED transition, so exactly one
     // life loss is queued even when a projectile and a contact resolve in the same frame.
     pendingAstraLifeLosses++;

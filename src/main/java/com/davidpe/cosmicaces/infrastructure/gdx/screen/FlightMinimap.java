@@ -22,6 +22,7 @@ final class FlightMinimap {
   private static final Color RAIDER_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
   private static final Color RAIDER_TRAIL_COLOR = new Color(1f, 0.48f, 0.20f, 1f);
   private static final Color GROUP_COLOR = new Color(1f, 0.72f, 0.12f, 1f);
+  private static final Color BASE_COLOR = new Color(0.30f, 0.92f, 1f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
@@ -40,7 +41,7 @@ final class FlightMinimap {
 
   void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
       VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
-      float viewportWidth, float viewportHeight) {
+      float baseCenterX, float baseCenterY, float viewportWidth, float viewportHeight) {
     if (!visible) return;
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
     MinimapProjection.Rectangle panel = projection.panel();
@@ -56,6 +57,7 @@ final class FlightMinimap {
     shapes.begin(ShapeRenderer.ShapeType.Line);
     shapes.setColor(BORDER_COLOR);
     shapes.rect(map.x(), map.y(), map.width(), map.height());
+    drawBaseMarker(shapes, projection, baseCenterX, baseCenterY);
     if (raider != null) drawRaiderTrail(shapes, projection, raider);
     drawGroupMarkers(shapes, projection, ghostwingGroups);
     shapes.end();
@@ -70,6 +72,13 @@ final class FlightMinimap {
       shapes.circle(point.x(), point.y(), 4f, 12);
     }
     shapes.end();
+  }
+
+  private static void drawBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
+      float centerX, float centerY) {
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 6f);
+    shapes.setColor(BASE_COLOR);
+    shapes.circle(point.x(), point.y(), 4f, 16);
   }
 
   /**

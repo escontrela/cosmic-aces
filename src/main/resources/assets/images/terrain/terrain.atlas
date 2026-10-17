@@ -1,5 +1,5 @@
 terrain-atlas.png
-size: 1040, 1300
+size: 2560, 1300
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
@@ -78,5 +78,12 @@ rock-cluster-02
   xy: 262, 1042
   size: 256, 256
   orig: 256, 256
+  offset: 0, 0
+  index: -1
+operations-base-01
+  rotate: false
+  xy: 1042, 2
+  size: 1448, 1086
+  orig: 1448, 1086
   offset: 0, 0
   index: -1

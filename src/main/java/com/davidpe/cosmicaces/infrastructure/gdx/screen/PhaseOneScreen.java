@@ -65,7 +65,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final String RETURN_PROMPT = "PULSA ESPACIO PARA VOLVER A WELCOME";
   private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
   private static final String LOSE_DETAIL = "MISION FALLIDA";
-  private static final float INITIAL_Y = VirtualScreenSize.HEIGHT;
   /** Explosion peak size as a multiple of each ship's largest draw dimension (visual tuning). */
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
@@ -84,6 +83,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final MissionHud missionHud = new MissionHud();
   private final EnemyStatusHud enemyStatusHud = new EnemyStatusHud();
   private final FlightMinimap minimap = new FlightMinimap();
+  private final GoForwardPrompt goForwardPrompt;
   private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
@@ -107,6 +107,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
    */
   private final PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
   private boolean disposed;
+  private boolean goForwardPromptVisible = true;
+  private int observedAstraLifeGeneration;
   private ActiveExplosion astraExplosion;
   private ActiveExplosion raiderExplosion;
   private boolean astraExplosionSpawned;
@@ -142,8 +144,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudViewport = new ScreenViewport(hudCamera);
     hudCamera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
     hudCamera.update();
-    float startX = (PhaseOneGameController.WORLD.width() - controller.astra().drawWidth()) / 2f;
-    controller.placeAstra(startX, INITIAL_Y, 0f);
+    PhaseOneScenery phaseScenery = controller.phaseOneScenery();
+    controller.placeAstraAtOperationsBase();
     flightCamera = new FlightCamera(camera, controller.astra(),
         presentationSettings.astraBottomFraction());
 
@@ -159,6 +161,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
+    GoForwardPrompt loadedGoForwardPrompt = null;
     try {
       loadedBatch = new SpriteBatch();
       loadedShapes = new ShapeRenderer();
@@ -169,15 +172,19 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
-      PhaseOneScenery phaseScenery = controller.phaseOneScenery();
-      loadedSceneryRenderer = new TerrainSceneryRenderer(phaseScenery.config());
+      loadedSceneryRenderer = new TerrainSceneryRenderer(
+          phaseScenery.config(), phaseScenery.operationsBasePlacement());
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
       loadedHudFont.getData().setScale(1.05f);
+      loadedGoForwardPrompt = new GoForwardPrompt();
     } catch (RuntimeException | Error failure) {
       if (loadedHudFont != null) {
         loadedHudFont.dispose();
+      }
+      if (loadedGoForwardPrompt != null) {
+        loadedGoForwardPrompt.dispose();
       }
       if (loadedFont != null) {
         loadedFont.dispose();
@@ -216,7 +223,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     batch = loadedBatch;
     shapes = loadedShapes;
-    PhaseOneScenery phaseScenery = controller.phaseOneScenery();
     sceneryField = phaseScenery.sceneryField();
     sceneryRenderer = loadedSceneryRenderer;
     astraVisuals = loadedAstra;
@@ -228,6 +234,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     audio = loadedAudio;
     font = loadedFont;
     hudFont = loadedHudFont;
+    goForwardPrompt = loadedGoForwardPrompt;
+    observedAstraLifeGeneration = controller.astraCombat().lifeGeneration();
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
   }
@@ -242,6 +250,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
       minimap.toggle();
     }
+    boolean buttonPressedThisFrame = anyButtonJustPressed();
     boolean spaceDown = Gdx.input.isKeyPressed(Input.Keys.SPACE);
     boolean spaceJustPressed = Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
     flow.observeSpace(spaceDown);
@@ -280,6 +289,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
       earned += controller.advanceCombat(activeSeconds, astraLives);
+      int lifeGeneration = controller.astraCombat().lifeGeneration();
+      if (lifeGeneration != observedAstraLifeGeneration) {
+        observedAstraLifeGeneration = lifeGeneration;
+        goForwardPromptVisible = true;
+      }
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
       // completion snapshot below) always sees the already-decremented pool.
       publishAstraLifeLosses();
@@ -331,6 +345,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       controller.endActiveFrame();
     }
+    if (buttonPressedThisFrame) {
+      goForwardPromptVisible = false;
+    }
     // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only
     // converts the destroyed state into a world-anchored animation.
@@ -352,6 +369,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
     batch.begin();
+    if (goForwardPromptVisible && controller.isAstraActive()) {
+      goForwardPrompt.draw(batch, hudFont,
+          controller.astra().x() + controller.astra().drawWidth() / 2f,
+          controller.astra().y() + controller.astra().drawHeight() / 2f);
+    }
     if (controller.isAstraActive()
         && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
       astraLightEffect.draw(batch, controller.astra());
@@ -403,7 +425,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!enemyInViewport) {
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
-          ghostwingGroupPoints(), hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          ghostwingGroupPoints(),
+          (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerX(),
+          (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
@@ -462,8 +487,19 @@ public final class PhaseOneScreen extends ScreenAdapter {
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     astraLightEffect.dispose();
+    goForwardPrompt.dispose();
     font.dispose();
     hudFont.dispose();
+  }
+
+  private static boolean anyButtonJustPressed() {
+    for (int key = 0; key < Input.Keys.MAX_KEYCODE; key++) {
+      if (Gdx.input.isKeyJustPressed(key)) return true;
+    }
+    for (int button = 0; button < 5; button++) {
+      if (Gdx.input.isButtonJustPressed(button)) return true;
+    }
+    return false;
   }
 
   /** Plans the conservative world rectangle for the real rotated, zoomed camera view. */
@@ -482,6 +518,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.setColor(Color.WHITE);
     batch.begin();
     sceneryRenderer.drawGround(batch, visibleArea);
+    sceneryRenderer.drawOperationsBase(batch, visibleArea);
     sceneryRenderer.drawScenery(batch, sceneryField, visibleArea);
     batch.end();
   }

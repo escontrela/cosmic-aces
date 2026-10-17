@@ -10,7 +10,7 @@ import javax.imageio.ImageIO;
 
 /** Rebuilds the single-page scenery atlas using only the JDK. Run from the repository root. */
 public final class PackTerrainAtlas {
-    private static final int PAGE_WIDTH = 1040;
+    private static final int PAGE_WIDTH = 2560;
     private static final int PAGE_HEIGHT = 1300;
     private static final int PADDING = 2;
     private static final int GRASS_SEAM_BLEND = 32;
@@ -30,7 +30,8 @@ public final class PackTerrainAtlas {
             new Sprite("tree-02", "v2/tree-02.png", 522, 782, 256, 256, true),
             new Sprite("bush-02", "v2/bush-02.png", 782, 782, 256, 256, true),
             new Sprite("puddle-04", "v2/puddle-04.png", 2, 1042, 256, 256, true),
-            new Sprite("rock-cluster-02", "v2/rock-cluster-02.png", 262, 1042, 256, 256, true)
+            new Sprite("rock-cluster-02", "v2/rock-cluster-02.png", 262, 1042, 256, 256, true),
+            new Sprite("operations-base-01", "../bases/operations-base-01.png", 1042, 2, 1448, 1086, true)
     );
 
     private PackTerrainAtlas() {}
@@ -216,7 +217,7 @@ public final class PackTerrainAtlas {
         }
         int decorationIndex = 0;
         for (Sprite sprite : SPRITES) {
-            if (!sprite.requiresAlpha()) continue;
+            if (!sprite.requiresAlpha() || sprite.region().equals("operations-base-01")) continue;
             BufferedImage source = bleedTransparentRgb(fitToRegion(
                     ImageIO.read(ASSET_DIR.resolve(sprite.fileName()).toFile()), sprite.width(), sprite.height()), PADDING);
             int tileX = decorationIndex % 3;

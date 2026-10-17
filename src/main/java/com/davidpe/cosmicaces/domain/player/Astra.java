@@ -102,6 +102,19 @@ public final class Astra extends Ship {
     this.yawDegrees = normalizeYaw(yawDegrees);
   }
 
+  /** Resets this life at the southern runway threshold, facing north like a newly launched plane. */
+  public void respawnAt(float centerX, float centerY, WorldBounds world) {
+    if (!Float.isFinite(centerX) || !Float.isFinite(centerY)) {
+      throw new IllegalArgumentException("Respawn position must be finite");
+    }
+    placeAt(centerX - drawWidth() / 2f, centerY - drawHeight() / 2f, 0f, world);
+    flightSpeed = speeds.normal();
+    ultraRemainingSeconds = 0f;
+    pose = HeroShipSheet.Pose.NEUTRAL;
+    accelerating = false;
+    muzzleFlashVisible = false;
+  }
+
   /** Advances movement, speed modes and border steering in bounded integration steps. */
   public void fly(FlightControls controls, float deltaSeconds, WorldBounds world) {
     if (controls == null || world == null) {
