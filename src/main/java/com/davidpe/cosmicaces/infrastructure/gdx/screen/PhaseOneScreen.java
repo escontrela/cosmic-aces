@@ -5,7 +5,6 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -14,6 +13,7 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.application.PhaseOneScenery;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
@@ -34,18 +34,21 @@ import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.player.HeroShipSheet;
+import com.davidpe.cosmicaces.domain.scenery.SceneryField;
+import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.scenery.TerrainSceneryRenderer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * First playable screen: cached terrain map, flight camera, fixed HUD and input. The single Vesper
+ * First playable screen: procedural scenery, flight camera, fixed HUD and input. The single Vesper
  * Raider is kept alive in the world by the controller and drawn only while it intersects the camera
  * view; the Ghostwing drone groups are drawn from their world geometry with one shared sheet, and
  * every drone destruction (shot or hull contact) becomes one world-anchored explosion. This screen
@@ -67,9 +70,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
-  /** Prefetch work allowed per normal render; visible tiles are always loaded before drawing. */
-  static final long TERRAIN_PREFETCH_BUDGET_NANOS = 2_000_000L;
-
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
   private final GameId gameId;
@@ -87,7 +87,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
-  private final PhaseOneTerrainCache<Texture> terrainCache;
+  private final TerrainSceneryRenderer sceneryRenderer;
+  private final SceneryField sceneryField;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
@@ -105,10 +106,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * {@code runFinished} boolean and keeps the mission from advancing or firing outside PLAYING.
    */
   private final PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
-  private float previousTerrainCameraX = Float.NaN;
-  private float previousTerrainCameraY = Float.NaN;
-  private float terrainTravelX;
-  private float terrainTravelY = 1f;
   private boolean disposed;
   private ActiveExplosion astraExplosion;
   private ActiveExplosion raiderExplosion;
@@ -158,6 +155,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     AstraLightEffect loadedAstraLight = null;
+    TerrainSceneryRenderer loadedSceneryRenderer = null;
     PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
@@ -171,6 +169,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
+      PhaseOneScenery phaseScenery = controller.phaseOneScenery();
+      loadedSceneryRenderer = new TerrainSceneryRenderer(phaseScenery.config());
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -181,6 +181,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       if (loadedFont != null) {
         loadedFont.dispose();
+      }
+      if (loadedSceneryRenderer != null) {
+        loadedSceneryRenderer.dispose();
       }
       if (loadedAudio != null) {
         loadedAudio.dispose();
@@ -213,7 +216,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     batch = loadedBatch;
     shapes = loadedShapes;
-    terrainCache = new PhaseOneTerrainCache<>(new PhaseOneTerrainTextureFactory());
+    PhaseOneScenery phaseScenery = controller.phaseOneScenery();
+    sceneryField = phaseScenery.sceneryField();
+    sceneryRenderer = loadedSceneryRenderer;
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
     ghostwingVisuals = loadedGhostwing;
@@ -288,7 +293,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // the mission is no longer playing.
     flightCamera.update(controller.astra(), delta, cameraCombatTarget(),
         viewport.getWorldWidth(), viewport.getWorldHeight());
-    PhaseOneTerrainPlanner.Plan terrainPlan = updateTerrain();
+    PhaseOneTerrainPlanner.Bounds terrainBounds = updateTerrain();
     // One hit-feedback advance per frame, before impacts are resolved so a pulse accepted this
     // frame is drawn at its full first intensity. It also runs outside the active mission so the
     // last pulse of an in-flight projectile keeps extinguishing on a frozen panel.
@@ -339,7 +344,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
         flow.isPlaying() && controller.isAstraActive());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
-    drawTerrain(terrainPlan);
+    drawTerrain(terrainBounds);
     // Feed the cannon's own emission pulse into the ship visuals right before the draw, so the
     // muzzle flash and the burst share one clock and no extra timer exists in the screen.
     controller.astra().setMuzzleFlashVisible(controller.astraGun().flashVisible());
@@ -438,8 +443,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudCamera.position.set(hudViewport.getWorldWidth() / 2f,
         hudViewport.getWorldHeight() / 2f, 0f);
     hudCamera.update();
-    // render() replans from the new world dimensions and synchronously fills any newly visible
-    // tiles before their first draw; no GL upload is attempted from the resize callback.
+    // render() recomputes camera bounds from the new world dimensions before selecting visible scenery.
   }
 
   @Override
@@ -448,7 +452,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       return;
     }
     disposed = true;
-    terrainCache.dispose();
+    sceneryRenderer.dispose();
     audio.dispose();
     batch.dispose();
     shapes.dispose();
@@ -462,43 +466,23 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudFont.dispose();
   }
 
-  /** Plans the real rotated camera view and updates the bounded cache on the LibGDX render thread. */
-  private PhaseOneTerrainPlanner.Plan updateTerrain() {
-    float cameraX = camera.position.x;
-    float cameraY = camera.position.y;
-    float deltaX = cameraX - previousTerrainCameraX;
-    float deltaY = cameraY - previousTerrainCameraY;
-    if (Float.isFinite(deltaX) && Float.isFinite(deltaY)
-        && Math.hypot(deltaX, deltaY) > 0.001d) {
-      terrainTravelX = deltaX;
-      terrainTravelY = deltaY;
-    }
-    previousTerrainCameraX = cameraX;
-    previousTerrainCameraY = cameraY;
-
+  /** Plans the conservative world rectangle for the real rotated, zoomed camera view. */
+  private PhaseOneTerrainPlanner.Bounds updateTerrain() {
     PhaseOneTerrainPlanner.Camera terrainCamera = new PhaseOneTerrainPlanner.Camera(
-        cameraX, cameraY, camera.up.x, camera.up.y, camera.zoom,
+        camera.position.x, camera.position.y, camera.up.x, camera.up.y, camera.zoom,
         viewport.getWorldWidth(), viewport.getWorldHeight());
-    PhaseOneTerrainPlanner.Plan plan = PhaseOneTerrainPlanner.plan(
-        terrainCamera, terrainTravelX, terrainTravelY);
-    terrainCache.update(plan, TERRAIN_PREFETCH_BUDGET_NANOS);
-    return plan;
+    return PhaseOneTerrainPlanner.visibleBounds(terrainCamera);
   }
 
-  /** Draws resident map tiles first so every world object stays visibly above the terrain. */
-  private void drawTerrain(PhaseOneTerrainPlanner.Plan plan) {
+  /** Draws continuous ground and only the decoration footprints crossing the visible world bounds. */
+  private void drawTerrain(PhaseOneTerrainPlanner.Bounds bounds) {
+    if (bounds.maxX() <= bounds.minX() || bounds.maxY() <= bounds.minY()) return;
+    WorldRect visibleArea = new WorldRect(bounds.minX(), bounds.minY(),
+        bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY());
     batch.setColor(Color.WHITE);
     batch.begin();
-    for (PhaseOneTerrainCatalog.Tile tile : plan.visible()) {
-      Texture texture = terrainCache.resource(tile);
-      if (texture == null) {
-        // update() guarantees this for visible tiles; fail loudly instead of silently flashing black.
-        batch.end();
-        throw new IllegalStateException("Visible terrain tile was not loaded: " + tile.path());
-      }
-      batch.draw(texture, tile.worldX(), tile.worldY(), tile.worldWidth(), tile.worldHeight(),
-          tile.sourceX(), tile.sourceY(), tile.sourceWidth(), tile.sourceHeight(), false, false);
-    }
+    sceneryRenderer.drawGround(batch, visibleArea);
+    sceneryRenderer.drawScenery(batch, sceneryField, visibleArea);
     batch.end();
   }
 

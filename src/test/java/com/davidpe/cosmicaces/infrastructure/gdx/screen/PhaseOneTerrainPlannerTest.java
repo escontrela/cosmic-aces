@@ -92,6 +92,19 @@ class PhaseOneTerrainPlannerTest {
   }
 
   @Test
+  void lightweightVisibleBoundsMatchTheFullLegacyPlanWithoutRequestingTileLists() {
+    for (float yaw : new float[] {0f, 45f, 90f}) {
+      for (float zoom : new float[] {1f, 1.25f}) {
+        Camera camera = new Camera(4096f, 6000f,
+            (float) Math.sin(Math.toRadians(yaw)), (float) Math.cos(Math.toRadians(yaw)),
+            zoom, LARGE_WIDTH, LARGE_HEIGHT);
+        assertEquals(PhaseOneTerrainPlanner.plan(camera).visibleBounds(),
+            PhaseOneTerrainPlanner.visibleBounds(camera));
+      }
+    }
+  }
+
+  @Test
   void everyVisibleCornerFallsInsideTheSelectedSetForManyCameraStates() {
     float[] yaws = {0f, 45f, 90f, 135f, 180f, 270f};
     float[] zooms = {1f, 1.15f, 1.25f};

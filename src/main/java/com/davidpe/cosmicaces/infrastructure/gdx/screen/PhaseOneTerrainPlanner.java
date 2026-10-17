@@ -200,6 +200,11 @@ public final class PhaseOneTerrainPlanner {
         List.copyOf(visible), List.copyOf(prefetch), retained);
   }
 
+  /** Returns only the conservative visible rectangle, without building tile or cache-demand lists. */
+  public static Bounds visibleBounds(Camera camera) {
+    return boundsOf(visibleCorners(camera)).clippedToWorld();
+  }
+
   /**
    * The four world-space corners of the rotated camera view. Order is bottom-left, bottom-right,
    * top-right, top-left in the camera's local frame.

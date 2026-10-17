@@ -11,6 +11,19 @@ import org.junit.jupiter.api.Test;
 
 class PhaseOneGameControllerTest {
 
+  @Test
+  void phaseSceneryUsesAFixedSeedAndIsRetainedByTheRunController() {
+    PhaseOneGameController controller = new PhaseOneGameController();
+
+    PhaseOneScenery scenery = controller.phaseOneScenery();
+
+    assertSame(scenery, controller.phaseOneScenery());
+    assertEquals(PhaseOneScenery.DEFAULT_SEED, scenery.config().seed());
+    assertEquals(128, scenery.terrainMap().columns());
+    assertEquals(188, scenery.terrainMap().rows());
+    assertFalse(scenery.sceneryField().instances().isEmpty());
+  }
+
   @Test void flightAndRunStopAtTenMinutes() {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.placeAstra(1600f, 100f, 0f);
