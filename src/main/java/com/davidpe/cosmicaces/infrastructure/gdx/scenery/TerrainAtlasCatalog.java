@@ -7,19 +7,26 @@ import java.util.Map;
 public final class TerrainAtlasCatalog {
     public static final String ATLAS_PATH = "assets/images/terrain/terrain.atlas";
     public static final String GRASS_ID = "grass-01";
+    public static final String GRASS_V2_ID = "grass-02";
     public static final int PAGE_WIDTH = 1040;
-    public static final int PAGE_HEIGHT = 1040;
+    public static final int PAGE_HEIGHT = 1300;
     public static final int PAGE_COUNT = 1;
     public static final int GRASS_TILE_SIZE = 512;
-    private static final Map<String, Region> REGIONS = Map.of(
-            GRASS_ID, new Region(GRASS_ID, 512, 512, "assets/images/terrain/grass-01.png"),
-            "tree-01", new Region("tree-01", 256, 256, "assets/images/terrain/tree-01.png"),
-            "bush-01", new Region("bush-01", 256, 256, "assets/images/terrain/bush-01.png"),
-            "puddle-01", new Region("puddle-01", 256, 256, "assets/images/terrain/puddle-01.png"),
-            "puddle-02", new Region("puddle-02", 256, 256, "assets/images/terrain/puddle-02.png"),
-            "puddle-03", new Region("puddle-03", 256, 256, "assets/images/terrain/puddle-03.png"),
-            "rock-cluster-01", new Region("rock-cluster-01", 256, 256,
-                    "assets/images/terrain/rock-cluster-01.png")
+    private static final Map<String, Region> REGIONS = Map.ofEntries(
+            Map.entry(GRASS_ID, new Region(GRASS_ID, 512, 512, "assets/images/terrain/grass-01.png")),
+            Map.entry(GRASS_V2_ID, new Region(GRASS_V2_ID, 512, 512, "assets/images/terrain/v2/grass-02.png")),
+            Map.entry("tree-01", new Region("tree-01", 256, 256, "assets/images/terrain/tree-01.png")),
+            Map.entry("tree-02", new Region("tree-02", 256, 256, "assets/images/terrain/v2/tree-02.png")),
+            Map.entry("bush-01", new Region("bush-01", 256, 256, "assets/images/terrain/bush-01.png")),
+            Map.entry("bush-02", new Region("bush-02", 256, 256, "assets/images/terrain/v2/bush-02.png")),
+            Map.entry("puddle-01", new Region("puddle-01", 256, 256, "assets/images/terrain/puddle-01.png")),
+            Map.entry("puddle-02", new Region("puddle-02", 256, 256, "assets/images/terrain/puddle-02.png")),
+            Map.entry("puddle-03", new Region("puddle-03", 256, 256, "assets/images/terrain/puddle-03.png")),
+            Map.entry("puddle-04", new Region("puddle-04", 256, 256, "assets/images/terrain/v2/puddle-04.png")),
+            Map.entry("rock-cluster-01", new Region("rock-cluster-01", 256, 256,
+                    "assets/images/terrain/rock-cluster-01.png")),
+            Map.entry("rock-cluster-02", new Region("rock-cluster-02", 256, 256,
+                    "assets/images/terrain/v2/rock-cluster-02.png"))
     );
 
     private TerrainAtlasCatalog() {}

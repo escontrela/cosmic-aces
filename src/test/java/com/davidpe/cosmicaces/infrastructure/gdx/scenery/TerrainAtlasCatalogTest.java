@@ -16,14 +16,15 @@ import org.junit.jupiter.api.Test;
 
 class TerrainAtlasCatalogTest {
     private static final Set<String> EXPECTED_IDS = Set.of(
-            "grass-01", "tree-01", "bush-01", "puddle-01", "puddle-02", "puddle-03", "rock-cluster-01"
+            "grass-01", "grass-02", "tree-01", "tree-02", "bush-01", "bush-02",
+            "puddle-01", "puddle-02", "puddle-03", "puddle-04", "rock-cluster-01", "rock-cluster-02"
     );
 
     @Test
     void atlasContainsOnePageAndEveryExpectedResourceAtItsSourceDimensions() throws IOException {
         assertEquals(1, TerrainAtlasCatalog.PAGE_COUNT);
         assertEquals(1040, TerrainAtlasCatalog.PAGE_WIDTH);
-        assertEquals(1040, TerrainAtlasCatalog.PAGE_HEIGHT);
+        assertEquals(1300, TerrainAtlasCatalog.PAGE_HEIGHT);
         assertEquals(EXPECTED_IDS, TerrainAtlasCatalog.regions().stream()
                 .map(TerrainAtlasCatalog.Region::id).collect(java.util.stream.Collectors.toSet()));
 
@@ -49,24 +50,29 @@ class TerrainAtlasCatalogTest {
     }
 
     @Test
-    void grassOppositeEdgesHaveLowMeanDifferenceForSeamlessRepeating() throws IOException {
+    void bothGrassVariantsHaveLowMeanOppositeEdgeDifferenceForSeamlessRepeating() throws IOException {
         BufferedImage atlas = read("/assets/images/terrain/terrain-atlas.png");
+        assertGrassEdges(atlas, 2, 2);
+        assertGrassEdges(atlas, 522, 2);
         BufferedImage grass = read("/assets/images/terrain/grass-01.png");
+        assertEquals(TerrainAtlasCatalog.GRASS_TILE_SIZE, grass.getWidth());
+    }
+
+    private static void assertGrassEdges(BufferedImage atlas, int regionX, int regionY) {
         long difference = 0;
         long channels = 0;
         for (int y = 0; y < TerrainAtlasCatalog.GRASS_TILE_SIZE; y++) {
-            int left = atlas.getRGB(2, 2 + y);
-            int right = atlas.getRGB(2 + TerrainAtlasCatalog.GRASS_TILE_SIZE - 1, 2 + y);
+            int left = atlas.getRGB(regionX, regionY + y);
+            int right = atlas.getRGB(regionX + TerrainAtlasCatalog.GRASS_TILE_SIZE - 1, regionY + y);
             difference += channelDifference(left, right);
             channels += 3;
         }
-        for (int x = 0; x < TerrainAtlasCatalog.GRASS_TILE_SIZE; x++) {
-            int top = atlas.getRGB(2 + x, 2);
-            int bottom = atlas.getRGB(2 + x, 2 + TerrainAtlasCatalog.GRASS_TILE_SIZE - 1);
+        for (int pixelX = 0; pixelX < TerrainAtlasCatalog.GRASS_TILE_SIZE; pixelX++) {
+            int top = atlas.getRGB(regionX + pixelX, regionY);
+            int bottom = atlas.getRGB(regionX + pixelX, regionY + TerrainAtlasCatalog.GRASS_TILE_SIZE - 1);
             difference += channelDifference(top, bottom);
             channels += 3;
         }
-        assertEquals(TerrainAtlasCatalog.GRASS_TILE_SIZE, grass.getWidth());
         assertTrue(difference / (double) channels < 1.0,
                 "packed grass edges should be continuous after the documented border blend");
     }
@@ -74,10 +80,10 @@ class TerrainAtlasCatalogTest {
     @Test
     void allDecorationSourcesHaveActualTransparentAndVisiblePixels() throws IOException {
         for (TerrainAtlasCatalog.Region region : TerrainAtlasCatalog.regions()) {
-            if (region.id().equals(TerrainAtlasCatalog.GRASS_ID)) continue;
+            if (region.id().startsWith("grass-")) continue;
             BufferedImage image = read("/" + region.sourcePath());
-            assertEquals(region.width(), image.getWidth());
-            assertEquals(region.height(), image.getHeight());
+            assertTrue(image.getWidth() >= region.width());
+            assertTrue(image.getHeight() >= region.height());
             assertTrue(image.getColorModel().hasAlpha(), region.id() + " needs an alpha channel");
             boolean transparent = false;
             boolean visible = false;

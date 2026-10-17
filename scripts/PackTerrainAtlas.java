@@ -1,3 +1,6 @@
+import java.awt.AlphaComposite;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -8,7 +11,7 @@ import javax.imageio.ImageIO;
 /** Rebuilds the single-page scenery atlas using only the JDK. Run from the repository root. */
 public final class PackTerrainAtlas {
     private static final int PAGE_WIDTH = 1040;
-    private static final int PAGE_HEIGHT = 1040;
+    private static final int PAGE_HEIGHT = 1300;
     private static final int PADDING = 2;
     private static final int GRASS_SEAM_BLEND = 32;
     private static final Path ASSET_DIR = Path.of("src/main/resources/assets/images/terrain");
@@ -18,12 +21,17 @@ public final class PackTerrainAtlas {
     private static final Path SPRITE_PREVIEW = Path.of("target/terrain-sprite-preview.png");
     private static final List<Sprite> SPRITES = List.of(
             new Sprite("grass-01", "grass-01.png", 2, 2, 512, 512, false),
-            new Sprite("tree-01", "tree-01.png", 522, 2, 256, 256, true),
-            new Sprite("bush-01", "bush-01.png", 782, 2, 256, 256, true),
-            new Sprite("puddle-01", "puddle-01.png", 522, 262, 256, 256, true),
-            new Sprite("puddle-02", "puddle-02.png", 782, 262, 256, 256, true),
-            new Sprite("puddle-03", "puddle-03.png", 2, 522, 256, 256, true),
-            new Sprite("rock-cluster-01", "rock-cluster-01.png", 262, 522, 256, 256, true)
+            new Sprite("grass-02", "v2/grass-02.png", 522, 2, 512, 512, false),
+            new Sprite("tree-01", "tree-01.png", 2, 522, 256, 256, true),
+            new Sprite("bush-01", "bush-01.png", 262, 522, 256, 256, true),
+            new Sprite("puddle-01", "puddle-01.png", 522, 522, 256, 256, true),
+            new Sprite("puddle-02", "puddle-02.png", 782, 522, 256, 256, true),
+            new Sprite("puddle-03", "puddle-03.png", 2, 782, 256, 256, true),
+            new Sprite("rock-cluster-01", "rock-cluster-01.png", 262, 782, 256, 256, true),
+            new Sprite("tree-02", "v2/tree-02.png", 522, 782, 256, 256, true),
+            new Sprite("bush-02", "v2/bush-02.png", 782, 782, 256, 256, true),
+            new Sprite("puddle-04", "v2/puddle-04.png", 2, 1042, 256, 256, true),
+            new Sprite("rock-cluster-02", "v2/rock-cluster-02.png", 262, 1042, 256, 256, true)
     );
 
     private PackTerrainAtlas() {}
@@ -31,20 +39,22 @@ public final class PackTerrainAtlas {
     public static void main(String[] args) throws IOException {
         BufferedImage page = new BufferedImage(PAGE_WIDTH, PAGE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         BufferedImage packedGrass = null;
+        BufferedImage packedGrassV2 = null;
         for (Sprite sprite : SPRITES) {
             Path source = ASSET_DIR.resolve(sprite.fileName());
             BufferedImage image = ImageIO.read(source.toFile());
-            if (image == null || image.getWidth() != sprite.width() || image.getHeight() != sprite.height()) {
-                throw new IllegalStateException("Unexpected dimensions or unsupported image: " + source);
-            }
+            if (image == null) throw new IllegalStateException("Unsupported image: " + source);
             boolean sourceHasAlpha = image.getColorModel().hasAlpha();
             if (sprite.requiresAlpha()) {
                 verifyTransparentSprite(image, source);
-                image = bleedTransparentRgb(image, PADDING);
+                image = bleedTransparentRgb(fitToRegion(image, sprite.width(), sprite.height()), PADDING);
+            } else {
+                image = fitToRegion(image, sprite.width(), sprite.height());
             }
-            if (sprite.region().equals("grass-01")) {
-                packedGrass = softenOppositeEdges(image, GRASS_SEAM_BLEND);
-                image = packedGrass;
+            if (sprite.region().startsWith("grass-")) {
+                image = softenOppositeEdges(image, GRASS_SEAM_BLEND);
+                if (sprite.region().equals("grass-01")) packedGrass = image;
+                else packedGrassV2 = image;
             }
             extrude(page, image, sprite);
             System.out.printf("%s: %dx%d, alpha=%s%n", source.getFileName(), image.getWidth(), image.getHeight(),
@@ -56,12 +66,15 @@ public final class PackTerrainAtlas {
         Files.writeString(MANIFEST, manifest());
         Files.createDirectories(PREVIEW.getParent());
         ImageIO.write(repeatPreview(packedGrass), "png", PREVIEW.toFile());
-        ImageIO.write(spritePreview(packedGrass), "png", SPRITE_PREVIEW.toFile());
+        ImageIO.write(spritePreview(packedGrassV2), "png", SPRITE_PREVIEW.toFile());
         System.out.printf("Wrote %s (%d x %d, RGBA8888, one page, estimated %d bytes)%n",
                 OUTPUT, PAGE_WIDTH, PAGE_HEIGHT, (long) PAGE_WIDTH * PAGE_HEIGHT * 4);
-        System.out.printf("Grass mean opposite-edge difference: source %.2f, atlas %.2f per channel (inspect %s)%n",
+        System.out.printf("Grass edge difference per channel: v1 source %.2f -> atlas %.2f; "
+                        + "v2 source %.2f -> atlas %.2f (inspect %s)%n",
                 meanOppositeEdgeDifference(ImageIO.read(ASSET_DIR.resolve("grass-01.png").toFile())),
-                meanOppositeEdgeDifference(packedGrass), PREVIEW);
+                meanOppositeEdgeDifference(packedGrass),
+                meanOppositeEdgeDifference(ImageIO.read(ASSET_DIR.resolve("v2/grass-02.png").toFile())),
+                meanOppositeEdgeDifference(packedGrassV2), PREVIEW);
         System.out.println("Wrote sprite-on-grass preview to " + SPRITE_PREVIEW);
     }
 
@@ -88,6 +101,20 @@ public final class PackTerrainAtlas {
                         source.getRGB(clamp(x, sprite.width()), clamp(y, sprite.height())));
             }
         }
+    }
+
+    private static BufferedImage fitToRegion(BufferedImage source, int width, int height) {
+        double scale = Math.min(width / (double) source.getWidth(), height / (double) source.getHeight());
+        int scaledWidth = Math.max(1, (int) Math.round(source.getWidth() * scale));
+        int scaledHeight = Math.max(1, (int) Math.round(source.getHeight() * scale));
+        BufferedImage fitted = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = fitted.createGraphics();
+        graphics.setComposite(AlphaComposite.Src);
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        graphics.drawImage(source, (width - scaledWidth) / 2, (height - scaledHeight) / 2,
+                scaledWidth, scaledHeight, null);
+        graphics.dispose();
+        return fitted;
     }
 
     private static int clamp(int value, int size) {
@@ -185,7 +212,7 @@ public final class PackTerrainAtlas {
     }
 
     private static BufferedImage spritePreview(BufferedImage grass) throws IOException {
-        BufferedImage preview = new BufferedImage(grass.getWidth() * 3, grass.getHeight() * 2,
+        BufferedImage preview = new BufferedImage(grass.getWidth() * 3, grass.getHeight() * 4,
                 BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < preview.getHeight(); y++) {
             for (int x = 0; x < preview.getWidth(); x++) {
@@ -195,8 +222,8 @@ public final class PackTerrainAtlas {
         int decorationIndex = 0;
         for (Sprite sprite : SPRITES) {
             if (!sprite.requiresAlpha()) continue;
-            BufferedImage source = bleedTransparentRgb(
-                    ImageIO.read(ASSET_DIR.resolve(sprite.fileName()).toFile()), PADDING);
+            BufferedImage source = bleedTransparentRgb(fitToRegion(
+                    ImageIO.read(ASSET_DIR.resolve(sprite.fileName()).toFile()), sprite.width(), sprite.height()), PADDING);
             int tileX = decorationIndex % 3;
             int tileY = decorationIndex / 3;
             int offsetX = tileX * grass.getWidth() + (grass.getWidth() - source.getWidth()) / 2;

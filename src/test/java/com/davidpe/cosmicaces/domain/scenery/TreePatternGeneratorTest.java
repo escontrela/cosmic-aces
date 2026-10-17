@@ -55,14 +55,15 @@ class TreePatternGeneratorTest {
         Map<SceneryType, List<SceneryInstance>> byType = field.instances().stream()
                 .collect(Collectors.groupingBy(SceneryInstance::type));
 
-        assertEquals(List.of("tree-01"), byType.get(SceneryType.TREE).stream()
-                .map(SceneryInstance::assetId).distinct().toList());
-        assertEquals(List.of("bush-01"), byType.get(SceneryType.BUSH).stream()
-                .map(SceneryInstance::assetId).distinct().toList());
+        assertEquals(List.of("tree-01", "tree-02"), byType.get(SceneryType.TREE).stream()
+                .map(SceneryInstance::assetId).distinct().sorted().toList());
+        assertEquals(List.of("bush-01", "bush-02"), byType.get(SceneryType.BUSH).stream()
+                .map(SceneryInstance::assetId).distinct().sorted().toList());
         assertTrue(byType.get(SceneryType.PUDDLE).stream()
-                .allMatch(item -> List.of("puddle-01", "puddle-02", "puddle-03").contains(item.assetId())));
-        assertEquals(List.of("rock-cluster-01"), byType.get(SceneryType.ROCK).stream()
-                .map(SceneryInstance::assetId).distinct().toList());
+                .map(SceneryInstance::assetId).distinct().toList().containsAll(
+                        List.of("puddle-01", "puddle-02", "puddle-03", "puddle-04")));
+        assertEquals(List.of("rock-cluster-01", "rock-cluster-02"), byType.get(SceneryType.ROCK).stream()
+                .map(SceneryInstance::assetId).distinct().sorted().toList());
 
         for (SceneryInstance item : field.instances()) {
             assertTrue(item.width() >= item.type().minSize() && item.width() <= item.type().maxSize());

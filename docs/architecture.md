@@ -33,11 +33,12 @@ pueden encapsular su dibujo. El dominio no importa clases de `application`,
 `infrastructure` o `boot`. Las dimensiones y otros parámetros externos se pasan
 al objeto, como hace Starfield con el tamaño del área.
 
-`scripts/PackTerrainAtlas.java` empaqueta los siete PNG de terreno en una página
-RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales
-y mezcla 32 píxeles de los bordes opuestos del césped para que se repita sin junta.
-El renderer reutilizable vive en `infrastructure.gdx.scenery`; una pantalla lo crea
-en el hilo LibGDX y libera su atlas compartido al salir.
+`scripts/PackTerrainAtlas.java` empaqueta los doce recursos de terreno en una página
+RGBA8888 con extrusión de dos píxeles para filtrado lineal; conserva los originales,
+normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 píxeles
+de los bordes opuestos de ambas praderas. El renderer elige la variante de suelo de
+forma determinista según semilla y posición. Vive en `infrastructure.gdx.scenery`; una
+pantalla lo crea en el hilo LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
 mantiene el estado global y decide las transiciones. CosmicAcesGame es la excepción

@@ -2,10 +2,10 @@ package com.davidpe.cosmicaces.domain.scenery;
 
 /** Logical decorative resource types; these ids are not filesystem paths. */
 public enum SceneryType {
-    TREE(new String[]{"tree-01"}, 64, 94, 112),
-    BUSH(new String[]{"bush-01"}, 40, 64, 76),
-    PUDDLE(new String[]{"puddle-01", "puddle-02", "puddle-03"}, 42, 70, 270),
-    ROCK(new String[]{"rock-cluster-01"}, 42, 72, 190);
+    TREE(new String[]{"tree-01", "tree-02"}, 64, 94, 112),
+    BUSH(new String[]{"bush-01", "bush-02"}, 40, 64, 76),
+    PUDDLE(new String[]{"puddle-01", "puddle-02", "puddle-03", "puddle-04"}, 42, 70, 270),
+    ROCK(new String[]{"rock-cluster-01", "rock-cluster-02"}, 42, 72, 190);
 
     private final String[] assetIds;
     private final double minSize;
