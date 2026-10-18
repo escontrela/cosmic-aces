@@ -10,8 +10,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Deterministic coverage of the Geran-4 calendar and viewport-relative placement: first pulse at 30
- * active seconds, next pulses every 30 s without skipped pulses, no-dogfight spawns fully visible
+ * Deterministic coverage of the Geran-4 calendar and viewport-relative placement: first pulse at 10
+ * active seconds, next pulses every 10 s without skipped pulses, no-dogfight spawns fully visible
  * near an edge, dogfight spawns fully outside the real rotated/zoomed viewport, world bounds and
  * Astra keep-out are respected, and retired/destroyed UAVs never come back.
  */
@@ -27,32 +27,32 @@ class Geran4EncounterTest {
   private static final float EPSILON = 0.01f;
 
   @Test
-  void firstUavAppearsAtThirtyActiveSecondsAndTheNextPulseFollowsThirtySecondsLater() {
+  void firstUavAppearsAtTenActiveSecondsAndTheNextPulseFollowsTenSecondsLater() {
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(29.9f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
-    assertTrue(encounter.activeDrones().isEmpty(), "no UAV before the first 30 s pulse");
+    encounter.advance(9.9f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    assertTrue(encounter.activeDrones().isEmpty(), "no UAV before the first 10 s pulse");
     assertEquals(0.1f, encounter.secondsUntilNextSpawn(), EPSILON);
 
     encounter.advance(0.2f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     assertEquals(1, encounter.activeDrones().size());
-    assertTrue(encounter.secondsUntilNextSpawn() > 29f,
-        "the next pulse is a full 30 s away from the first one");
+    assertTrue(encounter.secondsUntilNextSpawn() > 9f,
+        "the next pulse is a full 10 s away from the first one");
 
-    encounter.advance(30f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
-    assertEquals(2, encounter.activeDrones().size(), "a second UAV appears 30 s after the first");
+    encounter.advance(10f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    assertEquals(2, encounter.activeDrones().size(), "a second UAV appears 10 s after the first");
   }
 
   @Test
   void largeDeltaResolvesEveryDuePulseWithoutDroppingOrBurstingOnePoint() {
-    // Lower camera, side 3 (bottom edge) travelling up: after 90 s the three UAVs stay inside the
-    // 12000-high world, so the count reflects the pulses at 30, 60 and 90 s.
+    // Lower camera, side 3 (bottom edge) travelling up: after 30 s the three UAVs stay inside the
+    // 12000-high world, so the count reflects the pulses at 10, 20 and 30 s.
     ViewportFrame lower = new ViewportFrame(4000f, 4000f, 0f, 1f, 1f, 800f, 600f);
     Geran4Encounter encounter = new Geran4Encounter(
         new ScriptedRandom(0.8f, 0.5f, 0.8f, 0.5f, 0.8f, 0.5f));
-    encounter.advance(90f, WIDE, lower, 4000f, 3400f, ASTRA_BODY_RADIUS, false);
+    encounter.advance(30f, WIDE, lower, 4000f, 3400f, ASTRA_BODY_RADIUS, false);
     List<Geran4Uav> drones = encounter.activeDrones();
     assertEquals(3, drones.size(), "every due pulse must be resolved, none skipped");
-    assertEquals(30f, encounter.secondsUntilNextSpawn(), EPSILON);
+    assertEquals(10f, encounter.secondsUntilNextSpawn(), EPSILON);
 
     assertNotEquals(drones.get(0).id(), drones.get(1).id());
     assertNotEquals(drones.get(1).id(), drones.get(2).id());
@@ -64,7 +64,7 @@ class Geran4EncounterTest {
   @Test
   void noDogfightSpawnsTheWholeSpriteNearTheVisibleEdgeAndCrossesIt() {
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     Geran4Uav drone = encounter.activeDrones().get(0);
 
     assertFullyInside(drone, VIEW);
@@ -82,7 +82,9 @@ class Geran4EncounterTest {
   @Test
   void dogfightSpawnsCompletelyOutsideTheViewportAndEntersAfterwards() {
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, true);
+    encounter.advance(10f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, true);
+    assertEquals(1, encounter.activeDrones().size(),
+        "the calendar keeps spawning while Astra is fighting a Vesper Raider");
     Geran4Uav drone = encounter.activeDrones().get(0);
 
     assertFullyOutside(drone, VIEW);
@@ -100,7 +102,7 @@ class Geran4EncounterTest {
     float upY = (float) Math.cos(Math.toRadians(30d));
     ViewportFrame rotated = new ViewportFrame(4000f, 6000f, upX, upY, 1.25f, 800f, 600f);
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, WIDE, rotated, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, rotated, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     Geran4Uav drone = encounter.activeDrones().get(0);
 
     assertFullyInside(drone, rotated);
@@ -116,7 +118,7 @@ class Geran4EncounterTest {
     // Camera hugging the left world edge: the camera-left side has no room, so the next side wins.
     ViewportFrame edge = new ViewportFrame(100f, 6000f, 0f, 1f, 1f, 800f, 600f);
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0.3f, 0.5f, 0.5f));
-    encounter.advance(30f, WIDE, edge, 100f, 5400f, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, edge, 100f, 5400f, ASTRA_BODY_RADIUS, false);
     assertEquals(1, encounter.activeDrones().size());
     Geran4Uav drone = encounter.activeDrones().get(0);
     assertTrue(drone.x() >= 0f, "the spawned box must stay inside the world");
@@ -128,7 +130,7 @@ class Geran4EncounterTest {
   void aSpawnNeverOverlapsAstra() {
     // The plain right-side spawn would land exactly on Astra; the encounter shifts it clear.
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, WIDE, VIEW, 4339.1f, 6000f, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, VIEW, 4339.1f, 6000f, ASTRA_BODY_RADIUS, false);
     Geran4Uav drone = encounter.activeDrones().get(0);
     float distance = (float) Math.hypot(drone.centerX() - 4339.1f, drone.centerY() - 6000f);
     assertTrue(distance >= ASTRA_BODY_RADIUS + HALF_DIAGONAL,
@@ -141,24 +143,26 @@ class Geran4EncounterTest {
     WorldBounds small = new WorldBounds(2000f, 2000f);
     ViewportFrame view = new ViewportFrame(1000f, 1000f, 0f, 1f, 1f, 800f, 600f);
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, small, view, 1000f, 900f, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, small, view, 1000f, 900f, ASTRA_BODY_RADIUS, false);
     assertEquals(1, encounter.activeDrones().size());
+    long firstId = encounter.activeDrones().get(0).id();
 
-    encounter.advance(29f, small, view, 1000f, 900f, ASTRA_BODY_RADIUS, false);
-    assertTrue(encounter.activeDrones().isEmpty(), "UAV must be retired after crossing the world");
+    encounter.advance(20f, small, view, 1000f, 900f, ASTRA_BODY_RADIUS, false);
+    assertTrue(encounter.activeDrones().stream().noneMatch(drone -> drone.id() == firstId),
+        "the first UAV must be retired after crossing the world");
   }
 
   @Test
   void markDestroyedIsIdempotentAndNeverRespawnsTheUav() {
     Geran4Encounter encounter = new Geran4Encounter(new ScriptedRandom(0f, 0.5f));
-    encounter.advance(30f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     long firstId = encounter.activeDrones().get(0).id();
     encounter.markDestroyed(firstId);
     encounter.markDestroyed(firstId);
     encounter.markDestroyed(999L);
     assertTrue(encounter.activeDrones().isEmpty());
 
-    encounter.advance(30f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
+    encounter.advance(10f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     assertEquals(1, encounter.activeDrones().size());
     assertNotEquals(firstId, encounter.activeDrones().get(0).id());
   }
@@ -170,7 +174,7 @@ class Geran4EncounterTest {
     encounter.advance(-5f, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     encounter.advance(Float.NaN, WIDE, VIEW, ASTRA_X, ASTRA_Y, ASTRA_BODY_RADIUS, false);
     assertTrue(encounter.activeDrones().isEmpty());
-    assertEquals(30f, encounter.secondsUntilNextSpawn(), EPSILON);
+    assertEquals(10f, encounter.secondsUntilNextSpawn(), EPSILON);
   }
 
   @Test

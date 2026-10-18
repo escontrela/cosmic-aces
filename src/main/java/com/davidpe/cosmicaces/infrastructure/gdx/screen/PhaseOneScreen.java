@@ -70,6 +70,32 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final String RETURN_PROMPT = "PULSA ESPACIO PARA VOLVER A WELCOME";
   private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
   private static final String LOSE_DETAIL = "MISION FALLIDA";
+  /**
+   * Objective panel copy (COS-99): the two goals of the mission, the Bastion's arrival risk and the
+   * authoritative lives/limit summary. The Bastion goal and its risk are separate rows so the player
+   * reads the second objective and the LOSE condition without a single run-on line.
+   */
+  private static final String OBJECTIVE_TITLE = "OBJETIVO: DOS METAS";
+  private static final String BASTION_GOAL_LINE = "2) DERRIBA EL BASTION ANTES DE SU DESTINO";
+  private static final String BASTION_RISK_LINE = "SI LLEGA VIVO, ES LOSE";
+  /** Smallest panel, matching the former single-detail panel so the result panel is unchanged. */
+  private static final float PANEL_MIN_HEIGHT = 184f;
+  /** Title baseline inset from the panel's top edge. */
+  private static final float PANEL_TITLE_TOP_INSET = 54f;
+  /** First detail baseline below the title baseline. */
+  private static final float PANEL_FIRST_DETAIL_INSET = 44f;
+  /** Baseline-to-baseline distance between consecutive detail rows. */
+  private static final float PANEL_DETAIL_ROW_SPACING = 24f;
+  /** Minimum clearance kept between the last detail row and the prompt row. */
+  private static final float PANEL_DETAIL_TO_PROMPT_GAP = 40f;
+  /** Prompt baseline inset from the panel's bottom edge. */
+  private static final float PANEL_PROMPT_BOTTOM_INSET = 40f;
+  /** Side padding added to the widest measured text row. */
+  private static final float PANEL_HORIZONTAL_PADDING = 48f;
+  /** Gap kept between the panel and the viewport sides. */
+  private static final float PANEL_EDGE_MARGIN = 32f;
+  /** Minimum gap kept between the panel and the viewport bottom when it fits. */
+  private static final float PANEL_BOTTOM_MARGIN = 48f;
   /** Explosion peak size as a multiple of each ship's largest draw dimension (visual tuning). */
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
@@ -768,12 +794,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
   }
 
   /**
-   * Objective panel shown before the mission starts. It reuses the authoritative lives and the
-   * mission limit, restates the 3-kill goal and asks for the confirming SPACE press.
+   * Objective panel shown before the mission starts. It states both goals (three Vesper Raider and
+   * the Bastion downed before it reaches its destination), the LOSE risk of a live arrival and the
+   * authoritative lives/limit summary, then asks for the confirming SPACE press.
    */
   private void drawObjectivePanel() {
-    drawOverlayPanel("OBJETIVO: DESTRUYE " + controller.vesperKillGoal() + " VESPER RAIDER",
-        Color.CYAN, objectiveDetail(), START_PROMPT, Color.LIGHT_GRAY);
+    drawOverlayPanel(OBJECTIVE_TITLE, Color.CYAN,
+        objectiveDetailLines(controller.vesperKillGoal(), phaseSnapshot.get().lives(),
+            controller.missionTimeLimitSeconds()),
+        START_PROMPT, Color.LIGHT_GRAY);
   }
 
   /**
@@ -783,51 +812,92 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private void drawResultPanel() {
     boolean win = controller.missionOutcome() == PhaseOutcome.WIN;
     drawOverlayPanel(win ? "WIN" : "LOSE", win ? Color.GOLD : Color.SCARLET,
-        win ? WIN_DETAIL : LOSE_DETAIL, RETURN_PROMPT, Color.LIGHT_GRAY);
-  }
-
-  /** Objective summary line: the authoritative lives left and the 10:00 mission limit. */
-  private String objectiveDetail() {
-    int lives = phaseSnapshot.get().lives();
-    int totalSeconds = Math.round(controller.missionTimeLimitSeconds());
-    int minutes = totalSeconds / 60;
-    int seconds = totalSeconds % 60;
-    return lives + (lives == 1 ? " VIDA · " : " VIDAS · ") + minutes + ":"
-        + (seconds < 10 ? "0" : "") + seconds;
+        List.of(win ? WIN_DETAIL : LOSE_DETAIL), RETURN_PROMPT, Color.LIGHT_GRAY);
   }
 
   /**
-   * Draws one centered, translucent panel under the already active HUD projection: a large title, a
-   * detail row and a prompt row. Every layout is re-measured against the current {@code hudViewport}
-   * so the panel stays centered and legible after a resize without owning new resources.
+   * Objective panel rows, one drawn line each: the Vesper goal with the authoritative kill count, the
+   * Bastion goal, the consequence of its arrival, and the lives/limit summary. Pure so the copy
+   * contract is unit tested without a window.
    */
-  private void drawOverlayPanel(String title, Color titleColor, String detail, String prompt,
+  static List<String> objectiveDetailLines(int vesperKillGoal, int astraLives, float limitSeconds) {
+    return List.of(
+        "1) DESTRUYE " + Math.max(0, vesperKillGoal) + " VESPER RAIDER",
+        BASTION_GOAL_LINE,
+        BASTION_RISK_LINE,
+        livesAndLimitLabel(astraLives, limitSeconds));
+  }
+
+  /** Lives left and the mission limit as one summary row: {@code 3 VIDAS · 10:00}. */
+  static String livesAndLimitLabel(int astraLives, float limitSeconds) {
+    int lives = Math.max(0, astraLives);
+    long totalSeconds = Float.isFinite(limitSeconds) ? Math.max(0L, Math.round(limitSeconds)) : 0L;
+    long seconds = totalSeconds % 60L;
+    return lives + (lives == 1 ? " VIDA · " : " VIDAS · ") + (totalSeconds / 60L) + ":"
+        + (seconds < 10L ? "0" : "") + seconds;
+  }
+
+  /**
+   * Panel height for a given detail row count: never below the former single-detail panel and always
+   * tall enough to keep every row separated from the prompt.
+   */
+  static float overlayPanelHeight(int detailLineCount) {
+    int rows = Math.max(1, detailLineCount);
+    return Math.max(PANEL_MIN_HEIGHT,
+        PANEL_TITLE_TOP_INSET + PANEL_FIRST_DETAIL_INSET + (rows - 1) * PANEL_DETAIL_ROW_SPACING
+            + PANEL_DETAIL_TO_PROMPT_GAP + PANEL_PROMPT_BOTTOM_INSET);
+  }
+
+  /**
+   * Bottom edge for a panel of that height: centered with the usual bottom margin when it fits, and
+   * clamped to the viewport so a tall panel can never be drawn past the top or bottom edge.
+   */
+  static float overlayPanelY(float viewportHeight, float panelHeight) {
+    float centered = Math.max(PANEL_BOTTOM_MARGIN, (viewportHeight - panelHeight) / 2f);
+    return Math.min(centered, Math.max(0f, viewportHeight - panelHeight));
+  }
+
+  /**
+   * Draws one centered, translucent panel under the already active HUD projection: a large title, one
+   * detail row per supplied line and a prompt row, all centered on the panel. Every text row is
+   * re-measured against the current {@code hudViewport} and the panel grows with the detail row count,
+   * so the content stays legible and centered after a resize without owning new resources.
+   */
+  private void drawOverlayPanel(String title, Color titleColor, List<String> details, String prompt,
       Color promptColor) {
     float width = hudViewport.getWorldWidth();
     float height = hudViewport.getWorldHeight();
     panelTitleLayout.setText(font, title);
-    panelDetailLayout.setText(hudFont, detail);
     panelPromptLayout.setText(hudFont, prompt);
-    float contentWidth = Math.max(panelTitleLayout.width,
-        Math.max(panelDetailLayout.width, panelPromptLayout.width));
-    float panelWidth = Math.min(Math.max(width - 64f, 0f), contentWidth + 96f);
-    float panelHeight = 184f;
+    float contentWidth = Math.max(panelTitleLayout.width, panelPromptLayout.width);
+    for (String detail : details) {
+      panelDetailLayout.setText(hudFont, detail);
+      contentWidth = Math.max(contentWidth, panelDetailLayout.width);
+    }
+    float panelWidth = Math.min(Math.max(width - 2f * PANEL_EDGE_MARGIN, 0f),
+        contentWidth + 2f * PANEL_HORIZONTAL_PADDING);
+    float panelHeight = overlayPanelHeight(details.size());
     float panelX = (width - panelWidth) / 2f;
-    float panelY = Math.max(48f, (height - panelHeight) / 2f);
+    float panelY = overlayPanelY(height, panelHeight);
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     shapes.setColor(0.015f, 0.02f, 0.06f, 0.86f);
     shapes.rect(panelX, panelY, panelWidth, panelHeight);
     shapes.end();
     batch.begin();
     font.setColor(titleColor);
+    float titleBaseline = panelY + panelHeight - PANEL_TITLE_TOP_INSET;
     font.draw(batch, panelTitleLayout, panelX + (panelWidth - panelTitleLayout.width) / 2f,
-        panelY + panelHeight - 54f);
+        titleBaseline);
     hudFont.setColor(Color.WHITE);
-    hudFont.draw(batch, panelDetailLayout, panelX + (panelWidth - panelDetailLayout.width) / 2f,
-        panelY + panelHeight - 98f);
+    for (int row = 0; row < details.size(); row++) {
+      panelDetailLayout.setText(hudFont, details.get(row));
+      hudFont.draw(batch, panelDetailLayout,
+          panelX + (panelWidth - panelDetailLayout.width) / 2f,
+          titleBaseline - PANEL_FIRST_DETAIL_INSET - row * PANEL_DETAIL_ROW_SPACING);
+    }
     hudFont.setColor(promptColor);
     hudFont.draw(batch, panelPromptLayout, panelX + (panelWidth - panelPromptLayout.width) / 2f,
-        panelY + 40f);
+        panelY + PANEL_PROMPT_BOTTOM_INSET);
     batch.end();
   }
 

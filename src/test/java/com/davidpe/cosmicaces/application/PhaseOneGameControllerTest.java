@@ -222,7 +222,7 @@ class PhaseOneGameControllerTest {
   }
 
   @Test
-  void thirdKillResolvesWinAndLosesOnlyWhenLivesAreExhausted() {
+  void theJointGoalResolvesWinAndLosesOnlyWhenLivesAreExhausted() {
     PhaseOneGameController controller = new PhaseOneGameController();
     controller.placeAstra(1600f, 100f, 0f);
     controller.start();
@@ -230,6 +230,10 @@ class PhaseOneGameControllerTest {
     controller.recordVesperKill();
     controller.recordVesperKill();
     assertEquals(3, controller.vesperKills());
+    assertEquals(PhaseOutcome.IN_PROGRESS, controller.resolveMissionOutcome(3),
+        "three kills alone are only half of the joint goal");
+    assertTrue(controller.recordBastionBomberDestroyed(),
+        "the Bastion bomber was downed before its arrival");
     assertEquals(PhaseOutcome.WIN, controller.resolveMissionOutcome(3));
 
     // A terminal outcome never changes, even when the very same facts are re-resolved later.
@@ -241,8 +245,9 @@ class PhaseOneGameControllerTest {
     tie.recordVesperKill();
     tie.recordVesperKill();
     tie.recordVesperKill();
+    tie.recordBastionBomberDestroyed();
     assertEquals(PhaseOutcome.LOSE, tie.resolveMissionOutcome(0),
-        "simultaneous last life and third kill is a defeat");
+        "simultaneous last life and completed goals is a defeat");
   }
 
   @Test

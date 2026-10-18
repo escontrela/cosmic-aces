@@ -30,7 +30,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Rules specific to phase one: the 10-minute mission clock, autonomous Raider, scoring, mission
- * outcome and the Astra cannon.
+ * outcome, the Bastion bomber arrival/destruction and the Astra cannon.
  */
 public final class PhaseOneGameController extends GameController {
 
@@ -601,6 +601,9 @@ public final class PhaseOneGameController extends GameController {
     }
     bastionBomberCombat.destroy();
     bastionBomberHitFlash.clear();
+    // The single real ACTIVE→DESTROYED transition is the semantic fact the mission needs; a bomber
+    // downed after its arrival, or one already recorded, never counts a second death here.
+    mission.recordBastionBomberDestroyed();
   }
 
   /**
@@ -962,9 +965,10 @@ public final class PhaseOneGameController extends GameController {
 
   /**
    * Resolves the mission for this frame from the authoritative lives and the time left in the run
-   * clock. Applies the approved priority (lives exhausted loses first, then the kill goal wins,
-   * then the expired clock loses) and is idempotent once an outcome is terminal. The screen and the
-   * lives child will call it once per active frame; this child only exposes the state and the rule.
+   * clock. Applies the approved priority (lives exhausted loses first, then an arrival of the live
+   * Bastion bomber loses, then the joint goal — three Vesper Raiders and the bomber destroyed before
+   * its arrival — wins, then the expired clock loses) and is idempotent once an outcome is terminal.
+   * The screen calls it once per active frame; this class only exposes the state and the rule.
    */
   public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
     return mission.resolve(astraLivesRemaining, remainingRunSeconds());
@@ -982,9 +986,22 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
+   * Records one real Bastion bomber destruction that happened before its arrival, so a repeated
+   * impact count or a destruction already processed never counts twice. Package-private seam, like
+   * {@link #recordVesperKill()}: the presentation must never mutate mission state on its own.
+   *
+   * @return {@code true} when this call recorded the bomber as destroyed before its arrival
+   */
+  boolean recordBastionBomberDestroyed() {
+    return mission.recordBastionBomberDestroyed();
+  }
+
+  /**
    * Advances the single raider toward Astra in world coordinates, supplying the player's centre,
-   * velocity and body radius so the encounter can avoid a predicted ram. Projectile paths already
-   * in flight are untouched by ship movement.
+   * velocity and body radius so the encounter can avoid a predicted ram. It also flies the parked or
+   * inbound Bastion bomber and its escorts, and translates the bomber's transition to its
+   * destination orbit into the mission's arrival fact before this slice's impacts are resolved.
+   * Projectile paths already in flight are untouched by ship movement.
    */
   public void advanceEncounter(float deltaSeconds) {
     if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
@@ -1007,6 +1024,13 @@ public final class PhaseOneGameController extends GameController {
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
     if (bastionBomber != null && !bastionBomberCombat.isDestroyed()) {
       bastionBomber.advance(activeSeconds);
+      // The bomber entering its destination orbit is the authoritative arrival signal, and it is
+      // registered right after the advance and before any projectile of the same slice resolves, so
+      // a bomber downed by a shot of the very same frame was still alive when it arrived and the
+      // run is already lost (COS-98).
+      if (bastionBomber.flightState() == BastionBomber.FlightState.ORBITING) {
+        mission.recordBastionBomberArrival();
+      }
     }
     if (bastionBomber != null && bastionBomber.hasTakenOff()) {
       for (BastionEscort escort : bastionEscorts) {

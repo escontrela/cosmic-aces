@@ -113,7 +113,7 @@ class PhaseOneActiveSliceTest {
   }
 
   @Test
-  void thirdKillInTheFinalSliceWinsWhileLivesRemain() {
+  void jointGoalInTheFinalSliceWinsWhileLivesRemain() {
     PhaseOneGameController controller = finalSliceWithTwoPriorKills();
 
     float slice = 2f;
@@ -128,7 +128,7 @@ class PhaseOneActiveSliceTest {
     assertEquals(3, controller.vesperKills(), "the third kill lands inside the final slice");
     assertEquals(0, controller.drainAstraLifeLosses(), "no Astra collision occurred");
     assertEquals(PhaseOutcome.WIN, controller.resolveMissionOutcome(2),
-        "three kills with lives remaining win inside the final slice");
+        "the joint goal with lives remaining wins inside the final slice");
   }
 
   @Test
@@ -151,12 +151,16 @@ class PhaseOneActiveSliceTest {
         "the exhausted pool loses even when the third kill lands in the same slice");
   }
 
-  /** Opens the run at two prior kills and exactly 2 s left for final-slice outcome checks. */
+  /**
+   * Opens the run at two prior kills, the Bastion bomber already downed before its arrival and
+   * exactly 2 s left for final-slice outcome checks.
+   */
   private static PhaseOneGameController finalSliceWithTwoPriorKills() {
     PhaseOneGameController controller = new PhaseOneGameController(() -> 0f);
     controller.placeAstra(2000f, 1000f, 0f);
     controller.start();
     controller.advanceEncounter(3f);
+    assertTrue(controller.recordBastionBomberDestroyed());
     assertTrue(controller.recordVesperKill());
     assertTrue(controller.recordVesperKill());
     controller.advanceRun(598f); // exactly 2 s remain

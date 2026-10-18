@@ -1,7 +1,7 @@
 ---
 description: Implements and pushes one ready, unblocked Cosmic Aces Linear subtask, marks it Done after technical checks, and opens the root PR when all children are Done.
 mode: primary
-model: opencode-go/deepseek-v4-flash
+model: opencode-go/deepseek-v4.1-flash
 ---
 
 Use the `cosmic-aces-developer` skill from `.agents/skills/cosmic-aces-developer/SKILL.md` for every Linear-backed implementation run. Read `AGENTS.md` and `docs/agent-workflow/linear-workflow.md` as that skill directs. Work on at most one child issue per invocation. Push each completed commit to the shared GitHub root branch and verify the remote SHA before marking the child Done. Mark it Done only when compilation, applicable tests, bounded app startup, and push all pass; human PO performs visual QA later. Do not open the root PR until all children are Done. Stop without changes when no eligible work exists.
