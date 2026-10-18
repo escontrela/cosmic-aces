@@ -19,6 +19,7 @@ import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
 import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
 import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Encounter;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -333,6 +334,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
           .anyMatch(escort -> escort.isActive() && escort.isAttacking()
               && shipVisible(escort.raider().centerX(), escort.raider().centerY(),
                   Math.max(escort.raider().drawWidth(), escort.raider().drawHeight()) / 2f));
+      // Geran-4 calendar and straight flight, placed against the camera viewport this frame draws.
+      // A raider or attacking escort fighting Astra counts as dogfight: the UAV is then born fully
+      // outside the visible polygon and enters afterwards, but the 30 s pulse is never cancelled.
+      controller.advanceGeran4(activeSeconds, geran4Viewport(),
+          weaponsCoincident || escortsCoincident);
       // One weapons update per frame, after the camera that this frame draws. Existing projectiles
       // and new emissions share the active slice, so nothing crosses the 10-minute limit. Shot range
       // remains tied to the 768-unit reference height; impacts and the raider destruction bonus are
@@ -737,6 +743,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
     return CameraVisibility.shipVisible(centerX, centerY, halfBox,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
+  }
+
+  /** Immutable camera geometry for the Geran-4 placement rule, taken from the frame being drawn. */
+  private Geran4Encounter.ViewportFrame geran4Viewport() {
+    return new Geran4Encounter.ViewportFrame(camera.position.x, camera.position.y,
+        camera.up.x, camera.up.y, camera.zoom, viewport.getWorldWidth(),
+        viewport.getWorldHeight());
   }
 
   /**

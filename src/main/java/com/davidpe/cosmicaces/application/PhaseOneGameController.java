@@ -4,6 +4,7 @@ import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
 import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
 import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
 import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Encounter;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -47,6 +48,7 @@ public final class PhaseOneGameController extends GameController {
 
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
+  private final Geran4Encounter geran4Encounter;
   private final List<BastionEscort> bastionEscorts = List.of(
       new BastionEscort(-1, ThreadLocalRandom.current()::nextFloat),
       new BastionEscort(1, ThreadLocalRandom.current()::nextFloat));
@@ -114,9 +116,15 @@ public final class PhaseOneGameController extends GameController {
 
   public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
       FlightSpeeds speeds) {
+    this(raiderRandom, ghostwingRandom, speeds, ThreadLocalRandom.current()::nextFloat);
+  }
+
+  public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
+      FlightSpeeds speeds, UnitRandom geran4Random) {
     super(speeds);
     raiderEncounter = new RaiderEncounter(raiderRandom);
     ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
+    geran4Encounter = new Geran4Encounter(geran4Random);
   }
 
   public void setRaiderVisuals(VesperRaider.Visuals visuals) {
@@ -889,6 +897,38 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     ghostwingEncounter.advance(activeSeconds, WORLD);
+  }
+
+  /**
+   * Advances the Geran-4 calendar and its straight flights using only the portion of this frame
+   * that still belongs to the active run. The screen supplies the camera viewport it actually draws
+   * and whether Astra is fighting this frame; the encounter owns the side, point and heading rules.
+   * Pausing, the objective panel, the result panel and a finished run never advance the calendar
+   * because the screen only calls this inside an active simulation frame. No targeting, impact or
+   * collision is resolved here yet.
+   *
+   * @param deltaSeconds elapsed frame seconds, bounded by the active run slice
+   * @param viewport the camera geometry this frame actually draws
+   * @param dogfight whether Astra is fighting a raider or an attacking fighter escort
+   */
+  public void advanceGeran4(float deltaSeconds, Geran4Encounter.ViewportFrame viewport,
+      boolean dogfight) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
+      return;
+    }
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return;
+    }
+    float astraCenterX = astra().x() + astra().drawWidth() / 2f;
+    float astraCenterY = astra().y() + astra().drawHeight() / 2f;
+    geran4Encounter.advance(activeSeconds, WORLD, viewport, astraCenterX, astraCenterY,
+        bodyRadius(astra()), dogfight);
+  }
+
+  /** The Geran-4 encounter owned by this controller, for presentation and tests. */
+  public Geran4Encounter geran4Encounter() {
+    return geran4Encounter;
   }
 
   /** The Ghostwing group encounter owned by this controller, for presentation and tests. */

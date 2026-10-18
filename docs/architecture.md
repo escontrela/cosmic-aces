@@ -184,6 +184,40 @@ propiedad de la pantalla que la carga y la libera una sola vez; el modelo se con
 y prueba sin iniciar GDX. La aparición programada (COS-94) y el combate/presentación
 (COS-95) se integran en hijas posteriores.
 
+### Calendario y aparición del UAV Geran-4 (COS-94)
+
+`domain.enemy.Geran4Encounter` programa un único Geran-4 cada
+`SPAWN_INTERVAL_SECONDS = 30 s` de **tiempo activo** de la fase; el primer pulso
+ocurre a los 30 s. No usa el reloj real: la pantalla solo lo avanza dentro de un
+frame de simulación activo, por lo que objetivo, resultado, pausa y fase terminada
+congelan el calendario. Recibe un `UnitRandom` inyectable y, en un delta grande,
+resuelve cada pulso debido y avanza el dron nuevo por el tiempo restante tras su
+propio pulso, sin saltarse apariciones ni apilarlas en un mismo punto.
+
+`Geran4Encounter.ViewportFrame` es un valor inmutable de la geometría que la
+cámara dibuja en ese frame: centro, vector `up` normalizado, zoom y tamaño lógico.
+Sus medios ejes visibles son `view/2 * zoom` y usan la misma base que
+`CameraVisibility` (`right = (upY, -upX)`), de modo que el encuentro no depende de
+`OrthographicCamera` ni de LibGDX. La aparición se decide en ese marco de cámara:
+se sortean lado y coordenada lateral, y el rumbo fijo apunta perpendicularmente
+hacia dentro. Sin dogfight el centro nace dentro del borde visible con el margen
+circunscrito del box 72×72 (sprite completo, cerca del viewport); durante dogfight
+nace más allá del borde por ese margen más `DOGFIGHT_CLEARANCE`, completamente
+fuera del viewport, y entra después. Los candidatos que saldrían de `WorldBounds`
+o que solaparían a Astra se rechazan y se prueba el siguiente lado; en un mundo
+degenerado se usa la esquina más alejada de la cámara como último recurso. El dron
+avanza a `DRONE_SPEED = 110 u/s` y se retira cuando su caja completa sale del
+mundo. `markDestroyed(id)` es la costura idempotente para impactos/choques, pero
+esta hija no resuelve armas, contactos, explosiones ni dibujo (COS-95).
+
+`PhaseOneGameController` posee el encuentro con su propio `UnitRandom` (nuevo
+constructor de cuatro argumentos; las firmas anteriores se conservan) y expone
+`advanceGeran4(activeSeconds, viewport, dogfight)` y `geran4Encounter()`.
+`PhaseOneScreen` construye el `ViewportFrame` con la cámara que dibuja el frame,
+llama a `advanceGeran4` después de `flightCamera.update(...)` y antes de las armas,
+y considera dogfight la coincidencia visible con Vesper o con un escolta caza
+activo que ataca a Astra.
+
 ### Grupos de drones Ghostwing con vuelo mundial (COS-46)
 
 `domain.enemy.GhostwingDrone` es una nave sin arma que extiende `Ship`: caja estable
@@ -1045,10 +1079,10 @@ com.davidpe.cosmicaces
 |   +-- PhaseOneGameController extends GameController: encuentros, armas, combate y misión de PhaseOne.
 |       0. beginActiveFrame() / endActiveFrame(): tramo activo autorizado del frame.
 |       1. placeAstra()  2. placeAstraAtOperationsBase()  3. advanceFlight()  4. advanceEncounter()
-|       5. advanceGhostwing()
+|       5. advanceGhostwing()  6. advanceGeran4()
 |       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
 |       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
-|       11. ghostwingEncounter()  12. setRaiderVisuals()  13. astraCombat()
+|       11. ghostwingEncounter()  12. geran4Encounter()  13. setRaiderVisuals()  14. astraCombat()
 |       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
 |       18. raiderGun()  19. advanceHitFeedback()
 |       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
@@ -1122,6 +1156,15 @@ com.davidpe.cosmicaces
 |   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
 |   |   +-- BastionEscort: Vesper adicional que conserva formación y activa su encuentro al detectar Astra.
 |   |   |   1. deploy()  2. advance()  3. isAttacking()  4. combat()  5. gun()  6. destroy()
+|   |   +-- Geran4UavSheet: ruta, tamaño y tres recortes de hélice del PNG Geran-4.
+|   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
+|   |   +-- Geran4Uav extends Ship: UAV sin armas con rumbo fijo y hélice de tres fases.
+|   |   |   1. id()  2. directionX()  3. directionY()  4. rotationDegrees()  5. centerX()
+|   |   |   6. centerY()  7. advance()  8. propellerFrame()  9. setVisuals()
+|   |   |   +-- Visuals: textura compartida y tres regiones; dispose() la libera.
+|   |   +-- Geran4Encounter: calendario fijo de 30 s y aparición alrededor del viewport.
+|   |   |   1. advance()  2. activeDrones()  3. markDestroyed()  4. secondsUntilNextSpawn()
+|   |   |   +-- ViewportFrame(centerX, centerY, upX, upY, zoom, viewWidth, viewHeight).
 |   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- GhostwingDrone extends Ship: dron sin arma con dirección cardinal fija y hélice.
