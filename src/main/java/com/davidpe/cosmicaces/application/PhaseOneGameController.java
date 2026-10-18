@@ -4,11 +4,14 @@ import com.davidpe.cosmicaces.domain.collision.CollisionDetector;
 import com.davidpe.cosmicaces.domain.effect.ShipHitFlash;
 import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
 import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Encounter;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Uav;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
 import com.davidpe.cosmicaces.domain.enemy.UnitRandom;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
+import com.davidpe.cosmicaces.domain.game.Geran4Death;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.PhaseOneMission;
 import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
@@ -44,9 +47,15 @@ public final class PhaseOneGameController extends GameController {
   private static final int TARGET_RAIDER = 2;
   private static final int TARGET_BASTION_ESCORT = 3;
   private static final int TARGET_BASTION_BOMBER = 4;
+  /**
+   * Ranked after every existing kind on purpose: adding the Geran-4 UAV as a projectile target must
+   * not change how the current Vesper, escort, bomber and Ghostwing targets break an exact tie.
+   */
+  private static final int TARGET_GERAN4 = 5;
 
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
+  private final Geran4Encounter geran4Encounter;
   private final List<BastionEscort> bastionEscorts = List.of(
       new BastionEscort(-1, ThreadLocalRandom.current()::nextFloat),
       new BastionEscort(1, ThreadLocalRandom.current()::nextFloat));
@@ -83,6 +92,12 @@ public final class PhaseOneGameController extends GameController {
   private int pendingAstraLifeLosses;
   private final List<GhostwingDeath> pendingGhostwingDeaths = new ArrayList<>();
   /**
+   * Geran-4 UAV destructions recorded since the last drain, one entry per real ACTIVE→DESTROYED
+   * transition. A UAV retired by finishing its world crossing adds nothing, so the presentation only
+   * explodes what actually died.
+   */
+  private final List<Geran4Death> pendingGeran4Deaths = new ArrayList<>();
+  /**
    * Sentinel for "no simulation frame is open": each direct call bounds itself with the run clock,
    * which is the contract the deterministic tests use.
    */
@@ -114,9 +129,15 @@ public final class PhaseOneGameController extends GameController {
 
   public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
       FlightSpeeds speeds) {
+    this(raiderRandom, ghostwingRandom, speeds, ThreadLocalRandom.current()::nextFloat);
+  }
+
+  public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
+      FlightSpeeds speeds, UnitRandom geran4Random) {
     super(speeds);
     raiderEncounter = new RaiderEncounter(raiderRandom);
     ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
+    geran4Encounter = new Geran4Encounter(geran4Random);
   }
 
   public void setRaiderVisuals(VesperRaider.Visuals visuals) {
@@ -325,6 +346,7 @@ public final class PhaseOneGameController extends GameController {
     handleRespawns(astraLivesRemaining);
     resolveShipContact();
     resolveGhostwingContact(activeSeconds);
+    resolveGeran4Contact(activeSeconds);
     return drainCombatPoints();
   }
 
@@ -355,6 +377,18 @@ public final class PhaseOneGameController extends GameController {
   public List<GhostwingDeath> drainGhostwingDeaths() {
     List<GhostwingDeath> deaths = List.copyOf(pendingGhostwingDeaths);
     pendingGhostwingDeaths.clear();
+    return deaths;
+  }
+
+  /**
+   * Returns and clears the Geran-4 UAV destructions recorded since the last drain, so the
+   * presentation can convert each one into a world-anchored explosion exactly once. Each UAV is
+   * reported at most once, and UAVs that finish their straight flight and leave the world produce no
+   * event at all.
+   */
+  public List<Geran4Death> drainGeran4Deaths() {
+    List<Geran4Death> deaths = List.copyOf(pendingGeran4Deaths);
+    pendingGeran4Deaths.clear();
     return deaths;
   }
 
@@ -424,19 +458,7 @@ public final class PhaseOneGameController extends GameController {
     if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
       return;
     }
-    CollisionDetector.Circle astraFrom;
-    CollisionDetector.Circle astraTo;
-    AstraMotion motion = astraMotion;
-    if (motion == null) {
-      astraFrom = bodyCircle(astra());
-      astraTo = astraFrom;
-    } else {
-      astraFrom = new CollisionDetector.Circle(
-          motion.beforeX() + astra().drawWidth() / 2f,
-          motion.beforeY() + astra().drawHeight() / 2f,
-          bodyRadius(astra()));
-      astraTo = bodyCircle(astra());
-    }
+    AstraSweep sweep = astraSweep();
     float droneSpeed = GhostwingEncounter.DRONE_SPEED;
     for (GhostwingDrone drone : List.copyOf(ghostwingEncounter.activeDrones())) {
       float radius = bodyRadius(drone);
@@ -446,11 +468,71 @@ public final class PhaseOneGameController extends GameController {
           drone.centerX() - drone.direction().horizontal() * droneSpeed * activeSeconds,
           drone.centerY() - drone.direction().vertical() * droneSpeed * activeSeconds,
           radius);
-      if (CollisionDetector.sweep(astraFrom, astraTo, droneFrom, droneTo).isPresent()) {
+      if (CollisionDetector.sweep(sweep.from(), sweep.to(), droneFrom, droneTo).isPresent()) {
         destroyGhostwingDrone(drone.id(), GhostwingDeath.Cause.COLLISION);
         destroyAstra();
       }
     }
+  }
+
+  /**
+   * Resolves hull-to-hull contact between Astra and every live Geran-4 UAV with the exact same
+   * relative sweep of both translating circles used for the Ghostwing drone, so the slower UAV (110
+   * u/s) and long frames cannot pass through the player's hull. Astra sweeps the motion captured this
+   * frame by {@code advanceFlight}.
+   *
+   * <p>Frame order matters here: the screen resolves combat <em>before</em> it advances the Geran-4
+   * calendar and flights in the same active slice ({@code advanceCombat} then {@code advanceGeran4}),
+   * so every UAV read here still stands at the slice start and its travel for this frame is the
+   * upcoming one. The sweep therefore runs forward — from the stored centre to {@code centre +
+   * heading × 110 u/s ×} the same active-seconds slice {@code advanceGeran4} will apply — which is
+   * the exact straight motion of {@link Geran4Uav#advance(float)}. Reconstructing backwards, as the
+   * already-advanced Ghostwing drone does, would cover the previous frame's travel and could miss a
+   * crossing with no overlap at either endpoint.
+   *
+   * <p>A destroyed or protected Astra never collides, matching the Vesper and Ghostwing rule; on a
+   * valid contact only the contacting UAV is destroyed (cause {@code COLLISION}, no points),
+   * {@code destroyAstra()} runs once (idempotent, so the frame still costs a single life) and
+   * {@code handleRespawns()} keeps the existing 3 s respawn with its 2 s invulnerability. No area
+   * damage and no chain reaction: UAVs near the explosion are untouched.
+   */
+  private void resolveGeran4Contact(float activeSeconds) {
+    if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
+      return;
+    }
+    AstraSweep sweep = astraSweep();
+    float droneSpeed = Geran4Encounter.DRONE_SPEED;
+    for (Geran4Uav uav : List.copyOf(geran4Encounter.activeDrones())) {
+      float radius = bodyRadius(uav);
+      CollisionDetector.Circle uavFrom =
+          new CollisionDetector.Circle(uav.centerX(), uav.centerY(), radius);
+      CollisionDetector.Circle uavTo = new CollisionDetector.Circle(
+          uav.centerX() + uav.directionX() * droneSpeed * activeSeconds,
+          uav.centerY() + uav.directionY() * droneSpeed * activeSeconds,
+          radius);
+      if (CollisionDetector.sweep(sweep.from(), sweep.to(), uavFrom, uavTo).isPresent()) {
+        destroyGeran4Uav(uav.id(), Geran4Death.Cause.COLLISION);
+        destroyAstra();
+      }
+    }
+  }
+
+  /**
+   * Exact swept circles of Astra for the frame being resolved: from the position before this frame's
+   * bounded flight ({@link AstraMotion}, captured by {@code advanceFlight}) to the current box
+   * centre. Without a captured motion both circles coincide, degenerating into a plain overlap test.
+   */
+  private AstraSweep astraSweep() {
+    CollisionDetector.Circle current = bodyCircle(astra());
+    AstraMotion motion = astraMotion;
+    if (motion == null) {
+      return new AstraSweep(current, current);
+    }
+    CollisionDetector.Circle before = new CollisionDetector.Circle(
+        motion.beforeX() + astra().drawWidth() / 2f,
+        motion.beforeY() + astra().drawHeight() / 2f,
+        bodyRadius(astra()));
+    return new AstraSweep(before, current);
   }
 
   private void handleRespawns(int astraLivesRemaining) {
@@ -555,13 +637,47 @@ public final class PhaseOneGameController extends GameController {
   }
 
   /**
+   * Destroys exactly the live Geran-4 UAV with the given id and records its death exactly once. The
+   * UAV leaves {@code activeDrones()} immediately, so it stops being drawn, hit by later projectiles
+   * or swept for contact in the same frame; it never respawns and never re-emits. Only a shot
+   * destruction awards the approved drone bonus (the same 100 points as the Ghostwing drone);
+   * collisions award nothing and a UAV that leaves the world produces no event. An unknown or
+   * already-retired id is a no-op, so a projectile and a contact of the same frame can never double
+   * reward or double explode.
+   */
+  private void destroyGeran4Uav(long droneId, Geran4Death.Cause cause) {
+    Geran4Uav uav = activeGeran4Uav(droneId);
+    if (uav == null) {
+      return;
+    }
+    geran4Encounter.markDestroyed(droneId);
+    pendingGeran4Deaths.add(
+        new Geran4Death(droneId, uav.centerX(), uav.centerY(), cause));
+    if (cause == Geran4Death.Cause.SHOT) {
+      // The root approves the very same 100-point bonus already defined for the Ghostwing drone.
+      pendingCombatPoints += score.awardGhostwingDestroyed();
+    }
+  }
+
+  /** The live Geran-4 UAV with the given stable id, or {@code null} once it died or retired. */
+  private Geran4Uav activeGeran4Uav(long droneId) {
+    for (Geran4Uav uav : geran4Encounter.activeDrones()) {
+      if (uav.id() == droneId) {
+        return uav;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Resolves one Astra projectile segment against every live target it crosses. All candidate hulls
-   * (the Vesper Raider and each active Ghostwing drone) compete on the first entry fraction of the
-   * swept segment; ties break by target kind and then drone id, so the winner is stable and
-   * independent of iteration order. One projectile impacts at most one target. A Ghostwing drone is
-   * destroyed by the single impact (weak one-shot target), a hit Raider keeps its existing
-   * ten-impact damage step, and a protected (invulnerable) hull absorbs the projectile without
-   * damage. A drone already removed by {@link GhostwingEncounter#markDestroyed} is never a target.
+   * (the Vesper Raider, each active Ghostwing drone and each live Geran-4 UAV) compete on the first
+   * entry fraction of the swept segment; ties break by target kind and then UAV id, so the winner is
+   * stable and independent of iteration order. One projectile impacts at most one target. A Ghostwing
+   * drone and a Geran-4 UAV are destroyed by the single impact (weak one-shot targets, same approved
+   * 100-point drone bonus), a hit Raider keeps its existing ten-impact damage step, and a protected
+   * (invulnerable) hull absorbs the projectile without damage. A drone or UAV already removed through
+   * {@code markDestroyed} is never a target.
    */
   private void astraProjectileStep(GunProjectile projectile, float fromX, float fromY,
       float toX, float toY) {
@@ -571,6 +687,7 @@ public final class PhaseOneGameController extends GameController {
     CollisionDetector.Segment segment = new CollisionDetector.Segment(fromX, fromY, toX, toY);
     ProjectileTarget best = null;
     GhostwingDrone bestDrone = null;
+    Geran4Uav bestUav = null;
     BastionEscort bestEscort = null;
     VesperRaider raider = activeRaider();
     if (raider != null && !raiderCombat.isDestroyed()) {
@@ -618,6 +735,18 @@ public final class PhaseOneGameController extends GameController {
         bestDrone = drone;
       }
     }
+    for (Geran4Uav uav : geran4Encounter.activeDrones()) {
+      double fraction = CollisionDetector.firstHit(segment, bodyCircle(uav))
+          .orElse(Double.POSITIVE_INFINITY);
+      if (!Double.isFinite(fraction)) {
+        continue;
+      }
+      ProjectileTarget candidate = ProjectileTarget.geran4(fraction, uav.id());
+      if (candidate.precedes(best)) {
+        best = candidate;
+        bestUav = uav;
+      }
+    }
     if (best == null) {
       return;
     }
@@ -626,6 +755,11 @@ public final class PhaseOneGameController extends GameController {
       // The winner is a drone that was live when chosen; destroying it removes it from
       // activeDrones() immediately, so a second projectile of the same frame never re-hits it.
       destroyGhostwingDrone(bestDrone.id(), GhostwingDeath.Cause.SHOT);
+      return;
+    }
+    if (bestUav != null) {
+      // Same idempotent removal for the UAV: the single impact destroys it and never earns twice.
+      destroyGeran4Uav(bestUav.id(), Geran4Death.Cause.SHOT);
       return;
     }
     if (bestEscort != null) {
@@ -754,15 +888,24 @@ public final class PhaseOneGameController extends GameController {
   private record AstraMotion(float beforeX, float beforeY, float beforeYaw,
       float afterX, float afterY, float afterYaw, float duration) {}
 
+  /** Astra's swept hull circles for the frame being resolved: start of flight and current position. */
+  private record AstraSweep(CollisionDetector.Circle from, CollisionDetector.Circle to) {}
+
   /**
    * One candidate hull struck by an Astra projectile segment, ordered by first-entry fraction and
    * then by a stable priority so ties never depend on iteration order: a Ghostwing drone wins a tie
-   * against a protected or vulnerable Raider, and the smaller drone id wins between two drones.
+   * against a protected or vulnerable Raider, and the smaller id wins between two drones of the same
+   * kind. The Geran-4 UAV ranks last, after every pre-existing kind, so its arrival cannot change how
+   * the current targets break a tie.
    */
   private record ProjectileTarget(double fraction, int kind, long droneId) {
 
     static ProjectileTarget drone(double fraction, long droneId) {
       return new ProjectileTarget(fraction, TARGET_GHOSTWING, droneId);
+    }
+
+    static ProjectileTarget geran4(double fraction, long uavId) {
+      return new ProjectileTarget(fraction, TARGET_GERAN4, uavId);
     }
 
     static ProjectileTarget raider(double fraction) {
@@ -913,6 +1056,39 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     ghostwingEncounter.advance(activeSeconds, WORLD);
+  }
+
+  /**
+   * Advances the Geran-4 calendar and its straight flights using only the portion of this frame
+   * that still belongs to the active run. The screen supplies the camera viewport it actually draws
+   * and whether Astra is fighting this frame; the encounter owns the side, point and heading rules.
+   * Pausing, the objective panel, the result panel and a finished run never advance the calendar
+   * because the screen only calls this inside an active simulation frame. Projectile impacts and
+   * hull contact with Astra are resolved by {@code advanceWeapons} and {@code advanceCombat}; a UAV
+   * that finishes its straight flight leaves the world without event or reward.
+   *
+   * @param deltaSeconds elapsed frame seconds, bounded by the active run slice
+   * @param viewport the camera geometry this frame actually draws
+   * @param dogfight whether Astra is fighting a raider or an attacking fighter escort
+   */
+  public void advanceGeran4(float deltaSeconds, Geran4Encounter.ViewportFrame viewport,
+      boolean dogfight) {
+    if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
+      return;
+    }
+    float activeSeconds = boundedActiveSeconds(deltaSeconds);
+    if (activeSeconds <= 0f) {
+      return;
+    }
+    float astraCenterX = astra().x() + astra().drawWidth() / 2f;
+    float astraCenterY = astra().y() + astra().drawHeight() / 2f;
+    geran4Encounter.advance(activeSeconds, WORLD, viewport, astraCenterX, astraCenterY,
+        bodyRadius(astra()), dogfight);
+  }
+
+  /** The Geran-4 encounter owned by this controller, for presentation and tests. */
+  public Geran4Encounter geran4Encounter() {
+    return geran4Encounter;
   }
 
   /** The Ghostwing group encounter owned by this controller, for presentation and tests. */

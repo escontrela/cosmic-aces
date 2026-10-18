@@ -19,6 +19,8 @@ import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
 import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
 import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Encounter;
+import com.davidpe.cosmicaces.domain.enemy.Geran4Uav;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -27,6 +29,7 @@ import com.davidpe.cosmicaces.domain.enemy.VesperRaiderSheet;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
+import com.davidpe.cosmicaces.domain.game.Geran4Death;
 import com.davidpe.cosmicaces.domain.game.GhostwingDeath;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
@@ -52,9 +55,9 @@ import java.util.function.Supplier;
 /**
  * First playable screen: procedural scenery, flight camera, fixed HUD and input. The single Vesper
  * Raider is kept alive in the world by the controller and drawn only while it intersects the camera
- * view; the Ghostwing drone groups are drawn from their world geometry with one shared sheet, and
- * every drone destruction (shot or hull contact) becomes one world-anchored explosion. This screen
- * owns and releases every LibGDX resource it creates.
+ * view; the Ghostwing drone groups and the Geran-4 UAVs are drawn from their world geometry with one
+ * shared sheet each, and every destruction (shot or hull contact) becomes one world-anchored
+ * explosion. This screen owns and releases every LibGDX resource it creates.
  *
  * <p>It never navigates by itself: it publishes game events through the injected {@link
  * GameEventPublisher} and the composition root decides the next screen. The run's own state (time
@@ -121,6 +124,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final VesperRaider.Visuals raiderVisuals;
   private final BastionBomber.Visuals bastionBomberVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
+  private final Geran4Uav.Visuals geran4Visuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final AstraLightEffect astraLightEffect;
@@ -146,6 +150,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private boolean bastionBomberExplosionSpawned;
   /** One pool for every concurrent Ghostwing explosion: a drone can die on any frame. */
   private final ShipExplosions ghostwingExplosions = new ShipExplosions();
+  /** One pool for every concurrent Geran-4 explosion: a UAV can die on any frame. */
+  private final ShipExplosions geran4Explosions = new ShipExplosions();
 
   public PhaseOneScreen(
       GameEventPublisher publisher,
@@ -186,6 +192,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     VesperRaider.Visuals loadedRaider = null;
     BastionBomber.Visuals loadedBastionBomber = null;
     GhostwingDrone.Visuals loadedGhostwing = null;
+    Geran4Uav.Visuals loadedGeran4 = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     AstraLightEffect loadedAstraLight = null;
@@ -201,6 +208,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedRaider = new VesperRaider.Visuals();
       loadedBastionBomber = new BastionBomber.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
+      loadedGeran4 = new Geran4Uav.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
@@ -241,6 +249,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedGhostwing != null) {
         loadedGhostwing.dispose();
       }
+      if (loadedGeran4 != null) {
+        loadedGeran4.dispose();
+      }
       if (loadedAstra != null) {
         loadedAstra.dispose();
       }
@@ -266,6 +277,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     raiderVisuals = loadedRaider;
     bastionBomberVisuals = loadedBastionBomber;
     ghostwingVisuals = loadedGhostwing;
+    geran4Visuals = loadedGeran4;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
     astraLightEffect = loadedAstraLight;
@@ -359,6 +371,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
           .anyMatch(escort -> escort.isActive() && escort.isAttacking()
               && shipVisible(escort.raider().centerX(), escort.raider().centerY(),
                   Math.max(escort.raider().drawWidth(), escort.raider().drawHeight()) / 2f));
+      // Geran-4 calendar and straight flight, placed against the camera viewport this frame draws.
+      // A raider or attacking escort fighting Astra counts as dogfight: the UAV is then born fully
+      // outside the visible polygon and enters afterwards, but the 30 s pulse is never cancelled.
+      controller.advanceGeran4(activeSeconds, geran4Viewport(),
+          weaponsCoincident || escortsCoincident);
       // One weapons update per frame, after the camera that this frame draws. Existing projectiles
       // and new emissions share the active slice, so nothing crosses the 10-minute limit. Shot range
       // remains tied to the 768-unit reference height; impacts and the raider destruction bonus are
@@ -466,6 +483,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // Every live Ghostwing drone attaches the same shared visuals, so newly spawned groups are
     // always drawable; only drones intersecting the real rotated camera view are batched.
     drawGhostwingDrones(batch);
+    // Same shared-resource pattern for every live Geran-4 UAV: rotated by its own fixed heading,
+    // propeller frame from its own clock, culled against the camera that draws this frame.
+    drawGeran4Uavs(batch);
     drawExplosions(batch);
     batch.end();
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
@@ -584,6 +604,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     raiderVisuals.dispose();
     bastionBomberVisuals.dispose();
     ghostwingVisuals.dispose();
+    geran4Visuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     astraLightEffect.dispose();
@@ -765,6 +786,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
   }
 
+  /** Immutable camera geometry for the Geran-4 placement rule, taken from the frame being drawn. */
+  private Geran4Encounter.ViewportFrame geran4Viewport() {
+    return new Geran4Encounter.ViewportFrame(camera.position.x, camera.position.y,
+        camera.up.x, camera.up.y, camera.zoom, viewport.getWorldWidth(),
+        viewport.getWorldHeight());
+  }
+
   /**
    * Objective panel shown before the mission starts. It states both goals (three Vesper Raider and
    * the Bastion downed before it reaches its destination), the LOSE risk of a live arrival and the
@@ -883,9 +911,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * this frame mutates them, so one destruction plays exactly one cue, a still-destroyed ship in the
    * following frames adds nothing, and a mutual collision plays one voice per ship.
    *
-   * <p>Every pending {@link GhostwingDeath} of the frame is consumed exactly once: each one spawns a
-   * world-anchored explosion in the shared pool and adds one cue, so an Astra+Ghostwing collision
-   * plays both voices and a drone that stays dead never re-explodes.
+   * <p>Every pending {@link GhostwingDeath} and {@link Geran4Death} of the frame is consumed exactly
+   * once: each one spawns a world-anchored explosion in its own shared pool and adds one cue, so an
+   * Astra+drone/UAV collision plays both voices and a ship that stays dead never re-explodes.
    */
   private void updateExplosions(float delta) {
     int explosionCues = PhaseOneAudio.explosionCues(
@@ -946,7 +974,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
 
     int ghostwingCues = spawnGhostwingExplosions();
     ghostwingExplosions.advance(delta);
-    audio.playExplosions(explosionCues + bomberExplosionCues + ghostwingCues);
+    int geran4Cues = spawnGeran4Explosions();
+    geran4Explosions.advance(delta);
+    audio.playExplosions(explosionCues + bomberExplosionCues + ghostwingCues + geran4Cues);
   }
 
   /**
@@ -966,6 +996,24 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static float ghostwingExplosionPeak() {
     return EXPLOSION_PEAK_FACTOR
         * Math.max(GhostwingEncounter.DRONE_WIDTH, GhostwingEncounter.DRONE_HEIGHT);
+  }
+
+  /**
+   * Same one-shot conversion for the Geran-4 UAV: every pending death of this frame becomes exactly
+   * one world-anchored explosion and one audio cue, whether it died by a shot or by hull contact with
+   * Astra. A UAV that left the world emits no event, so it explodes nothing.
+   */
+  private int spawnGeran4Explosions() {
+    List<Geran4Death> deaths = controller.drainGeran4Deaths();
+    for (Geran4Death death : deaths) {
+      geran4Explosions.spawn(death.centerX(), death.centerY(), geran4ExplosionPeak());
+    }
+    return deaths.size();
+  }
+
+  /** Explosion peak for a UAV death, based on the stable 72×72 Geran-4 box. */
+  private static float geran4ExplosionPeak() {
+    return EXPLOSION_PEAK_FACTOR * Math.max(Geran4Uav.BOX_WIDTH, Geran4Uav.BOX_HEIGHT);
   }
 
   /** Draws every running explosion into the open world-space batch, anchored at its death centre. */
@@ -990,6 +1038,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
           ghostwing.animation().centerX(), ghostwing.animation().centerY(),
           ghostwing.peakSize());
     }
+    for (ShipExplosions.Entry geran4 : geran4Explosions.active()) {
+      explosionVisuals.draw(batch, geran4.animation().frameIndex(),
+          geran4.animation().centerX(), geran4.animation().centerY(), geran4.peakSize());
+    }
   }
 
   /**
@@ -1004,6 +1056,23 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (shipVisible(drone.centerX(), drone.centerY(),
           Math.max(drone.drawWidth(), drone.drawHeight()) / 2f)) {
         drone.draw(batch, drone.rotationDegrees());
+      }
+    }
+  }
+
+  /**
+   * Draws every live Geran-4 UAV with the shared sheet, rotating around its stable box centre by its
+   * own fixed heading and using its own propeller-phase clock. Only UAVs intersecting the real
+   * rotated camera view are batched. A dead UAV leaves {@code activeDrones()} on the death frame, so
+   * it is never drawn again even while its explosion is still playing; a UAV that completes its
+   * straight flight simply disappears with no effect.
+   */
+  private void drawGeran4Uavs(SpriteBatch batch) {
+    for (Geran4Uav uav : controller.geran4Encounter().activeDrones()) {
+      uav.setVisuals(geran4Visuals);
+      if (shipVisible(uav.centerX(), uav.centerY(),
+          Math.max(uav.drawWidth(), uav.drawHeight()) / 2f)) {
+        uav.draw(batch, uav.rotationDegrees());
       }
     }
   }
