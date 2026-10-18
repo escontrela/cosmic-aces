@@ -244,9 +244,15 @@ mundo se retira sin evento, sin explosión y sin puntos.
 solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de los dos
 círculos traslatorios sobre el mismo frame con `CollisionDetector.sweep`: Astra usa el
 helper compartido `astraSweep()` (círculo de inicio de `AstraMotion` capturado por
-`advanceFlight` y círculo actual) y cada UAV reconstruye su recta restando
-`(directionX, directionY) × 110 u/s ×` el mismo tramo activo que recibió
-`advanceGeran4`, de modo que ni la velocidad ni los frames largos atraviesan el casco.
+`advanceFlight` y círculo actual) y cada UAV barre **hacia delante** su recta, desde su
+centro almacenado hasta `centro + (directionX, directionY) × 110 u/s ×` el mismo tramo
+activo que recibirá `advanceGeran4`, de modo que ni la velocidad ni los frames largos
+atraviesan el casco. El sentido importa porque el orden del frame es
+`advanceCombat` → `advanceGeran4`: al resolver el contacto el UAV todavía está al inicio
+del tramo activo, y su desplazamiento de este frame es el que `Geran4Uav.advance`
+aplicará después. Reconstruir hacia atrás (como hace el dron Ghostwing, que sí avanza
+antes de `advanceCombat`) cubriría el tramo del frame anterior y podría perder un cruce
+Astra–UAV sin solape en los extremos.
 En un contacto válido se destruye **solo** el UAV implicado (causa `COLLISION`, cero
 puntos) y se llama al `destroyAstra()` existente, que sigue siendo idempotente y
 encola una sola pérdida de vida; `handleRespawns()` mantiene la reaparición de 3 s con

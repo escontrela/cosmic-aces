@@ -18,9 +18,10 @@ import org.junit.jupiter.api.Test;
  * Geran-4 UAV combat inside PhaseOne: a single Astra impact destroys the weak UAV and awards the
  * same approved 100-point drone bonus as Ghostwing exactly once; a hull-to-hull contact destroys the
  * UAV and Astra, reuses Astra's existing 3 s respawn with its 2 s invulnerability and awards
- * nothing; a protected Astra collides with nobody; a UAV that completes its straight flight retires
- * without event or reward, and neither the Vesper damage/1000-point rules nor the three-kill mission
- * are touched.
+ * nothing; an Astra–UAV crossing with no overlap at either endpoint is still resolved inside the
+ * frame that flew it; a protected Astra collides with nobody; a UAV that completes its straight
+ * flight retires without event or reward, and neither the Vesper damage/1000-point rules nor the
+ * three-kill mission are touched.
  *
  * <p>Every scenario drives the encounter with scripted random values, so the UAV appears at a known
  * world position: with {@code (0.75, 0.5)} the encounter picks the camera's bottom side and the
@@ -32,6 +33,12 @@ class PhaseOneGeran4CombatTest {
   private static final float DELTA = 1f / 60f;
   private static final float RANGE = 3_000f;
   private static final float EPSILON = 0.01f;
+  /**
+   * Active slice used by the crossing scenario: 2 s at {@code DRONE_SPEED} are 220 world units of
+   * straight UAV travel, so half of it (110) leaves both hulls clear at each endpoint while the
+   * midpoint still crosses Astra's hull.
+   */
+  private static final float CROSSING_SECONDS = 2f;
   /**
    * Scripted camera frame: no yaw, zoom 1 and a symmetric 800×800 logical view, so the bottom-side
    * spawn keeps a 10-unit margin inside the visible polygon and the exact centre is predictable.
@@ -61,6 +68,13 @@ class PhaseOneGeran4CombatTest {
   private static PhaseOneGameController controller() {
     return new PhaseOneGameController(() -> 0f, () -> 0f, FlightSpeeds.DEFAULTS,
         new ScriptedRandom(0.75f, 0.5f));
+  }
+
+  /** Sum of the two hull radii the controller's contact sweep uses for Astra and a UAV. */
+  private static float combinedBodyRadius() {
+    Astra astra = new Astra();
+    return 0.5f * Math.min(astra.drawWidth(), astra.drawHeight())
+        + 0.5f * Math.min(Geran4Uav.BOX_WIDTH, Geran4Uav.BOX_HEIGHT);
   }
 
   /** Starts the run, spawns the first UAV at the 30 s pulse and returns the live UAV. */
@@ -152,6 +166,37 @@ class PhaseOneGeran4CombatTest {
     assertTrue(controller.isAstraActive(), "Astra reappears while lives remain");
     assertTrue(controller.astraCombat().isInvulnerable());
     assertEquals(100, controller.astraCombat().energyPercent());
+  }
+
+  @Test
+  void aUavCrossingAstraBetweenEndpointsIsCaughtInTheSameFrame() {
+    PhaseOneGameController controller = controller();
+    controller.placeAstra(astraXForLeftMuzzle(4000f), 0f, 0f);
+    Geran4Uav uav = spawnFirstUav(controller);
+    long uavId = uav.id();
+    // One active slice in the real frame order: combat (and its contact sweep) runs before the
+    // Geran-4 calendar and flights advance, so the UAV still stands at the slice start. Half of its
+    // travel separates Astra's centre from both endpoints, so the two hulls never overlap at the
+    // start or the end of the slice and only cross in the middle of it.
+    float halfTravel = Geran4Encounter.DRONE_SPEED * CROSSING_SECONDS / 2f;
+    assertTrue(halfTravel > combinedBodyRadius(),
+        "the scenario must start and end with both hulls clear of each other");
+    placeAstraCentredOn(controller, uav.centerX(), uav.centerY() + halfTravel);
+
+    assertEquals(0, controller.advanceCombat(CROSSING_SECONDS, 3),
+        "a hull contact awards no points");
+    controller.advanceGeran4(CROSSING_SECONDS, VIEW, false);
+
+    assertTrue(controller.astraCombat().isDestroyed(),
+        "the crossing is caught inside the frame that flew it");
+    List<Geran4Death> deaths = controller.drainGeran4Deaths();
+    assertEquals(1, deaths.size(), "exactly one UAV dies on the crossing");
+    assertEquals(uavId, deaths.get(0).droneId());
+    assertEquals(Geran4Death.Cause.COLLISION, deaths.get(0).cause());
+    assertEquals(0, controller.scorePoints(), "no points for a hull contact");
+    assertTrue(controller.geran4Encounter().activeDrones().isEmpty(),
+        "the contacting UAV leaves the encounter at once");
+    assertEquals(1, controller.drainAstraLifeLosses(), "one crossing, one life");
   }
 
   @Test

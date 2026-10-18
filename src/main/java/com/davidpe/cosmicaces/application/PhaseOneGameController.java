@@ -479,13 +479,22 @@ public final class PhaseOneGameController extends GameController {
    * Resolves hull-to-hull contact between Astra and every live Geran-4 UAV with the exact same
    * relative sweep of both translating circles used for the Ghostwing drone, so the slower UAV (110
    * u/s) and long frames cannot pass through the player's hull. Astra sweeps the motion captured this
-   * frame by {@code advanceFlight}; each UAV reconstructs its straight travel for the same
-   * active-seconds slice that {@code advanceGeran4} received. A destroyed or protected Astra never
-   * collides, matching the Vesper and Ghostwing rule; on a valid contact only the contacting UAV is
-   * destroyed (cause {@code COLLISION}, no points), {@code destroyAstra()} runs once (idempotent, so
-   * the frame still costs a single life) and {@code handleRespawns()} keeps the existing 3 s respawn
-   * with its 2 s invulnerability. No area damage and no chain reaction: UAVs near the explosion are
-   * untouched.
+   * frame by {@code advanceFlight}.
+   *
+   * <p>Frame order matters here: the screen resolves combat <em>before</em> it advances the Geran-4
+   * calendar and flights in the same active slice ({@code advanceCombat} then {@code advanceGeran4}),
+   * so every UAV read here still stands at the slice start and its travel for this frame is the
+   * upcoming one. The sweep therefore runs forward — from the stored centre to {@code centre +
+   * heading × 110 u/s ×} the same active-seconds slice {@code advanceGeran4} will apply — which is
+   * the exact straight motion of {@link Geran4Uav#advance(float)}. Reconstructing backwards, as the
+   * already-advanced Ghostwing drone does, would cover the previous frame's travel and could miss a
+   * crossing with no overlap at either endpoint.
+   *
+   * <p>A destroyed or protected Astra never collides, matching the Vesper and Ghostwing rule; on a
+   * valid contact only the contacting UAV is destroyed (cause {@code COLLISION}, no points),
+   * {@code destroyAstra()} runs once (idempotent, so the frame still costs a single life) and
+   * {@code handleRespawns()} keeps the existing 3 s respawn with its 2 s invulnerability. No area
+   * damage and no chain reaction: UAVs near the explosion are untouched.
    */
   private void resolveGeran4Contact(float activeSeconds) {
     if (astraCombat.isDestroyed() || !astraCombat.canBeHit()) {
@@ -495,11 +504,11 @@ public final class PhaseOneGameController extends GameController {
     float droneSpeed = Geran4Encounter.DRONE_SPEED;
     for (Geran4Uav uav : List.copyOf(geran4Encounter.activeDrones())) {
       float radius = bodyRadius(uav);
-      CollisionDetector.Circle uavTo =
+      CollisionDetector.Circle uavFrom =
           new CollisionDetector.Circle(uav.centerX(), uav.centerY(), radius);
-      CollisionDetector.Circle uavFrom = new CollisionDetector.Circle(
-          uav.centerX() - uav.directionX() * droneSpeed * activeSeconds,
-          uav.centerY() - uav.directionY() * droneSpeed * activeSeconds,
+      CollisionDetector.Circle uavTo = new CollisionDetector.Circle(
+          uav.centerX() + uav.directionX() * droneSpeed * activeSeconds,
+          uav.centerY() + uav.directionY() * droneSpeed * activeSeconds,
           radius);
       if (CollisionDetector.sweep(sweep.from(), sweep.to(), uavFrom, uavTo).isPresent()) {
         destroyGeran4Uav(uav.id(), Geran4Death.Cause.COLLISION);
