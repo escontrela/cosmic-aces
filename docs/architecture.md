@@ -602,10 +602,14 @@ conjunta ⇒ WIN, reloj expirado ⇒ LOSE) vive en `PhaseOneMission`.
 
 `PhaseOneScreen` dibuja ambos paneles bajo la proyección HUD existente con `GlyphLayout` medido
 contra `hudViewport` (soporta resize) y fondo translúcido, sin ocultar del todo los indicadores: el
-de objetivo resume la meta, las vidas y el límite; el de resultado lee `controller.missionOutcome()`
-y muestra `WIN`/`LOSE`. ESPACIO (pulsación nueva) publica `GameAbandoned` y vuelve a Welcome; ESC
-abandona desde cualquier estado. Al volver a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
-nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
+de objetivo (COS-99) enumera las dos metas —destruir los Vesper Raider y derribar el Bastion antes de
+su destino—, advierte del LOSE si el bombardero llega vivo y resume vidas y límite; se dibuja una
+fila por línea y la altura del panel crece con el número de filas (`overlayPanelHeight`), con
+`overlayPanelY` recortando el panel dentro del viewport para que ninguna fila choque. El de resultado
+lee `controller.missionOutcome()` y muestra `WIN`/`LOSE` con una sola fila. ESPACIO (pulsación nueva)
+publica `GameAbandoned` y vuelve a Welcome; ESC abandona desde cualquier estado. Al volver a Welcome,
+`CosmicAcesGame` libera PhaseOne y una partida nueva recibe un controlador y estado nuevos (3 vidas,
+0/3 bajas, 10:00).
 
 ### HUD de misión en pantalla (COS-71)
 
@@ -1263,7 +1267,8 @@ com.davidpe.cosmicaces
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
             |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
             |   11. completeRun()  12. drawObjectivePanel()  13. drawResultPanel()
-            |   14. drawOverlayPanel()
+            |   14. drawOverlayPanel()  15. objectiveDetailLines() [copy puro]
+            |   16. overlayPanelHeight() / overlayPanelY() [geometría pura de ambos paneles]
             +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
             |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
             |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
