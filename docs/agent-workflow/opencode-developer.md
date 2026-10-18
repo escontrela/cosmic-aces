@@ -1,6 +1,6 @@
 # OpenCode invocation prompt — Cosmic Aces Developer
 
-Use this message as the prompt for the scheduled/non-interactive OpenCode Developer run. The agent is `developer` (`mode: primary`) and its pinned model is `opencode-go/deepseek-v4-flash` (DeepSeek V4 Flash via OpenCode Go). Keep the CLI's `--agent developer` and `--model opencode-go/deepseek-v4-flash` flags in sync with `.opencode/agents/developer.md`.
+Use this message as the prompt for the scheduled/non-interactive OpenCode Developer run. The agent is `developer` (`mode: primary`) and its pinned model is `opencode-go/deepseek-v4.1-flash` (DeepSeek V4.1 Flash via OpenCode Go). Keep the CLI's `--agent developer` and `--model opencode-go/deepseek-v4.1-flash` flags in sync with `.opencode/agents/developer.md`.
 
 ```text
 Use the `cosmic-aces-developer` skill from `.agents/skills/cosmic-aces-developer/SKILL.md`. Work in the Cosmic Aces repository and use the authenticated `linear` MCP connection for workspace `cosmic-aces` and team `Cosmic-aces` as the source of truth. Never use `LastMoveChess`. No project is currently configured; preserve the issue's project field as-is.

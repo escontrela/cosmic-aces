@@ -40,7 +40,7 @@ cd "$PROJECT_DIR" || exit 1
 
 /usr/bin/lockf -k -t 0 "$LOCK_FILE" "$OPENCODE_BIN" run \
   --agent developer \
-  --model opencode-go/deepseek-v4-flash \
+  --model opencode-go/deepseek-v4.1-flash \
   "$PROMPT"
 RESULT=$?
 
