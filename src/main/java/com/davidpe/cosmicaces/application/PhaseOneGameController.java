@@ -819,9 +819,10 @@ public final class PhaseOneGameController extends GameController {
 
   /**
    * Resolves the mission for this frame from the authoritative lives and the time left in the run
-   * clock. Applies the approved priority (lives exhausted loses first, then the kill goal wins,
-   * then the expired clock loses) and is idempotent once an outcome is terminal. The screen and the
-   * lives child will call it once per active frame; this child only exposes the state and the rule.
+   * clock. Applies the approved priority (lives exhausted loses first, then an arrival of the live
+   * Bastion bomber loses, then the joint goal — three Vesper Raiders and the bomber destroyed before
+   * its arrival — wins, then the expired clock loses) and is idempotent once an outcome is terminal.
+   * The screen calls it once per active frame; this class only exposes the state and the rule.
    */
   public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
     return mission.resolve(astraLivesRemaining, remainingRunSeconds());
@@ -836,6 +837,17 @@ public final class PhaseOneGameController extends GameController {
    */
   boolean recordVesperKill() {
     return mission.recordVesperKill();
+  }
+
+  /**
+   * Records one real Bastion bomber destruction that happened before its arrival, so a repeated
+   * impact count or a destruction already processed never counts twice. Package-private seam, like
+   * {@link #recordVesperKill()}: the presentation must never mutate mission state on its own.
+   *
+   * @return {@code true} when this call recorded the bomber as destroyed before its arrival
+   */
+  boolean recordBastionBomberDestroyed() {
+    return mission.recordBastionBomberDestroyed();
   }
 
   /**

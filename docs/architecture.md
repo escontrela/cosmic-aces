@@ -281,7 +281,9 @@ medidos desde la esquina superior izquierda; `BastionBomber.Visuals` convierte e
 origen inferior de `TextureRegion`, comparte una textura por pantalla y la libera en `dispose()`.
 `BastionBomber` es una `Ship` sin armas: permanece en la pista enemiga durante 10 s de tiempo activo,
 vuela hacia la pista aliada a velocidad fija y, al entrar en un radio de 330 u del centro, mantiene
-una órbita circular. El estado, rumbo y fotograma se pueden probar sin contexto gráfico.
+una órbita circular. El estado, rumbo y fotograma se pueden probar sin contexto gráfico. La
+transición `INBOUND → ORBITING`, que ocurre al entrar en ese radio, es para la misión la llegada del
+bombardero a su destino (`PhaseOneMission.recordBastionBomberArrival()`).
 `ShipCombatState.bastionBomber()` requiere tres veces los impactos de Vesper para agotar la energía;
 el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` integra su avance,
 impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
@@ -521,11 +523,34 @@ El contador no se infiere del bonus 1000, del frame de explosión ni de `raiderV
 `handleRespawns()` conserva la única instancia de `RaiderEncounter` y el `ShipCombatState.vesper()`
 para las vidas 2 y 3 (espera de 5 s, energía al 100 % y un punto válido del mundo), pero
 `isRaiderRespawnClosed()` interrumpe esa reaparición en cuanto `vesperKills >= 3` o la misión quedó
-terminal por cualquier causa (vidas agotadas o reloj expirado): tras la tercera baja Vesper no
-reaparece, no se crea una cuarta vida ni un segundo enemigo, y no se cargan texturas nuevas. Los
-proyectiles ya emitidos no re-impactan sobre restos del mismo frame: `activeRaider()` es null al
-morir, `destroyRaider()` es idempotente y cada proyectil impacta como máximo una vez. El desenlace
-por tiempo/vidas y su gating en pantalla pertenecen a las hijas COS-69/COS-70.
+terminal por cualquier causa (vidas agotadas, reloj expirado o llegada viva del Bastion): tras la
+tercera baja Vesper no reaparece, no se crea una cuarta vida ni un segundo enemigo, y no se cargan
+texturas nuevas. Los proyectiles ya emitidos no re-impactan sobre restos del mismo frame:
+`activeRaider()` es null al morir, `destroyRaider()` es idempotente y cada proyectil impacta como
+máximo una vez. El desenlace por tiempo/vidas y su gating en pantalla pertenecen a las hijas
+COS-69/COS-70.
+
+### Objetivo conjunto de la misión (COS-97)
+
+`domain.game.PhaseOneMission` ya no gana con las tres bajas de Vesper por sí solas: la victoria exige
+las **dos** metas, las tres bajas y el Bastion bomber destruido antes de llegar a su destino. La clase
+recuerda dos hechos semánticos con eventos idempotentes y sin conocer `BastionBomber.FlightState`:
+`recordBastionBomberDestroyed()` acepta un derribo real anterior a la llegada y
+`recordBastionBomberArrival()` latchea la llegada del bombardero todavía vivo. El modelo no conoce
+`BastionBomber.FlightState`: traducir a esos hechos la destrucción real y la transición a `ORBITING`
+—que para la misión es la llegada del bombardero a su destino— corresponde al controlador, y esa
+conexión con el ciclo de simulación se integra en su propia subtarea.
+
+`resolve(astraLives, remainingSeconds)` sigue siendo el único punto de decisión y aplica la prioridad:
+0 vidas ⇒ LOSE; llegada viva latcheada ⇒ LOSE, aunque el contador ya esté en 3/3; meta conjunta
+(3 bajas **y** bombardero derribado) ⇒ WIN; reloj a 0 sin la meta conjunta ⇒ LOSE; sin condición
+terminal la misión sigue IN_PROGRESS. Un derribo registrado después de la llegada no cuenta ni
+rescata la partida, y un bombardero ya derribado no puede registrar llegada: la derrota por llegada
+es terminal e idempotente y ningún impacto o baja posterior cambia el resultado. Un bombardero
+derribado antes de llegar deja la partida en curso hasta completar las tres bajas, perder todas las
+vidas o agotar los 600 s. `PhaseOneGameController.recordBastionBomberDestroyed()` es la costura
+package-private, análoga a `recordVesperKill()`, que usan las pruebas deterministas y usará la
+integración; la pantalla nunca muta el estado de la misión.
 
 ### Vidas reales de Astra (COS-69)
 
@@ -543,8 +568,8 @@ por entrada drenada, después de `advanceCombat` y de `advanceWeapons` y antes d
 modo que el coordinador y `PhaseCompleted` siempre ven la vida ya descontada y varios impactos sobre el
 mismo cuerpo no restan vidas extra. Inmediatamente después la pantalla resuelve el desenlace con las
 vidas autoritativas (`resolveMissionOutcome`); la prioridad (0 vidas ⇒ LOSE antes de la 3ª baja, luego
-la meta, luego el reloj) vive en `PhaseOneMission.resolve`. El panel WIN/LOSE visible corresponde al
-hijo de flujo de pantalla.
+la llegada viva del Bastion, luego la meta conjunta, luego el reloj) vive en `PhaseOneMission.resolve`.
+El panel WIN/LOSE visible corresponde al hijo de flujo de pantalla.
 
 ### Ciclo de misión en pantalla (COS-70)
 
@@ -564,8 +589,8 @@ se resuelve y no puede otorgar victoria tardía); nuevas publicaciones de `LifeL
 y por último `resolveMissionOutcome` con las vidas autoritativas. Si el desenlace es terminal,
 `completeRun()` publica una única `PhaseCompleted` con el snapshot ya actualizado y congela el
 estado. `advanceHitFeedback` y las animaciones de explosión siguen avanzando por presentación. La
-prioridad del resultado (0 vidas ⇒ LOSE antes de la 3ª baja, meta ⇒ WIN, reloj expirado ⇒ LOSE) vive
-en `PhaseOneMission`.
+prioridad del resultado (0 vidas ⇒ LOSE antes de la 3ª baja, llegada viva del Bastion ⇒ LOSE, meta
+conjunta ⇒ WIN, reloj expirado ⇒ LOSE) vive en `PhaseOneMission`.
 
 `PhaseOneScreen` dibuja ambos paneles bajo la proyección HUD existente con `GlyphLayout` medido
 contra `hudViewport` (soporta resize) y fondo translúcido, sin ocultar del todo los indicadores: el
@@ -625,7 +650,8 @@ mediante `boundedActiveSeconds`, sin volver a derivarlo de `PlayableRun.remainin
 salir por `isRunFinished()`. Así, un delta que alcanza 00:00 durante el vuelo no recorta el
 movimiento, el encuentro, los drones, los temporizadores, las colisiones ni las armas del mismo
 frame: todos simulan el tramo autorizado una sola vez y después se resuelve el desenlace
-(`PhaseOneMission` conserva la prioridad 0 vidas → LOSE, 3 bajas → WIN, reloj 0 → LOSE). Fuera de un
+(`PhaseOneMission` conserva la prioridad 0 vidas → LOSE, llegada viva del Bastion → LOSE, 3 bajas con
+el bombardero derribado → WIN, reloj 0 → LOSE). Fuera de un
 frame (llamadas directas, p. ej. pruebas deterministas) no hay tramo autorizado: cada método acota el
 delta con el reloj y un recorrido ya terminado no avanza nada, preservando el contrato previo. En los
 frames siguientes el tramo es cero y ningún subsistema avanza naves, combate, disparos ni puntos.
@@ -1044,8 +1070,9 @@ com.davidpe.cosmicaces
 |   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
 |   |   +-- PlayableRun: reloj del recorrido, límite de 10 minutos (600 s).
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
-|   |   +-- PhaseOneMission: objetivo de la misión (3 bajas en 600 s) y desenlace único.
-|   |   |   1. recordVesperKill()  2. resolve()  3. vesperKills()  4. outcome()
+|   |   +-- PhaseOneMission: meta conjunta (3 bajas + Bastion derribado antes de llegar) en 600 s.
+|   |   |   1. recordVesperKill()  2. recordBastionBomberDestroyed()  3. recordBastionBomberArrival()
+|   |   |   4. resolve()  5. vesperKills()  6. outcome()
 |   |   +-- PhaseOutcome [enum]: IN_PROGRESS | WIN | LOSE.
 |   |   +-- PhaseScore: puntos por segundos completos, coincidencia visible y bonus.
 |   |   |   1. advance()  2. totalPoints()  3. awardRaiderDestroyed()
@@ -1093,7 +1120,8 @@ com.davidpe.cosmicaces
 |   +-- enemy
 |   |   +-- BastionBomberSheet: ruta, tamaño y cinco recortes del PNG de giro.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
-|   |   +-- BastionBomber extends Ship: bombardero sin armas con espera, vuelo y órbita.
+|   |   +-- BastionBomber extends Ship: bombardero sin armas con espera, vuelo y órbita; su paso a
+|   |   |   ORBITING es la llegada a destino que la misión consume.
 |   |   |   1. advance()  2. flightState()  3. hasTakenOff()  4. frameIndex()
 |   |   |   5. headingDegrees()  6. centerX()  7. centerY()  8. setVisuals()
 |   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
