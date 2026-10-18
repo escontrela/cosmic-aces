@@ -37,6 +37,13 @@ class EnemyStatusHudTest {
         "a live raider facing a visible Astra during PLAYING shows the block");
   }
 
+  @Test
+  void bomberStatusFollowsItsOwnVisibilityDuringPlay() {
+    assertTrue(EnemyStatusHud.show(true, true));
+    assertFalse(EnemyStatusHud.show(false, true), "INTRO/RESULT must hide the bomber block");
+    assertFalse(EnemyStatusHud.show(true, false), "an off-screen bomber has no HUD block");
+  }
+
   // --- Format: integer percentage clamped to the displayable 0-100 range. ---
 
   @Test
@@ -51,6 +58,14 @@ class EnemyStatusHudTest {
   void energyLabelClampsAnomalousReadings() {
     assertEquals("0%", new EnemyStatusHud.Readout(-5).energyLabel());
     assertEquals("100%", new EnemyStatusHud.Readout(140).energyLabel());
+  }
+
+  @Test
+  void readoutCarriesTheSelectedEnemyNameAndHealth() {
+    EnemyStatusHud.Readout bomber = new EnemyStatusHud.Readout("BASTION B-52", 65);
+
+    assertEquals("BASTION B-52", bomber.titleLabel());
+    assertEquals("65%", bomber.energyLabel());
   }
 
   // --- Layout: centered in the upper-middle band, clear of counters, clock, score and bottom. ---
@@ -81,6 +96,15 @@ class EnemyStatusHudTest {
     assertEquals((800f - 118f) / 2f, layout.titleX(), 0.001f);
     assertEquals((800f - 42f) / 2f, layout.valueX(), 0.001f);
     assertEquals(layout.titleY() - EnemyStatusHud.ROW_GAP, layout.valueY(), 0.001f);
+  }
+
+  @Test
+  void visibleEnemyReadoutsUseSeparateVerticalSlots() {
+    EnemyStatusHud.Layout first = EnemyStatusHud.layout(800f, 600f, 118f, 42f, 0);
+    EnemyStatusHud.Layout second = EnemyStatusHud.layout(800f, 600f, 118f, 42f, 1);
+
+    assertEquals(EnemyStatusHud.BLOCK_GAP, first.titleY() - second.titleY(), 0.001f);
+    assertTrue(second.valueY() > 0f);
   }
 
   @Test

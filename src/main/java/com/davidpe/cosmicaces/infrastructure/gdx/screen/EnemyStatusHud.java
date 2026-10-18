@@ -4,18 +4,17 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import java.util.Objects;
 
 /**
- * Combat enemy readout of PhaseOne, drawn under the fixed HUD projection while Astra and the live
- * Vesper Raider coincide in the real rotated camera view: the enemy name {@code VESPER RAIDER} and
- * its remaining energy as an integer percentage ({@code 100% … 0%}) that follows every accepted
- * damage step.
+ * Combat enemy readout of PhaseOne, drawn under the fixed HUD projection while a live enemy is
+ * visible in the real rotated camera view: its name and remaining energy as an integer percentage
+ * ({@code 100% … 0%}) that follows every accepted damage step.
  *
  * <p>It owns no native resource and is completely independent of {@link FlightHud}'s Astra energy
  * reading: the enemy percentage is a distinct, title-labelled block, so the two energies can never
- * be confused. The whole block is hidden whenever the encounter is not visible, so it never shows
- * health for a Raider that has not appeared yet, is destroyed, is waiting to respawn, or once the
- * mission has reached INTRO/RESULT.
+ * be confused. The block is hidden whenever the enemy is not visible or the mission has reached
+ * INTRO/RESULT. Multiple visible enemies use separate vertical slots.
  *
  * <p>The visibility rule and the layout are pure functions, unit tested without a window: the block
  * is centered in the upper-middle band, below the mission counters/clock (COS-71) and above the
@@ -37,19 +36,33 @@ final class EnemyStatusHud {
   static final float TOP_OFFSET = 104f;
   /** Distance between the title baseline and the energy percentage baseline. */
   static final float ROW_GAP = 26f;
+  /** Vertical separation between enemy blocks when more than one is visible. */
+  static final float BLOCK_GAP = 58f;
 
   private final GlyphLayout titleLayout = new GlyphLayout();
   private final GlyphLayout valueLayout = new GlyphLayout();
 
   /**
-   * Read-only snapshot of the enemy combat state drawn for one frame: the Raider's remaining energy
-   * as an integer percentage, clamped to the displayable 0–100 range so a stale or anomalous value
-   * can never paint a negative or an over-full reading.
+   * Read-only snapshot of an enemy's name and remaining energy for one frame. Energy is clamped to
+   * the displayable 0–100 range so an anomalous value can never paint a negative or over-full
+   * reading.
    */
-  record Readout(int energyPercent) {
+  record Readout(String title, int energyPercent) {
 
     Readout {
+      title = Objects.requireNonNull(title, "title").trim();
+      if (title.isEmpty()) {
+        throw new IllegalArgumentException("Enemy title must not be blank");
+      }
       energyPercent = Math.max(0, Math.min(100, energyPercent));
+    }
+
+    Readout(int energyPercent) {
+      this(TITLE, energyPercent);
+    }
+
+    String titleLabel() {
+      return title;
     }
 
     /** The enemy energy as an integer percentage, {@code 100% … 0%}. */
@@ -70,6 +83,11 @@ final class EnemyStatusHud {
     return playing && astraInCombat && raiderInCombat;
   }
 
+  /** The bomber block follows its own world visibility rather than requiring a Vesper encounter. */
+  static boolean show(boolean playing, boolean enemyVisible) {
+    return playing && enemyVisible;
+  }
+
   /**
    * Positions of the enemy name and its energy percentage for the given viewport and measured text
    * widths. Both lines are centered horizontally in the upper-middle band; the title sits above the
@@ -79,8 +97,16 @@ final class EnemyStatusHud {
 
   static Layout layout(float viewportWidth, float viewportHeight, float titleWidth,
       float valueWidth) {
+    return layout(viewportWidth, viewportHeight, titleWidth, valueWidth, 0);
+  }
+
+  static Layout layout(float viewportWidth, float viewportHeight, float titleWidth,
+      float valueWidth, int blockIndex) {
+    if (blockIndex < 0) {
+      throw new IllegalArgumentException("Enemy HUD block index must not be negative");
+    }
     float centerX = viewportWidth / 2f;
-    float titleY = viewportHeight - TOP_OFFSET;
+    float titleY = viewportHeight - TOP_OFFSET - blockIndex * BLOCK_GAP;
     float valueY = titleY - ROW_GAP;
     return new Layout(centerX - titleWidth / 2f, titleY, centerX - valueWidth / 2f, valueY);
   }
@@ -92,13 +118,20 @@ final class EnemyStatusHud {
    */
   void draw(SpriteBatch batch, BitmapFont font, Readout readout,
       float viewportWidth, float viewportHeight) {
+    draw(batch, font, readout, viewportWidth, viewportHeight, 0);
+  }
+
+  void draw(SpriteBatch batch, BitmapFont font, Readout readout,
+      float viewportWidth, float viewportHeight, int blockIndex) {
+    String title = readout.titleLabel();
     String value = readout.energyLabel();
-    titleLayout.setText(font, TITLE);
+    titleLayout.setText(font, title);
     valueLayout.setText(font, value);
-    Layout layout = layout(viewportWidth, viewportHeight, titleLayout.width, valueLayout.width);
+    Layout layout = layout(viewportWidth, viewportHeight,
+        titleLayout.width, valueLayout.width, blockIndex);
     batch.begin();
     batch.setColor(Color.WHITE);
-    drawShadow(font, batch, TITLE, layout.titleX(), layout.titleY());
+    drawShadow(font, batch, title, layout.titleX(), layout.titleY());
     drawShadow(font, batch, value, layout.valueX(), layout.valueY());
     font.setColor(TITLE_COLOR);
     font.draw(batch, titleLayout, layout.titleX(), layout.titleY());

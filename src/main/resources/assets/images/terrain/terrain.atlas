@@ -1,0 +1,96 @@
+terrain-atlas.png
+size: 2560, 2200
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+grass-02
+  rotate: false
+  xy: 2, 2
+  size: 512, 512
+  orig: 512, 512
+  offset: 0, 0
+  index: -1
+tree-01
+  rotate: false
+  xy: 2, 522
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+bush-01
+  rotate: false
+  xy: 262, 522
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+puddle-01
+  rotate: false
+  xy: 522, 522
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+puddle-02
+  rotate: false
+  xy: 782, 522
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+puddle-03
+  rotate: false
+  xy: 2, 782
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+rock-cluster-01
+  rotate: false
+  xy: 262, 782
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+tree-02
+  rotate: false
+  xy: 522, 782
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+bush-02
+  rotate: false
+  xy: 782, 782
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+puddle-04
+  rotate: false
+  xy: 2, 1042
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+rock-cluster-02
+  rotate: false
+  xy: 262, 1042
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+operations-base-01
+  rotate: false
+  xy: 1042, 2
+  size: 1448, 1086
+  orig: 1448, 1086
+  offset: 0, 0
+  index: -1
+enemy-operations-base-01
+  rotate: false
+  xy: 1042, 1092
+  size: 1448, 1086
+  orig: 1448, 1086
+  offset: 0, 0
+  index: -1

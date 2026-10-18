@@ -26,6 +26,8 @@ public final class ShipCombatState {
   private static final int VESPER_DAMAGE_PER_STEP = 35;
   private static final float VESPER_RESPAWN_SECONDS = 5f;
   private static final float VESPER_INVULNERABILITY_SECONDS = 0f;
+  /** Same damage per step as Vesper, with three times as many impacts required per step. */
+  private static final int BASTION_IMPACTS_PER_DAMAGE = VESPER_IMPACTS_PER_DAMAGE * 3;
 
   public enum State {
     ACTIVE,
@@ -80,6 +82,11 @@ public final class ShipCombatState {
   public static ShipCombatState vesper() {
     return new ShipCombatState(VESPER_IMPACTS_PER_DAMAGE, VESPER_DAMAGE_PER_STEP,
         VESPER_RESPAWN_SECONDS, VESPER_INVULNERABILITY_SECONDS);
+  }
+
+  /** Bastion bomber: three times Vesper's impact resistance and no respawn or invulnerability. */
+  public static ShipCombatState bastionBomber() {
+    return new ShipCombatState(BASTION_IMPACTS_PER_DAMAGE, VESPER_DAMAGE_PER_STEP, 0f, 0f);
   }
 
   /**

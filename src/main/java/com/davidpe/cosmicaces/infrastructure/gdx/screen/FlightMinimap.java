@@ -2,6 +2,8 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
+import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
@@ -10,9 +12,9 @@ import java.util.List;
 
 /**
  * Optional fixed-screen map overlay for PhaseOne: the whole world, Astra's
- * cyan arrow, the red Vesper point with its direction trail, and one amber hollow diamond per
- * active Ghostwing group (the group's representative point, never one marker per drone). It owns no
- * native resources.
+ * cyan arrow, allied and enemy base markers, Vesper, both active Bastion escorts, the blinking
+ * Bastion bomber after takeoff, and one amber hollow diamond per active Ghostwing group (the group's
+ * representative point, never one marker per drone). It owns no native resources.
  */
 final class FlightMinimap {
   private static final Color PANEL_COLOR = new Color(0.008f, 0.022f, 0.04f, 1f);
@@ -22,6 +24,11 @@ final class FlightMinimap {
   private static final Color RAIDER_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
   private static final Color RAIDER_TRAIL_COLOR = new Color(1f, 0.48f, 0.20f, 1f);
   private static final Color GROUP_COLOR = new Color(1f, 0.72f, 0.12f, 1f);
+  private static final Color BASE_COLOR = new Color(0.30f, 0.92f, 1f, 1f);
+  private static final Color ENEMY_BASE_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
+  private static final Color BOMBER_COLOR = new Color(1f, 0.24f, 0.12f, 1f);
+  private static final Color BOMBER_CORE_COLOR = new Color(1f, 0.91f, 0.62f, 1f);
+  private static final Color ESCORT_COLOR = new Color(1f, 0.36f, 0.28f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
@@ -40,6 +47,17 @@ final class FlightMinimap {
 
   void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
       VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
+      BastionBomber bomber, float elapsedSeconds,
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
+      float viewportWidth, float viewportHeight) {
+    draw(shapes, world, astra, raider, ghostwingGroups, bomber, List.of(), elapsedSeconds,
+        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth, viewportHeight);
+  }
+
+  void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
+      VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
+      BastionBomber bomber, List<BastionEscort> escorts, float elapsedSeconds,
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
       float viewportWidth, float viewportHeight) {
     if (!visible) return;
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
@@ -56,12 +74,17 @@ final class FlightMinimap {
     shapes.begin(ShapeRenderer.ShapeType.Line);
     shapes.setColor(BORDER_COLOR);
     shapes.rect(map.x(), map.y(), map.width(), map.height());
+    drawBaseMarker(shapes, projection, baseCenterX, baseCenterY);
     if (raider != null) drawRaiderTrail(shapes, projection, raider);
     drawGroupMarkers(shapes, projection, ghostwingGroups);
     shapes.end();
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     drawAstra(shapes, projection, astra);
+    drawEnemyBaseMarker(shapes, projection, enemyBaseCenterX, enemyBaseCenterY);
+    if (bomber != null && bomber.hasTakenOff() && bomberBlinkVisible(elapsedSeconds)) {
+      drawBastionBomberMarker(shapes, projection, bomber);
+    }
     if (raider != null) {
       MinimapProjection.Point point = projection.projectMarker(
           raider.x() + raider.drawWidth() / 2f,
@@ -69,7 +92,65 @@ final class FlightMinimap {
       shapes.setColor(RAIDER_COLOR);
       shapes.circle(point.x(), point.y(), 4f, 12);
     }
+    if (escorts != null) {
+      for (BastionEscort escort : escorts) {
+        if (escort == null || !escort.isActive()) continue;
+        MinimapProjection.Point point = projection.projectMarker(
+            escort.raider().centerX(), escort.raider().centerY(), 5f);
+        shapes.setColor(ESCORT_COLOR);
+        shapes.circle(point.x(), point.y(), 3.5f, 12);
+      }
+    }
     shapes.end();
+  }
+
+  static boolean bomberBlinkVisible(float elapsedSeconds) {
+    return Float.isFinite(elapsedSeconds) && elapsedSeconds >= 0f
+        && ((int) (elapsedSeconds / 0.3f) & 1) == 0;
+  }
+
+  private static void drawBastionBomberMarker(ShapeRenderer shapes,
+      MinimapProjection projection, BastionBomber bomber) {
+    MinimapProjection.Point point = projection.projectMarker(bomber.centerX(), bomber.centerY(), 7f);
+    shapes.setColor(BOMBER_COLOR);
+    shapes.circle(point.x(), point.y(), 5f, 16);
+    shapes.setColor(BOMBER_CORE_COLOR);
+    shapes.circle(point.x(), point.y(), 2f, 12);
+  }
+
+  private static void drawEnemyBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
+      float centerX, float centerY) {
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 8f);
+    shapes.setColor(ENEMY_BASE_COLOR);
+    drawThickLine(shapes, point.x() - 5f, point.y() - 5f,
+        point.x() + 5f, point.y() + 5f, 3f);
+    drawThickLine(shapes, point.x() - 5f, point.y() + 5f,
+        point.x() + 5f, point.y() - 5f, 3f);
+  }
+
+  private static void drawThickLine(ShapeRenderer shapes, float startX, float startY,
+      float endX, float endY, float thickness) {
+    float dx = endX - startX;
+    float dy = endY - startY;
+    float halfOffsetX = -dy / (float) Math.sqrt(dx * dx + dy * dy) * thickness / 2f;
+    float halfOffsetY = dx / (float) Math.sqrt(dx * dx + dy * dy) * thickness / 2f;
+    float ax = startX + halfOffsetX;
+    float ay = startY + halfOffsetY;
+    float bx = startX - halfOffsetX;
+    float by = startY - halfOffsetY;
+    float cx = endX - halfOffsetX;
+    float cy = endY - halfOffsetY;
+    float dx2 = endX + halfOffsetX;
+    float dy2 = endY + halfOffsetY;
+    shapes.triangle(ax, ay, bx, by, cx, cy);
+    shapes.triangle(ax, ay, cx, cy, dx2, dy2);
+  }
+
+  private static void drawBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
+      float centerX, float centerY) {
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 6f);
+    shapes.setColor(BASE_COLOR);
+    shapes.circle(point.x(), point.y(), 4f, 16);
   }
 
   /**

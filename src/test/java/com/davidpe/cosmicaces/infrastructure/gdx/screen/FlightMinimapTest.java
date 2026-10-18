@@ -19,6 +19,17 @@ class FlightMinimapTest {
   }
 
   @Test
+  void bomberMarkerAlternatesEveryThreeTenthsOfASecondAfterTakeoffClock() {
+    assertTrue(FlightMinimap.bomberBlinkVisible(0f));
+    assertTrue(FlightMinimap.bomberBlinkVisible(0.29f));
+    assertFalse(FlightMinimap.bomberBlinkVisible(0.3f));
+    assertFalse(FlightMinimap.bomberBlinkVisible(0.59f));
+    assertTrue(FlightMinimap.bomberBlinkVisible(0.6f));
+    assertFalse(FlightMinimap.bomberBlinkVisible(-0.01f));
+    assertFalse(FlightMinimap.bomberBlinkVisible(Float.NaN));
+  }
+
+  @Test
   void ghostwingGroupMarkerIsACloserDiamondAroundTheRepresentativePoint() {
     MinimapProjection.Point center = new MinimapProjection.Point(40f, 50f);
 

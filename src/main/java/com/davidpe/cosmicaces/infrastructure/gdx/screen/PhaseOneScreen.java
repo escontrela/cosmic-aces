@@ -5,7 +5,6 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -14,9 +13,12 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.application.PhaseOneScenery;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosion;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosions;
 import com.davidpe.cosmicaces.domain.effect.ShipExplosionVisuals;
+import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
+import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingDrone;
 import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.RaiderEncounter;
@@ -34,18 +36,21 @@ import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.player.HeroShipSheet;
+import com.davidpe.cosmicaces.domain.scenery.SceneryField;
+import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.scenery.TerrainSceneryRenderer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * First playable screen: cached terrain map, flight camera, fixed HUD and input. The single Vesper
+ * First playable screen: procedural scenery, flight camera, fixed HUD and input. The single Vesper
  * Raider is kept alive in the world by the controller and drawn only while it intersects the camera
  * view; the Ghostwing drone groups are drawn from their world geometry with one shared sheet, and
  * every drone destruction (shot or hull contact) becomes one world-anchored explosion. This screen
@@ -62,14 +67,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final String RETURN_PROMPT = "PULSA ESPACIO PARA VOLVER A WELCOME";
   private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
   private static final String LOSE_DETAIL = "MISION FALLIDA";
-  private static final float INITIAL_Y = VirtualScreenSize.HEIGHT;
   /** Explosion peak size as a multiple of each ship's largest draw dimension (visual tuning). */
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
-  /** Prefetch work allowed per normal render; visible tiles are always loaded before drawing. */
-  static final long TERRAIN_PREFETCH_BUDGET_NANOS = 2_000_000L;
-
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
   private final GameId gameId;
@@ -84,12 +85,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final MissionHud missionHud = new MissionHud();
   private final EnemyStatusHud enemyStatusHud = new EnemyStatusHud();
   private final FlightMinimap minimap = new FlightMinimap();
+  private final GoForwardPrompt goForwardPrompt;
   private final GunBurstVisual tracer = new GunBurstVisual();
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
-  private final PhaseOneTerrainCache<Texture> terrainCache;
+  private final TerrainSceneryRenderer sceneryRenderer;
+  private final SceneryField sceneryField;
   private final Astra.Visuals astraVisuals;
   private final VesperRaider.Visuals raiderVisuals;
+  private final BastionBomber.Visuals bastionBomberVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
@@ -105,15 +109,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
    * {@code runFinished} boolean and keeps the mission from advancing or firing outside PLAYING.
    */
   private final PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
-  private float previousTerrainCameraX = Float.NaN;
-  private float previousTerrainCameraY = Float.NaN;
-  private float terrainTravelX;
-  private float terrainTravelY = 1f;
   private boolean disposed;
+  private boolean goForwardPromptVisible = true;
+  private int observedAstraLifeGeneration;
   private ActiveExplosion astraExplosion;
   private ActiveExplosion raiderExplosion;
+  private ActiveExplosion bastionBomberExplosion;
   private boolean astraExplosionSpawned;
   private boolean raiderExplosionSpawned;
+  private boolean bastionBomberExplosionSpawned;
   /** One pool for every concurrent Ghostwing explosion: a drone can die on any frame. */
   private final ShipExplosions ghostwingExplosions = new ShipExplosions();
 
@@ -145,8 +149,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudViewport = new ScreenViewport(hudCamera);
     hudCamera.position.set(VirtualScreenSize.WIDTH / 2f, VirtualScreenSize.HEIGHT / 2f, 0f);
     hudCamera.update();
-    float startX = (PhaseOneGameController.WORLD.width() - controller.astra().drawWidth()) / 2f;
-    controller.placeAstra(startX, INITIAL_Y, 0f);
+    PhaseOneScenery phaseScenery = controller.phaseOneScenery();
+    controller.placeAstraAtOperationsBase();
     flightCamera = new FlightCamera(camera, controller.astra(),
         presentationSettings.astraBottomFraction());
 
@@ -154,33 +158,47 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ShapeRenderer loadedShapes = null;
     Astra.Visuals loadedAstra = null;
     VesperRaider.Visuals loadedRaider = null;
+    BastionBomber.Visuals loadedBastionBomber = null;
     GhostwingDrone.Visuals loadedGhostwing = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     AstraLightEffect loadedAstraLight = null;
+    TerrainSceneryRenderer loadedSceneryRenderer = null;
     PhaseOneAudio loadedAudio = null;
     BitmapFont loadedFont = null;
     BitmapFont loadedHudFont = null;
+    GoForwardPrompt loadedGoForwardPrompt = null;
     try {
       loadedBatch = new SpriteBatch();
       loadedShapes = new ShapeRenderer();
       loadedAstra = new Astra.Visuals(presentationSettings.astraVariant());
       loadedRaider = new VesperRaider.Visuals();
+      loadedBastionBomber = new BastionBomber.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
+      loadedSceneryRenderer = new TerrainSceneryRenderer(
+          phaseScenery.config(), phaseScenery.operationsBasePlacement(),
+          phaseScenery.enemyBasePlacement());
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
       loadedHudFont.getData().setScale(1.05f);
+      loadedGoForwardPrompt = new GoForwardPrompt();
     } catch (RuntimeException | Error failure) {
       if (loadedHudFont != null) {
         loadedHudFont.dispose();
       }
+      if (loadedGoForwardPrompt != null) {
+        loadedGoForwardPrompt.dispose();
+      }
       if (loadedFont != null) {
         loadedFont.dispose();
+      }
+      if (loadedSceneryRenderer != null) {
+        loadedSceneryRenderer.dispose();
       }
       if (loadedAudio != null) {
         loadedAudio.dispose();
@@ -190,6 +208,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       if (loadedRaider != null) {
         loadedRaider.dispose();
+      }
+      if (loadedBastionBomber != null) {
+        loadedBastionBomber.dispose();
       }
       if (loadedGhostwing != null) {
         loadedGhostwing.dispose();
@@ -213,9 +234,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     batch = loadedBatch;
     shapes = loadedShapes;
-    terrainCache = new PhaseOneTerrainCache<>(new PhaseOneTerrainTextureFactory());
+    sceneryField = phaseScenery.sceneryField();
+    sceneryRenderer = loadedSceneryRenderer;
     astraVisuals = loadedAstra;
     raiderVisuals = loadedRaider;
+    bastionBomberVisuals = loadedBastionBomber;
     ghostwingVisuals = loadedGhostwing;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
@@ -223,8 +246,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     audio = loadedAudio;
     font = loadedFont;
     hudFont = loadedHudFont;
+    goForwardPrompt = loadedGoForwardPrompt;
+    observedAstraLifeGeneration = controller.astraCombat().lifeGeneration();
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
+    controller.setBastionBomberVisuals(bastionBomberVisuals);
   }
 
   @Override
@@ -237,6 +263,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
       minimap.toggle();
     }
+    boolean buttonPressedThisFrame = anyButtonJustPressed();
     boolean spaceDown = Gdx.input.isKeyPressed(Input.Keys.SPACE);
     boolean spaceJustPressed = Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
     flow.observeSpace(spaceDown);
@@ -275,6 +302,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
       earned += controller.advanceCombat(activeSeconds, astraLives);
+      int lifeGeneration = controller.astraCombat().lifeGeneration();
+      if (lifeGeneration != observedAstraLifeGeneration) {
+        observedAstraLifeGeneration = lifeGeneration;
+        goForwardPromptVisible = true;
+      }
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
       // completion snapshot below) always sees the already-decremented pool.
       publishAstraLifeLosses();
@@ -288,7 +320,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // the mission is no longer playing.
     flightCamera.update(controller.astra(), delta, cameraCombatTarget(),
         viewport.getWorldWidth(), viewport.getWorldHeight());
-    PhaseOneTerrainPlanner.Plan terrainPlan = updateTerrain();
+    PhaseOneTerrainPlanner.Bounds terrainBounds = updateTerrain();
     // One hit-feedback advance per frame, before impacts are resolved so a pulse accepted this
     // frame is drawn at its full first intensity. It also runs outside the active mission so the
     // last pulse of an in-flight projectile keeps extinguishing on a frozen panel.
@@ -297,14 +329,19 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // Reevaluate coincidence against the camera that this frame actually draws (after flight, the
       // encounter and the camera update) so Vesper fires only while both ships are really visible.
       boolean weaponsCoincident = shipsCoincidentVisible();
+      boolean escortsCoincident = astraInCamera() && controller.bastionEscorts().stream()
+          .anyMatch(escort -> escort.isActive() && escort.isAttacking()
+              && shipVisible(escort.raider().centerX(), escort.raider().centerY(),
+                  Math.max(escort.raider().drawWidth(), escort.raider().drawHeight()) / 2f));
       // One weapons update per frame, after the camera that this frame draws. Existing projectiles
       // and new emissions share the active slice, so nothing crosses the 10-minute limit. Shot range
       // remains tied to the 768-unit reference height; impacts and the raider destruction bonus are
       // resolved inside this call.
       long astraBurstsBefore = controller.astraGun().emissionCount();
       long raiderBurstsBefore = controller.raiderGun().emissionCount();
+      long escortBurstsBefore = escortEmissionCount();
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
-          flow.fireTrigger(spaceDown), weaponsCoincident,
+          flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
       // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters,
       // so a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays
@@ -312,6 +349,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       audio.playVulcanBursts(
           PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
               + PhaseOneAudio.burstsSince(raiderBurstsBefore, controller.raiderGun().emissionCount()));
+      audio.playVulcanBursts(PhaseOneAudio.burstsSince(escortBurstsBefore, escortEmissionCount()));
       if (weaponEarned > 0) {
         publisher.publish(new PointsEarned(gameId, phase, weaponEarned));
       }
@@ -326,6 +364,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
       controller.endActiveFrame();
     }
+    if (buttonPressedThisFrame) {
+      goForwardPromptVisible = false;
+    }
     // Spawn at most one explosion per destruction (from contact or from a weapon impact this frame)
     // and advance the running ones. Death/respawn timing stays in the controller; the screen only
     // converts the destroyed state into a world-anchored animation.
@@ -339,14 +380,22 @@ public final class PhaseOneScreen extends ScreenAdapter {
         flow.isPlaying() && controller.isAstraActive());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
-    drawTerrain(terrainPlan);
+    drawTerrain(terrainBounds);
     // Feed the cannon's own emission pulse into the ship visuals right before the draw, so the
     // muzzle flash and the burst share one clock and no extra timer exists in the screen.
     controller.astra().setMuzzleFlashVisible(controller.astraGun().flashVisible());
     if (controller.isRaiderActive()) {
       controller.activeRaider().setMuzzleFlashVisible(controller.raiderGun().flashVisible());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (escort.isActive()) escort.raider().setMuzzleFlashVisible(escort.gun().flashVisible());
+    }
     batch.begin();
+    if (goForwardPromptVisible && controller.isAstraActive()) {
+      goForwardPrompt.draw(batch, hudFont,
+          controller.astra().x() + controller.astra().drawWidth() / 2f,
+          controller.astra().y() + controller.astra().drawHeight() / 2f);
+    }
     if (controller.isAstraActive()
         && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
       astraLightEffect.draw(batch, controller.astra());
@@ -367,6 +416,27 @@ public final class PhaseOneScreen extends ScreenAdapter {
       hitFlashRenderer.draw(batch, raider, raider.headingDegrees(),
           controller.raiderHitFlashIntensity());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (!escort.isActive()) continue;
+      VesperRaider wingman = escort.raider();
+      if (shipVisible(wingman.centerX(), wingman.centerY(),
+          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f)) {
+        hitFlashRenderer.draw(batch, wingman, wingman.headingDegrees(), escort.hitFlash().intensity());
+      }
+    }
+    BastionBomber bomber = controller.bastionBomber();
+    boolean bomberVisible = controller.isBastionBomberActive()
+        && shipVisible(bomber.centerX(), bomber.centerY(),
+            Math.max(bomber.drawWidth(), bomber.drawHeight()) / 2f);
+    boolean bomberInViewport = flow.isPlaying() && bomberVisible;
+    if (bomberVisible) {
+      if (controller.bastionBomberHitFlashIntensity() > 0f) {
+        hitFlashRenderer.draw(batch, bomber, bomber.headingDegrees(),
+            controller.bastionBomberHitFlashIntensity());
+      } else {
+        bomber.draw(batch, bomber.headingDegrees());
+      }
+    }
     // Every live Ghostwing drone attaches the same shared visuals, so newly spawned groups are
     // always drawable; only drones intersecting the real rotated camera view are batched.
     drawGhostwingDrones(batch);
@@ -385,6 +455,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       tracer.draw(shapes, projectile.x(), projectile.y(),
           projectile.forwardX(), projectile.forwardY());
     }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      for (GunProjectile projectile : escort.gun().projectiles()) {
+        tracer.draw(shapes, projectile.x(), projectile.y(),
+            projectile.forwardX(), projectile.forwardY());
+      }
+    }
     shapes.end();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
@@ -398,7 +474,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
     if (!enemyInViewport) {
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
-          ghostwingGroupPoints(), hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          ghostwingGroupPoints(),
+          controller.isBastionBomberActive() ? controller.bastionBomber() : null,
+          controller.bastionEscorts(),
+          controller.missionTimeLimitSeconds() - controller.remainingRunSeconds(),
+          (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerX(),
+          (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
+          (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
+          (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
@@ -417,10 +501,29 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // resolved by this frame's impacts, so name and percentage always match the encounter actually
     // drawn; it stays hidden on INTRO, RESULT, before the first spawn, between respawns and after
     // the final destruction.
+    int enemyHudSlot = 0;
     if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)) {
       enemyStatusHud.draw(batch, hudFont,
           new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
+    }
+    if (EnemyStatusHud.show(flow.isPlaying(), bomberInViewport)) {
+      enemyStatusHud.draw(batch, hudFont,
+          new EnemyStatusHud.Readout("BASTION B-52",
+              controller.bastionBomberCombat().energyPercent()),
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
+    }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (!escort.isActive()) continue;
+      VesperRaider wingman = escort.raider();
+      boolean escortVisible = shipVisible(wingman.centerX(), wingman.centerY(),
+          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f);
+      if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat && escortVisible)) {
+        enemyStatusHud.draw(batch, hudFont,
+            new EnemyStatusHud.Readout("BASTION ESCORT",
+                escort.combat().energyPercent()), hudViewport.getWorldWidth(),
+            hudViewport.getWorldHeight(), enemyHudSlot++);
+      }
     }
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.
@@ -438,8 +541,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudCamera.position.set(hudViewport.getWorldWidth() / 2f,
         hudViewport.getWorldHeight() / 2f, 0f);
     hudCamera.update();
-    // render() replans from the new world dimensions and synchronously fills any newly visible
-    // tiles before their first draw; no GL upload is attempted from the resize callback.
+    // render() recomputes camera bounds from the new world dimensions before selecting visible scenery.
   }
 
   @Override
@@ -448,57 +550,51 @@ public final class PhaseOneScreen extends ScreenAdapter {
       return;
     }
     disposed = true;
-    terrainCache.dispose();
+    sceneryRenderer.dispose();
     audio.dispose();
     batch.dispose();
     shapes.dispose();
     astraVisuals.dispose();
     raiderVisuals.dispose();
+    bastionBomberVisuals.dispose();
     ghostwingVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     astraLightEffect.dispose();
+    goForwardPrompt.dispose();
     font.dispose();
     hudFont.dispose();
   }
 
-  /** Plans the real rotated camera view and updates the bounded cache on the LibGDX render thread. */
-  private PhaseOneTerrainPlanner.Plan updateTerrain() {
-    float cameraX = camera.position.x;
-    float cameraY = camera.position.y;
-    float deltaX = cameraX - previousTerrainCameraX;
-    float deltaY = cameraY - previousTerrainCameraY;
-    if (Float.isFinite(deltaX) && Float.isFinite(deltaY)
-        && Math.hypot(deltaX, deltaY) > 0.001d) {
-      terrainTravelX = deltaX;
-      terrainTravelY = deltaY;
+  private static boolean anyButtonJustPressed() {
+    for (int key = 0; key < Input.Keys.MAX_KEYCODE; key++) {
+      if (Gdx.input.isKeyJustPressed(key)) return true;
     }
-    previousTerrainCameraX = cameraX;
-    previousTerrainCameraY = cameraY;
-
-    PhaseOneTerrainPlanner.Camera terrainCamera = new PhaseOneTerrainPlanner.Camera(
-        cameraX, cameraY, camera.up.x, camera.up.y, camera.zoom,
-        viewport.getWorldWidth(), viewport.getWorldHeight());
-    PhaseOneTerrainPlanner.Plan plan = PhaseOneTerrainPlanner.plan(
-        terrainCamera, terrainTravelX, terrainTravelY);
-    terrainCache.update(plan, TERRAIN_PREFETCH_BUDGET_NANOS);
-    return plan;
+    for (int button = 0; button < 5; button++) {
+      if (Gdx.input.isButtonJustPressed(button)) return true;
+    }
+    return false;
   }
 
-  /** Draws resident map tiles first so every world object stays visibly above the terrain. */
-  private void drawTerrain(PhaseOneTerrainPlanner.Plan plan) {
+  /** Plans the conservative world rectangle for the real rotated, zoomed camera view. */
+  private PhaseOneTerrainPlanner.Bounds updateTerrain() {
+    PhaseOneTerrainPlanner.Camera terrainCamera = new PhaseOneTerrainPlanner.Camera(
+        camera.position.x, camera.position.y, camera.up.x, camera.up.y, camera.zoom,
+        viewport.getWorldWidth(), viewport.getWorldHeight());
+    return PhaseOneTerrainPlanner.visibleBounds(terrainCamera);
+  }
+
+  /** Draws continuous ground and only the decoration footprints crossing the visible world bounds. */
+  private void drawTerrain(PhaseOneTerrainPlanner.Bounds bounds) {
+    if (bounds.maxX() <= bounds.minX() || bounds.maxY() <= bounds.minY()) return;
+    WorldRect visibleArea = new WorldRect(bounds.minX(), bounds.minY(),
+        bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY());
     batch.setColor(Color.WHITE);
     batch.begin();
-    for (PhaseOneTerrainCatalog.Tile tile : plan.visible()) {
-      Texture texture = terrainCache.resource(tile);
-      if (texture == null) {
-        // update() guarantees this for visible tiles; fail loudly instead of silently flashing black.
-        batch.end();
-        throw new IllegalStateException("Visible terrain tile was not loaded: " + tile.path());
-      }
-      batch.draw(texture, tile.worldX(), tile.worldY(), tile.worldWidth(), tile.worldHeight(),
-          tile.sourceX(), tile.sourceY(), tile.sourceWidth(), tile.sourceHeight(), false, false);
-    }
+    sceneryRenderer.drawGround(batch, visibleArea);
+    sceneryRenderer.drawOperationsBase(batch, visibleArea);
+    sceneryRenderer.drawEnemyOperationsBase(batch, visibleArea);
+    sceneryRenderer.drawScenery(batch, sceneryField, visibleArea);
     batch.end();
   }
 
@@ -623,6 +719,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.end();
   }
 
+  private long escortEmissionCount() {
+    long emissions = 0L;
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      emissions += escort.gun().emissionCount();
+    }
+    return emissions;
+  }
+
   /**
    * Projects a world point into the camera's rotated view frame and checks it against the visible
    * half extents, including the ship's half box as margin. Delegates to the shared pure rule so the
@@ -717,6 +821,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     int explosionCues = PhaseOneAudio.explosionCues(
         controller.astraCombat().isDestroyed(), astraExplosionSpawned,
         controller.raiderCombat().isDestroyed(), raiderExplosionSpawned);
+    int bomberExplosionCues = controller.bastionBomberCombat().isDestroyed()
+        && !bastionBomberExplosionSpawned ? 1 : 0;
     if (!controller.astraCombat().isDestroyed()) {
       astraExplosion = null;
       astraExplosionSpawned = false;
@@ -751,9 +857,26 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
     }
 
+    if (!controller.bastionBomberCombat().isDestroyed()) {
+      bastionBomberExplosion = null;
+      bastionBomberExplosionSpawned = false;
+    } else if (!bastionBomberExplosionSpawned) {
+      float peak = EXPLOSION_PEAK_FACTOR
+          * Math.max(BastionBomber.DRAW_WIDTH, BastionBomber.DRAW_HEIGHT);
+      bastionBomberExplosion = new ActiveExplosion(new ShipExplosion(
+          controller.bastionBomberDeathCenterX(), controller.bastionBomberDeathCenterY()), peak);
+      bastionBomberExplosionSpawned = true;
+    }
+    if (bastionBomberExplosion != null) {
+      bastionBomberExplosion.animation().advance(delta);
+      if (bastionBomberExplosion.animation().isFinished()) {
+        bastionBomberExplosion = null;
+      }
+    }
+
     int ghostwingCues = spawnGhostwingExplosions();
     ghostwingExplosions.advance(delta);
-    audio.playExplosions(explosionCues + ghostwingCues);
+    audio.playExplosions(explosionCues + bomberExplosionCues + ghostwingCues);
   }
 
   /**
@@ -786,6 +909,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
       explosionVisuals.draw(batch, raiderExplosion.animation().frameIndex(),
           raiderExplosion.animation().centerX(), raiderExplosion.animation().centerY(),
           raiderExplosion.peakSize());
+    }
+    if (bastionBomberExplosion != null) {
+      explosionVisuals.draw(batch, bastionBomberExplosion.animation().frameIndex(),
+          bastionBomberExplosion.animation().centerX(), bastionBomberExplosion.animation().centerY(),
+          bastionBomberExplosion.peakSize());
     }
     for (ShipExplosions.Entry ghostwing : ghostwingExplosions.active()) {
       explosionVisuals.draw(batch, ghostwing.animation().frameIndex(),

@@ -60,6 +60,13 @@ class PhaseOneCombatTest {
     assertTrue(controller.isAstraActive());
     assertTrue(controller.astraCombat().isInvulnerable());
     assertEquals(100, controller.astraCombat().energyPercent());
+    PhaseOneScenery base = controller.phaseOneScenery();
+    assertEquals(base.operationsBaseSpawnCenterX(),
+        controller.astra().x() + controller.astra().drawWidth() / 2f, 0.01f);
+    assertEquals(base.operationsBaseSpawnCenterY(),
+        controller.astra().y() + controller.astra().drawHeight() / 2f, 0.01f);
+    assertEquals(0f, controller.astra().yawDegrees(), 0.001f,
+        "a replacement aircraft launches north from the runway");
     assertTrue(controller.isRaiderActive(), "contact must not destroy Vesper");
     assertEquals(100, controller.raiderCombat().energyPercent());
 
