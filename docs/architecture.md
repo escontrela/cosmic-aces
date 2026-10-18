@@ -181,8 +181,8 @@ mueve en línea recta y cicla la hélice 0→1→2 (`PROPELLER_FRAME_SECONDS = 0
 el rumbo nunca cambia durante la vida y no hay giro, persecución ni disparo.
 `Geran4Uav.Visuals` comparte una única `Texture` con sus tres regiones por pantalla,
 propiedad de la pantalla que la carga y la libera una sola vez; el modelo se construye
-y prueba sin iniciar GDX. La aparición programada (COS-94) y el combate/presentación
-(COS-95) se integran en hijas posteriores.
+y prueba sin iniciar GDX. La aparición programada (COS-94) y el combate y la
+presentación (COS-95) se integran en las hijas siguientes, sin cambiar este modelo.
 
 ### Calendario y aparición del UAV Geran-4 (COS-94)
 
@@ -207,8 +207,8 @@ fuera del viewport, y entra después. Los candidatos que saldrían de `WorldBoun
 o que solaparían a Astra se rechazan y se prueba el siguiente lado; en un mundo
 degenerado se usa la esquina más alejada de la cámara como último recurso. El dron
 avanza a `DRONE_SPEED = 110 u/s` y se retira cuando su caja completa sale del
-mundo. `markDestroyed(id)` es la costura idempotente para impactos/choques, pero
-esta hija no resuelve armas, contactos, explosiones ni dibujo (COS-95).
+mundo. `markDestroyed(id)` es la costura idempotente que usan los impactos y los
+choques (COS-95), sin que el encuentro resuelva armas, contactos ni explosiones.
 
 `PhaseOneGameController` posee el encuentro con su propio `UnitRandom` (nuevo
 constructor de cuatro argumentos; las firmas anteriores se conservan) y expone
@@ -217,6 +217,60 @@ constructor de cuatro argumentos; las firmas anteriores se conservan) y expone
 llama a `advanceGeran4` después de `flightCamera.update(...)` y antes de las armas,
 y considera dogfight la coincidencia visible con Vesper o con un escolta caza
 activo que ataca a Astra.
+
+### Combate y presentación del UAV Geran-4 (COS-95)
+
+El UAV entra en las mismas reglas de dron débil y explosivo que Ghostwing, sin tocar
+las de Vesper, Bastion ni el resultado WIN/LOSE. En `astraProjectileStep`, cada UAV
+vivo compite como blanco de un solo impacto con las demás formas de casco por la
+**menor fracción de entrada** del segmento; los empates se resuelven con
+`ProjectileTarget(fraction, kind, droneId)`, donde el nuevo `TARGET_GERAN4 = 5` se
+añade *después* de los tipos existentes (`GHOSTWING = 0`, blindaje Raider `1`, casco
+Raider `2`, escolta `3`, bombardero `4`) precisamente para no alterar el desempate
+actual; entre dos UAV gana el id menor. Un proyectil se consume una vez y destruye
+como máximo un blanco: `destroyGeran4Uav(id, cause)` retira el UAV vivo del encuentro
+con `markDestroyed`, emite `Geran4Death` una única vez y suma el bonus de 100 puntos
+—`PhaseScore.awardGhostwingDestroyed()`, el mismo bono aprobado para el dron
+Ghostwing— **solo** cuando la causa es disparo. Una baja ya retirada o desconocida es
+un no-op, así que un proyectil y un choque del mismo frame nunca premian ni explotan
+dos veces.
+
+`domain.game.Geran4Death(droneId, centerX, centerY, cause)` es el registro inmutable
+equivalente a `GhostwingDeath` (`Cause.SHOT | Cause.COLLISION`), con el centro mundial
+congelado en el instante de la muerte. Un UAV que completa su vuelo recto y sale del
+mundo se retira sin evento, sin explosión y sin puntos.
+
+`resolveGeran4Contact`, invocado en `advanceCombat` tras `resolveGhostwingContact` y
+solo si `astraCombat.canBeHit()`, barre el movimiento relativo exacto de los dos
+círculos traslatorios sobre el mismo frame con `CollisionDetector.sweep`: Astra usa el
+helper compartido `astraSweep()` (círculo de inicio de `AstraMotion` capturado por
+`advanceFlight` y círculo actual) y cada UAV reconstruye su recta restando
+`(directionX, directionY) × 110 u/s ×` el mismo tramo activo que recibió
+`advanceGeran4`, de modo que ni la velocidad ni los frames largos atraviesan el casco.
+En un contacto válido se destruye **solo** el UAV implicado (causa `COLLISION`, cero
+puntos) y se llama al `destroyAstra()` existente, que sigue siendo idempotente y
+encola una sola pérdida de vida; `handleRespawns()` mantiene la reaparición de 3 s con
+2 s de inmunidad. Un Astra destruido o protegido nunca colisiona, igual que con Vesper
+y Ghostwing, y no hay daño en área: los UAV próximos a la explosión no se ven
+afectados.
+
+`PhaseOneScreen` posee un único `Geran4Uav.Visuals` creado en su bloque de carga con
+limpieza parcial y liberado una sola vez en `dispose()`, junto a un pool propio
+`ShipExplosions geran4Explosions`. Cada frame `drawGeran4Uavs(batch)` adjunta esos
+visuals a todos los UAV vivos (idempotente, así los recién aparecidos siempre dibujan)
+y dibuja en el `SpriteBatch`/proyección mundial, solo los que intersectan la vista
+rotada real (`CameraVisibility.shipVisible`), con `Ship.draw(batch, rotationDegrees)`
+según el rumbo fijo del modelo y el frame de hélice de su propio reloj.
+`spawnGeran4Explosions()`, dentro de `updateExplosions`, consume exactamente una vez
+por frame los `Geran4Death` de `drainGeran4Deaths()`: cada evento crea una explosión
+anclada al centro de muerte y añade un cue a `audio.playExplosions(...)`, con pico
+`1,8 ×` la caja 72×72 (`geran4ExplosionPeak()`), igual que el criterio aprobado para
+Ghostwing. El UAV muerto sale de `activeDrones()` en el frame de su muerte, por lo que
+deja de dibujarse, de recibir impactos y de colisionar aunque su explosión siga
+visible. No se añade marcador de minimapa ni indicador fuera de cámara para el UAV, y
+el HUD de energía, el encuadre de combate y el triángulo de dogfight siguen siendo
+exclusivos de Vesper. La comprobación visual de tamaño, rotación, hélice, explosión y
+audio corresponde al PO humano.
 
 ### Grupos de drones Ghostwing con vuelo mundial (COS-46)
 
@@ -1080,15 +1134,20 @@ com.davidpe.cosmicaces
 |       0. beginActiveFrame() / endActiveFrame(): tramo activo autorizado del frame.
 |       1. placeAstra()  2. placeAstraAtOperationsBase()  3. advanceFlight()  4. advanceEncounter()
 |       5. advanceGhostwing()  6. advanceGeran4()
-|       5. advanceCombat()  6. advanceWeapons()  7. drainCombatPoints()
-|       8. drainGhostwingDeaths()  9. isRaiderActive()  10. activeRaider()
-|       11. ghostwingEncounter()  12. geran4Encounter()  13. setRaiderVisuals()  14. astraCombat()
-|       14. raiderCombat()  15. isAstraActive()  16. scorePoints()  17. astraGun()
-|       18. raiderGun()  19. advanceHitFeedback()
-|       20. astraHitFlashIntensity()  21. raiderHitFlashIntensity()
-|       22. vesperKills()  23. vesperKillGoal()  24. missionTimeLimitSeconds()
-|       25. missionOutcome()  26. resolveMissionOutcome()
-|       27. phaseOneScenery(): paisaje procedural determinista compartido durante la ejecución.
+|       7. advanceCombat()  8. advanceWeapons()  9. drainCombatPoints()
+|       10. drainGhostwingDeaths()  11. drainGeran4Deaths()
+|       12. isRaiderActive()  13. activeRaider()  14. ghostwingEncounter()  15. geran4Encounter()
+|       16. setRaiderVisuals()  17. setBastionBomberVisuals()  18. astraCombat()  19. raiderCombat()
+|       20. isAstraActive()  21. scorePoints()  22. astraGun()  23. raiderGun()
+|       24. advanceHitFeedback()  25. astraHitFlashIntensity()  26. raiderHitFlashIntensity()
+|       27. bastionBomberHitFlashIntensity()  28. bastionBomber()  29. bastionEscorts()
+|       30. bastionBomberCombat()  31. isBastionBomberActive()
+|       32. vesperKills()  33. vesperKillGoal()  34. missionTimeLimitSeconds()
+|       35. missionOutcome()  36. resolveMissionOutcome()  37. drainAstraLifeLosses()
+|       38. remainingRunSeconds()  39. isRunStarted()  40. isRunFinished()
+|       41. astraDeathCenterX()  42. astraDeathCenterY()  43. raiderDeathCenterX()
+|       44. raiderDeathCenterY()  45. bastionBomberDeathCenterX()  46. bastionBomberDeathCenterY()
+|       47. phaseOneScenery(): paisaje procedural determinista compartido durante la ejecución.
 |   +-- PhaseOneScenery: mapa, decoración y reserva de base preparados una vez por ejecución.
 |       1. config()  2. terrainMap()  3. sceneryField()  4. operationsBasePlacement()
 |       5. operationsBaseSpawnCenterX()  6. operationsBaseSpawnCenterY()
@@ -1118,6 +1177,8 @@ com.davidpe.cosmicaces
 |   |       +-- PhaseCompleted: comunica el resultado de la fase.
 |   |       +-- GameAbandoned: solicita abandonar.
 |   |   +-- GhostwingDeath(droneId, centerX, centerY, cause): destrucción de un dron,
+|   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
+|   |   +-- Geran4Death(droneId, centerX, centerY, cause): destrucción de un UAV Geran-4,
 |   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
@@ -1291,9 +1352,10 @@ com.davidpe.cosmicaces
             |   1. render()  2. resize()  3. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
-            |   8. drawOffscreenIndicator()  9. updateExplosions()  10. drawExplosions()
-            |   11. completeRun()  12. drawObjectivePanel()  13. drawResultPanel()
-            |   14. drawOverlayPanel()
+            |   8. drawGeran4Uavs()  9. spawnGeran4Explosions()  10. geran4ExplosionPeak()
+            |   11. drawOffscreenIndicator()  12. updateExplosions()  13. drawExplosions()
+            |   14. completeRun()  15. drawObjectivePanel()  16. drawResultPanel()
+            |   17. drawOverlayPanel()
             +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
             |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
             |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
