@@ -27,7 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class Geran4Encounter {
 
   /** Active seconds between two scheduled UAVs; the first pulse also happens at this instant. */
-  public static final float SPAWN_INTERVAL_SECONDS = 30f;
+  public static final float SPAWN_INTERVAL_SECONDS = 10f;
   /** Slow fixed UAV speed in world units per second, well below Astra's 230 u/s cruise. */
   public static final float DRONE_SPEED = 110f;
   /**

@@ -187,8 +187,11 @@ presentación (COS-95) se integran en las hijas siguientes, sin cambiar este mod
 ### Calendario y aparición del UAV Geran-4 (COS-94)
 
 `domain.enemy.Geran4Encounter` programa un único Geran-4 cada
-`SPAWN_INTERVAL_SECONDS = 30 s` de **tiempo activo** de la fase; el primer pulso
-ocurre a los 30 s. No usa el reloj real: la pantalla solo lo avanza dentro de un
+`SPAWN_INTERVAL_SECONDS = 10 s` de **tiempo activo** de la fase; el primer pulso
+ocurre a los 10 s. La frecuencia más alta mantiene varios UAV simultáneos en el
+mundo mientras sobreviven; el calendario sigue avanzando durante los dogfights con
+Vesper y los Geran-4 aparecen fuera del viewport hasta entrar. No usa el reloj real:
+la pantalla solo lo avanza dentro de un
 frame de simulación activo, por lo que objetivo, resultado, pausa y fase terminada
 congelan el calendario. Recibe un `UnitRandom` inyectable y, en un delta grande,
 resuelve cada pulso debido y avanza el dron nuevo por el tiempo restante tras su
@@ -1269,7 +1272,7 @@ com.davidpe.cosmicaces
 |   |   |   1. id()  2. directionX()  3. directionY()  4. rotationDegrees()  5. centerX()
 |   |   |   6. centerY()  7. advance()  8. propellerFrame()  9. setVisuals()
 |   |   |   +-- Visuals: textura compartida y tres regiones; dispose() la libera.
-|   |   +-- Geran4Encounter: calendario fijo de 30 s y aparición alrededor del viewport.
+|   |   +-- Geran4Encounter: calendario fijo de 10 s y aparición alrededor del viewport.
 |   |   |   1. advance()  2. activeDrones()  3. markDestroyed()  4. secondsUntilNextSpawn()
 |   |   |   +-- ViewportFrame(centerX, centerY, upX, upY, zoom, viewWidth, viewHeight).
 |   |   +-- GhostwingDroneSheet: ruta y tres recortes de hélice del PNG Ghostwing.
