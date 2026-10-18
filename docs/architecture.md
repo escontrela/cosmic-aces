@@ -161,6 +161,29 @@ es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantall
 texturas; el futuro objeto visual de Ghostwing deberá compartir una textura por
 pantalla y liberarla allí.
 
+### UAV Geran-4: lámina y modelo de vuelo recto (COS-93)
+
+`domain.enemy.Geran4UavSheet` describe los metadatos de la lámina Geran-4 existente
+(`assets/images/enemy/geran4_uav/geran4_uav_propeller_sheet_v1.png`): 2172×724 píxeles,
+tres fotogramas cuadrados de 724×724 con la misma silueta y morro hacia +Y, donde solo
+cambia la fase de la hélice. `internalPath()`, `frameSlices()` y `frameSlice(int)`
+exponen los recortes sin cargar texturas.
+
+`domain.enemy.Geran4Uav` es una `Ship` sin armas con caja estable cuadrada de 72×72
+(`BOX_WIDTH`/`BOX_HEIGHT`, por debajo de la caja 80×80 del caza Vesper e igual que el
+dron Ghostwing; nunca la escala del bombardero), identidad estable `id()` y un rumbo
+fijo arbitrario `(directionX, directionY)` normalizado una vez en el constructor —a
+diferencia del `Direction` cardinal de Ghostwing, el encuentro puede cruzar la zona
+visible desde cualquier lado del viewport—. `rotationDegrees()` deriva la rotación de
+render de la orientación base (morro +Y) con la misma convención de Ghostwing (norte
+0°, este -90°, sur 180°, oeste +90°), generalizada a cualquier rumbo. `advance(dt)`
+mueve en línea recta y cicla la hélice 0→1→2 (`PROPELLER_FRAME_SECONDS = 0,08 s`);
+el rumbo nunca cambia durante la vida y no hay giro, persecución ni disparo.
+`Geran4Uav.Visuals` comparte una única `Texture` con sus tres regiones por pantalla,
+propiedad de la pantalla que la carga y la libera una sola vez; el modelo se construye
+y prueba sin iniciar GDX. La aparición programada (COS-94) y el combate/presentación
+(COS-95) se integran en hijas posteriores.
+
 ### Grupos de drones Ghostwing con vuelo mundial (COS-46)
 
 `domain.enemy.GhostwingDrone` es una nave sin arma que extiende `Ship`: caja estable
