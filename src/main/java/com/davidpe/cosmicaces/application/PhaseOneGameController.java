@@ -27,7 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Rules specific to phase one: the 10-minute mission clock, autonomous Raider, scoring, mission
- * outcome and the Astra cannon.
+ * outcome, the Bastion bomber arrival/destruction and the Astra cannon.
  */
 public final class PhaseOneGameController extends GameController {
 
@@ -519,6 +519,9 @@ public final class PhaseOneGameController extends GameController {
     }
     bastionBomberCombat.destroy();
     bastionBomberHitFlash.clear();
+    // The single real ACTIVE→DESTROYED transition is the semantic fact the mission needs; a bomber
+    // downed after its arrival, or one already recorded, never counts a second death here.
+    mission.recordBastionBomberDestroyed();
   }
 
   /**
@@ -852,8 +855,10 @@ public final class PhaseOneGameController extends GameController {
 
   /**
    * Advances the single raider toward Astra in world coordinates, supplying the player's centre,
-   * velocity and body radius so the encounter can avoid a predicted ram. Projectile paths already
-   * in flight are untouched by ship movement.
+   * velocity and body radius so the encounter can avoid a predicted ram. It also flies the parked or
+   * inbound Bastion bomber and its escorts, and translates the bomber's transition to its
+   * destination orbit into the mission's arrival fact before this slice's impacts are resolved.
+   * Projectile paths already in flight are untouched by ship movement.
    */
   public void advanceEncounter(float deltaSeconds) {
     if (!isRunStarted() || (!isActiveFrameOpen() && isRunFinished())) {
@@ -876,6 +881,13 @@ public final class PhaseOneGameController extends GameController {
         velocityX, velocityY, bodyRadius(astra()), RAIDER_BODY_RADIUS);
     if (bastionBomber != null && !bastionBomberCombat.isDestroyed()) {
       bastionBomber.advance(activeSeconds);
+      // The bomber entering its destination orbit is the authoritative arrival signal, and it is
+      // registered right after the advance and before any projectile of the same slice resolves, so
+      // a bomber downed by a shot of the very same frame was still alive when it arrived and the
+      // run is already lost (COS-98).
+      if (bastionBomber.flightState() == BastionBomber.FlightState.ORBITING) {
+        mission.recordBastionBomberArrival();
+      }
     }
     if (bastionBomber != null && bastionBomber.hasTakenOff()) {
       for (BastionEscort escort : bastionEscorts) {

@@ -283,7 +283,10 @@ origen inferior de `TextureRegion`, comparte una textura por pantalla y la liber
 vuela hacia la pista aliada a velocidad fija y, al entrar en un radio de 330 u del centro, mantiene
 una órbita circular. El estado, rumbo y fotograma se pueden probar sin contexto gráfico. La
 transición `INBOUND → ORBITING`, que ocurre al entrar en ese radio, es para la misión la llegada del
-bombardero a su destino (`PhaseOneMission.recordBastionBomberArrival()`).
+bombardero a su destino (`PhaseOneMission.recordBastionBomberArrival()`). El controlador traduce los
+dos hechos reales: `advanceEncounter()` registra la llegada en cuanto el bombardero vivo entra en
+órbita —inmediatamente después de su avance y antes de resolver los impactos de ese mismo tramo— y
+`destroyBastionBomber()` registra el derribo real por proyectil (COS-98).
 `ShipCombatState.bastionBomber()` requiere tres veces los impactos de Vesper para agotar la energía;
 el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` integra su avance,
 impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
@@ -530,16 +533,19 @@ texturas nuevas. Los proyectiles ya emitidos no re-impactan sobre restos del mis
 máximo una vez. El desenlace por tiempo/vidas y su gating en pantalla pertenecen a las hijas
 COS-69/COS-70.
 
-### Objetivo conjunto de la misión (COS-97)
+### Objetivo conjunto de la misión (COS-97, integrado en COS-98)
 
 `domain.game.PhaseOneMission` ya no gana con las tres bajas de Vesper por sí solas: la victoria exige
 las **dos** metas, las tres bajas y el Bastion bomber destruido antes de llegar a su destino. La clase
 recuerda dos hechos semánticos con eventos idempotentes y sin conocer `BastionBomber.FlightState`:
 `recordBastionBomberDestroyed()` acepta un derribo real anterior a la llegada y
-`recordBastionBomberArrival()` latchea la llegada del bombardero todavía vivo. El modelo no conoce
-`BastionBomber.FlightState`: traducir a esos hechos la destrucción real y la transición a `ORBITING`
-—que para la misión es la llegada del bombardero a su destino— corresponde al controlador, y esa
-conexión con el ciclo de simulación se integra en su propia subtarea.
+`recordBastionBomberArrival()` latchea la llegada del bombardero todavía vivo. El modelo sigue sin
+conocer `BastionBomber.FlightState`; la traducción de la simulación a esos hechos vive en
+`PhaseOneGameController`: `advanceEncounter()` registra la llegada cuando el bombardero vivo ha
+entrado en órbita —tras su avance y antes de los impactos de ese mismo tramo, el mismo orden de
+llamadas que usa la pantalla— y `destroyBastionBomber()` registra el derribo real por proyectil. Un
+disparo que derriba al bombardero dentro del mismo tramo en que llegó llega tarde: la llegada ya está
+latcheada, la misión ignora ese derribo y la partida se pierde.
 
 `resolve(astraLives, remainingSeconds)` sigue siendo el único punto de decisión y aplica la prioridad:
 0 vidas ⇒ LOSE; llegada viva latcheada ⇒ LOSE, aunque el contador ya esté en 3/3; meta conjunta
@@ -549,8 +555,8 @@ rescata la partida, y un bombardero ya derribado no puede registrar llegada: la 
 es terminal e idempotente y ningún impacto o baja posterior cambia el resultado. Un bombardero
 derribado antes de llegar deja la partida en curso hasta completar las tres bajas, perder todas las
 vidas o agotar los 600 s. `PhaseOneGameController.recordBastionBomberDestroyed()` es la costura
-package-private, análoga a `recordVesperKill()`, que usan las pruebas deterministas y usará la
-integración; la pantalla nunca muta el estado de la misión.
+package-private, análoga a `recordVesperKill()`, que usan las pruebas deterministas para fijar el
+derribo previo; la pantalla nunca muta el estado de la misión.
 
 ### Vidas reales de Astra (COS-69)
 
@@ -585,7 +591,9 @@ El orden del frame es: `activeSeconds = min(delta, remainingRunSeconds())` una v
 encuentro, drones y combate con esa porción; publicación de `LifeLost`/`PointsEarned`; una sola
 llamada a `advanceWeapons(activeSeconds, activeSeconds, flow.fireTrigger(...), ...)` en la que
 proyectiles existentes y emisiones comparten el corte del reloj (así un impacto posterior a 00:00 no
-se resuelve y no puede otorgar victoria tardía); nuevas publicaciones de `LifeLost`/`PointsEarned`;
+se resuelve y no puede otorgar victoria tardía); el encuentro se avanza antes que las armas, de modo
+que la llegada del Bastion queda registrada antes que los impactos del mismo tramo y un derribo en el
+último instante tampoco rescata la partida; nuevas publicaciones de `LifeLost`/`PointsEarned`;
 y por último `resolveMissionOutcome` con las vidas autoritativas. Si el desenlace es terminal,
 `completeRun()` publica una única `PhaseCompleted` con el snapshot ya actualizado y congela el
 estado. `advanceHitFeedback` y las animaciones de explosión siguen avanzando por presentación. La
