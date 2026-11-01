@@ -183,8 +183,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudCamera.update();
     PhaseOneScenery phaseScenery = controller.phaseOneScenery();
     controller.placeAstraAtOperationsBase();
+    // The mode selected before the flight is captured here: one screen per run, so successive
+    // runs can use different modes without inheriting camera state.
     flightCamera = new FlightCamera(camera, controller.astra(),
-        presentationSettings.astraBottomFraction());
+        presentationSettings.astraBottomFraction(), presentationSettings.cameraMode());
 
     SpriteBatch loadedBatch = null;
     ShapeRenderer loadedShapes = null;

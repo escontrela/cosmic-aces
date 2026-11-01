@@ -114,6 +114,17 @@ En `NORTH_UP`, la posición de la cámara es el centro exacto de Astra en cada a
 (también en la construcción y tras reaparecer), sin retardo ni adelanto, con `up = (0,1)` y yaw 0:
 el mundo mantiene el norte arriba y el escenario se desplaza con el movimiento real de la nave.
 El porcentaje persistido no interviene en este modo y se conserva para `FOLLOW_ASTRA`.
+El modo llega a la partida desde `GamePresentationSettings.cameraMode()`: `ScreenFactory`
+comparte esa instancia con `PhaseOneScreen`, y la pantalla captura el valor al construirse y lo
+pasa a `FlightCamera`, que crea su estado con ese `CameraMode` y lo aplica a la
+`OrthographicCamera` antes del primer frame. Cada partida construye pantalla y cámara nuevas, así
+que dos partidas consecutivas pueden usar modos distintos sin arrastrar estado. `render()` actualiza
+la cámara después del movimiento y del combate y antes de planificar terreno, decidir coincidencia,
+colocar el indicador fuera de pantalla, avanzar Geran-4 y resolver armas. Todos esos consumidores
+leen la transformación efectiva de `camera` (`position`, `up`, `zoom` y el viewport real), nunca el
+yaw de Astra, por lo que ambos modos comparten una sola regla y el norte fijo no necesita caminos
+paralelos. `resize()` solo actualiza los viewports de mundo y HUD; la siguiente actualización válida
+vuelve a centrar la cámara con el tamaño lógico nuevo.
 Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
 referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
@@ -1414,7 +1425,8 @@ com.davidpe.cosmicaces
         +-- screen
             +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre/velocidades e input de bienvenida.
             |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
-            +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
+            +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
+            |   de los ajustes y crea su FlightCamera por partida.
             |   1. render()  2. resize()  3. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
@@ -1438,8 +1450,9 @@ com.davidpe.cosmicaces
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
             |   1. shipVisible()  2. localFrame() [marco de cámara compartido por el indicador]
-            +-- FlightCamera: aplica el estado a OrthographicCamera.
-            |   1. update()
+            +-- FlightCamera: aplica el estado a OrthographicCamera; recibe el CameraMode capturado
+            |   por la pantalla y lo fija durante esa partida.
+            |   1. update() [2 sobrecargas]
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
             |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
             |   5. draw()  6. drawScore()
