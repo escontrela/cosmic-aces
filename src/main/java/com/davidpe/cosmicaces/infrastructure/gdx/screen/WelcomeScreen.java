@@ -487,27 +487,15 @@ public final class WelcomeScreen extends ScreenAdapter {
 
   private void drawAstraSettings(float left, float top) {
     float percent = presentationSettings.astraBottomFraction() * 100f;
-    boolean northUp = presentationSettings.cameraMode() == CameraMode.NORTH_UP;
     settingsFont.setColor(Color.WHITE);
-    settingsFont.draw(batch, northUp
-        ? "Modo activo: Norte fijo · Astra centrada (50 % de la altura)."
-        : "Altura de Astra desde el borde inferior: " + Math.round(percent) + "%", left, top);
+    settingsFont.draw(batch, "Altura de Astra desde el borde inferior: "
+        + Math.round(percent) + "%", left, top);
     settingsFont.setColor(Color.CYAN);
     settingsFont.draw(batch, "10%  " + slider(percent) + "  35%", left, top - 45f);
     settingsFont.setColor(Color.LIGHT_GRAY);
-    if (northUp) {
-      settingsFont.draw(batch,
-          "Este porcentaje solo se aplica a Seguimiento; no mueve el centro en Norte fijo.",
-          left, top - 94f);
-      settingsFont.draw(batch, "←/→ ajustar el valor guardado en pasos de 1%. Inicial: 18%.",
-          left, top - 124f);
-      settingsFont.draw(batch, "Se conserva y se recupera al volver a Seguimiento.",
-          left, top - 154f);
-    } else {
-      settingsFont.draw(batch, "←/→ ajustar en pasos de 1%. Valor inicial: 18%.", left, top - 94f);
-      settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar la fase.",
-          left, top - 124f);
-    }
+    settingsFont.draw(batch, "←/→ ajustar en pasos de 1%. Valor inicial: 18%.", left, top - 94f);
+    settingsFont.draw(batch, "Se aplica a Seguimiento y Norte fijo al iniciar la fase.",
+        left, top - 124f);
   }
 
   private void drawCameraSettings(float left, float top) {
@@ -528,7 +516,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch,
         "Seguimiento: la vista gira con Astra y conserva el porcentaje de encuadre.",
         left, hintTop);
-    settingsFont.draw(batch, "Norte fijo: el norte permanece arriba y Astra queda centrada.",
+    settingsFont.draw(batch, "Norte fijo: el norte permanece arriba y respeta el encuadre de Astra.",
         left, hintTop - 30f);
     settingsFont.draw(batch, "La elección se guarda y se aplica al iniciar la próxima partida.",
         left, hintTop - 60f);
@@ -538,7 +526,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static String cameraModeLabel(CameraMode mode) {
     return switch (mode) {
       case FOLLOW_ASTRA -> "Seguimiento de Astra";
-      case NORTH_UP -> "Norte fijo · Astra centrada";
+      case NORTH_UP -> "Norte fijo";
     };
   }
 

@@ -93,19 +93,18 @@ de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada ent
 `Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra` y `Cámara` con almacén de
 preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
 que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
-y `Norte fijo · Astra centrada`, muestra el modo activo y guarda la elección al instante; la partida la captura al
-construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` explica que en `Norte fijo` Astra queda
-centrada al 50 % y que el porcentaje 10–35 % solo se aplica a `Seguimiento`; el valor guardado no se sobrescribe ni se
-pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
+y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
+construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
+para ambos modos; el valor guardado no se sobrescribe ni se pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
 modelo visual elegido (`AstraVariant`, original por defecto, alternado con `cycleAstraVariant`) y los
 guarda a través de `GameSettingsStore`; `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva
 ese porcentaje en exploración y combate. También conserva el modo de cámara elegido (`CameraMode`:
-`FOLLOW_ASTRA` —seguimiento actual, predeterminado— o `NORTH_UP` —norte fijo con Astra centrada—)
+`FOLLOW_ASTRA` —seguimiento actual, predeterminado— o `NORTH_UP` —norte fijo con encuadre configurable—)
 bajo `presentation.cameraMode`; los IDs `follow-astra` y `north-up` son estables y un valor ausente,
 vacío o desconocido resuelve a `FOLLOW_ASTRA`. La carga no reescribe el valor guardado desconocido y
-cambiar de modo no altera el encuadre persistido: `NORTH_UP` ignora ese porcentaje.
+cambiar de modo no altera el encuadre persistido: ambos modos usan ese porcentaje.
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
 incluir el adaptador de almacenamiento junto a la configuración de presentación.
@@ -117,10 +116,14 @@ configurable entre 10–35 %) de la altura visible desde el borde inferior; el a
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
 1,00/1,08/1,15.
-En `NORTH_UP`, la posición de la cámara es el centro exacto de Astra en cada actualización válida
-(también en la construcción y tras reaparecer), sin retardo ni adelanto, con `up = (0,1)` y yaw 0:
-el mundo mantiene el norte arriba y el escenario se desplaza con el movimiento real de la nave.
-El porcentaje persistido no interviene en este modo y se conserva para `FOLLOW_ASTRA`.
+En `NORTH_UP`, Astra queda centrada horizontalmente y al porcentaje vertical persistido desde
+el borde inferior, independientemente de su rumbo. La cámara aplica sin retardo el centro mundial
+de Astra más un desplazamiento vertical `(0.5 - porcentaje) * alto lógico * zoom aplicado`,
+también al construirla y tras reaparecer. Usa `up = (0,1)` y yaw 0: el mundo mantiene el norte
+arriba y el escenario se desplaza con el movimiento real de la nave. El desplazamiento se
+recalcula con el zoom interpolado actual y el tamaño lógico efectivo para conservar exactamente
+el porcentaje durante combate, Ultra y resize. `FlightCamera` pasa al estado el alto de su
+cámara al construirlo (o el alto virtual de referencia si el viewport aún no está inicializado).
 El modo llega a la partida desde `GamePresentationSettings.cameraMode()`: `ScreenFactory`
 comparte esa instancia con `PhaseOneScreen`, y la pantalla captura el valor al construirse y lo
 pasa a `FlightCamera`, que crea su estado con ese `CameraMode` y lo aplica a la
@@ -131,14 +134,14 @@ colocar el indicador fuera de pantalla, avanzar Geran-4 y resolver armas. Todos 
 leen la transformación efectiva de `camera` (`position`, `up`, `zoom` y el viewport real), nunca el
 yaw de Astra, por lo que ambos modos comparten una sola regla y el norte fijo no necesita caminos
 paralelos. `resize()` solo actualiza los viewports de mundo y HUD; la siguiente actualización válida
-vuelve a centrar la cámara con el tamaño lógico nuevo.
+recalcula el encuadre con el tamaño lógico nuevo.
 Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
 referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
-zoom del modo de vuelo; en `NORTH_UP`, centro de Astra, norte arriba y adelanto cero; nunca el
+zoom del modo de vuelo; en `NORTH_UP`, centro de Astra más el desplazamiento vertical configurado con norte arriba; nunca el
 adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y, en `FOLLOW_ASTRA`, recalcula el adelanto según ese zoom para mantener Astra
-al 18 % desde el borde inferior, interpolados con las mismas constantes (0,25 s zoom,
+a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para conservar el porcentaje configurado desde el borde
+inferior (18 % inicial). En seguimiento se interpola con las mismas constantes (0,25 s zoom,
 0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
 más de 0,75 s más allá de un margen adicional de 120 unidades, de modo que los
@@ -1453,8 +1456,8 @@ com.davidpe.cosmicaces
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
                 1. update()  2. draw()  3. dispose()
-            +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o centro exacto
-            |   norte-arriba), zoom y encuadre de combate según el viewport efectivo.
+            +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable
+            |   con norte arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
             |   6. combatActive()  7. aheadDistance()
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().

@@ -15,8 +15,8 @@ public enum CameraMode {
   FOLLOW_ASTRA("follow-astra"),
 
   /**
-   * Fixed north: world north stays up, the view never rotates and Astra's centre stays exactly at the
-   * centre of the world viewport. The persisted bottom fraction does not apply to this mode.
+   * Fixed north: world north stays up and the view never rotates. Astra stays horizontally centred
+   * at the persisted bottom fraction without position lag, regardless of her heading.
    */
   NORTH_UP("north-up");
 

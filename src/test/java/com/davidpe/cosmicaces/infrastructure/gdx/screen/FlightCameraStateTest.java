@@ -196,18 +196,18 @@ class FlightCameraStateTest {
 
   // ---- NORTH_UP framing (COS-102) ----
 
-  @Test void northUpStartsExactlyCentredWithWorldNorthUpForEveryHeading() {
+  @Test void northUpStartsAtConfiguredHeightWithWorldNorthUpForEveryHeading() {
     for (float heading : new float[] {0f, 90f, 180f, -90f}) {
       Astra astra = new Astra();
       astra.placeAt(1600f, 6000f, heading, WORLD);
       FlightCameraState state = new FlightCameraState(astra, 0.30f, CameraMode.NORTH_UP);
 
-      assertNorthCentred(state, astra);
+      assertNorthFramed(state, astra);
       assertEquals(1f, state.zoom(), 1e-4f);
     }
   }
 
-  @Test void northUpKeepsAstraExactlyCentredThroughEveryManoeuvreAndFullTurn() {
+  @Test void northUpKeepsAstraAtConfiguredHeightThroughEveryManoeuvreAndFullTurn() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     FlightCameraState state = new FlightCameraState(astra, 0.30f, CameraMode.NORTH_UP);
@@ -221,7 +221,7 @@ class FlightCameraStateTest {
       for (int frame = 0; frame < 90; frame++) {
         astra.fly(controls, 1f / 60f, WORLD);
         state.update(astra, 1f / 60f);
-        assertNorthCentred(state, astra);
+        assertNorthFramed(state, astra);
       }
     }
 
@@ -230,7 +230,7 @@ class FlightCameraStateTest {
     for (int frame = 0; frame < 180; frame++) {
       astra.fly(new FlightControls(true, false, true, false, false), 1f / 60f, WORLD);
       state.update(astra, 1f / 60f);
-      assertNorthCentred(state, astra);
+      assertNorthFramed(state, astra);
       turned += Math.abs(shortestTurn(previousHeading, astra.yawDegrees()));
       previousHeading = astra.yawDegrees();
     }
@@ -244,14 +244,14 @@ class FlightCameraStateTest {
 
     astra.respawnAt(1500f, 800f, WORLD);
     state.update(astra, 1f / 60f);
-    assertNorthCentred(state, astra);
+    assertNorthFramed(state, astra);
 
     astra.placeAt(200f, 11000f, -135f, WORLD);
     state.update(astra, 1f / 60f);
-    assertNorthCentred(state, astra);
+    assertNorthFramed(state, astra);
   }
 
-  @Test void northUpIgnoresThePersistedBottomFraction() {
+  @Test void northUpRespectsThePersistedBottomFraction() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     FlightCameraState low = new FlightCameraState(astra, 0.10f, CameraMode.NORTH_UP);
@@ -261,19 +261,18 @@ class FlightCameraStateTest {
       astra.fly(new FlightControls(false, false, true, false, false), 1f / 60f, WORLD);
       low.update(astra, 1f / 60f);
       high.update(astra, 1f / 60f);
-      assertNorthCentred(low, astra);
-      assertNorthCentred(high, astra);
+      assertNorthFramed(low, astra, 0.10f, VirtualScreenSize.HEIGHT);
+      assertNorthFramed(high, astra, 0.35f, VirtualScreenSize.HEIGHT);
     }
-    assertEquals(low.y(), high.y(), 1e-6f);
-    assertEquals(0f, low.aheadDistance(), 1e-6f);
+    assertTrue(low.y() > high.y());
   }
 
-  @Test void northUpLatchUsesTheCentredFrameInsteadOfTheFollowLookAhead() {
+  @Test void northUpLatchUsesTheConfiguredNorthFrameInsteadOfTheHeading() {
     Astra astra = new Astra();
-    astra.placeAt(1600f, 6000f, 0f, WORLD);
-    // Inside the follow look-ahead frame but beyond the north-up half height plus enemy box.
+    astra.placeAt(1600f, 6000f, 180f, WORLD);
+    // Southbound follow sees this target; the configured north-up frame does not.
     float targetX = astraCentreX(astra);
-    float targetY = astraCentreY(astra) + 500f;
+    float targetY = astraCentreY(astra) - 500f;
 
     FlightCameraState north = new FlightCameraState(astra, 0.18f, CameraMode.NORTH_UP);
     north.update(astra, 1f / 60f, targetAt(targetX, targetY), 1024f, 768f);
@@ -300,7 +299,19 @@ class FlightCameraStateTest {
     assertFalse(follow.combatActive());
   }
 
-  @Test void northUpCombatZoomKeepsTheExactCentreAndReturnsToExploration() {
+  @Test void northUpCombatReferenceUsesTheSelectedFraction() {
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 90f, WORLD);
+    FlightCameraState low = new FlightCameraState(astra, 0.10f, CameraMode.NORTH_UP);
+    FlightCameraState high = new FlightCameraState(astra, 0.35f, CameraMode.NORTH_UP);
+    FlightCameraState.CombatTarget target = targetAt(astraCentreX(astra), astraCentreY(astra) + 700f);
+    low.update(astra, 1f / 60f, target, 1024f, 768f);
+    high.update(astra, 1f / 60f, target, 1024f, 768f);
+    assertTrue(low.combatActive());
+    assertFalse(high.combatActive());
+  }
+
+  @Test void northUpCombatZoomKeepsTheConfiguredHeightAndReturnsToExploration() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     FlightCameraState state = new FlightCameraState(astra, 0.30f, CameraMode.NORTH_UP);
@@ -308,20 +319,20 @@ class FlightCameraStateTest {
     for (int frame = 0; frame < 240; frame++) {
       state.update(astra, 1f / 60f,
           targetAt(astraCentreX(astra), astraCentreY(astra)), 1024f, 768f);
-      assertNorthCentred(state, astra);
+      assertNorthFramed(state, astra);
     }
     assertTrue(state.combatActive());
     assertEquals(1.25f, state.zoom(), 0.005f);
 
     for (int frame = 0; frame < 240; frame++) {
       state.update(astra, 1f / 60f, FlightCameraState.CombatTarget.none(), 1024f, 768f);
-      assertNorthCentred(state, astra);
+      assertNorthFramed(state, astra);
     }
     assertFalse(state.combatActive());
     assertEquals(1f, state.zoom(), 0.005f);
   }
 
-  @Test void northUpKeepsTheFlightModeZoomWhileStayingCentred() {
+  @Test void northUpKeepsTheFlightModeZoomWhileKeepingConfiguredHeight() {
     Astra astra = new Astra();
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     FlightCameraState state = new FlightCameraState(astra, 0.30f, CameraMode.NORTH_UP);
@@ -329,12 +340,12 @@ class FlightCameraStateTest {
 
     for (int frame = 0; frame < 240; frame++) {
       state.update(astra, 1f / 60f);
-      assertNorthCentred(state, astra);
+      assertNorthFramed(state, astra);
     }
     assertEquals(1.15f, state.zoom(), 0.005f);
   }
 
-  @Test void northUpKeepsTheExactCentreAcrossTheAcceptedLogicalSizes() {
+  @Test void northUpKeepsTheConfiguredHeightAcrossTheAcceptedLogicalSizes() {
     for (float[] viewport : new float[][] {
         {1024f, 768f}, {1920f, 1080f}, {1440f, 900f}}) {
       Astra astra = new Astra();
@@ -345,7 +356,7 @@ class FlightCameraStateTest {
         astra.fly(new FlightControls(true, false, true, false, false), 1f / 60f, WORLD);
         state.update(astra, 1f / 60f,
             targetAt(astraCentreX(astra), astraCentreY(astra)), viewport[0], viewport[1]);
-        assertNorthCentred(state, astra);
+        assertNorthFramed(state, astra, 0.30f, viewport[1]);
         assertTrue(state.combatActive());
       }
     }
@@ -381,17 +392,22 @@ class FlightCameraStateTest {
     state.update(astra, -1f);
     assertEquals(centredX, state.x(), 0f);
     assertEquals(centredY, state.y(), 0f);
-    assertEquals(0f, state.aheadDistance(), 0f);
+    assertEquals((0.5f - 0.30f) * VirtualScreenSize.HEIGHT, state.aheadDistance(), 1e-4f);
 
     state.update(astra, 1f / 60f);
-    assertNorthCentred(state, astra);
+    assertNorthFramed(state, astra);
   }
 
-  private static void assertNorthCentred(FlightCameraState state, Astra astra) {
+  private static void assertNorthFramed(FlightCameraState state, Astra astra) {
+    assertNorthFramed(state, astra, 0.30f, VirtualScreenSize.HEIGHT);
+  }
+
+  private static void assertNorthFramed(FlightCameraState state, Astra astra,
+      float fraction, float height) {
     assertEquals(astraCentreX(astra), state.x(), 1e-4f);
-    assertEquals(astraCentreY(astra), state.y(), 1e-4f);
+    float actualFraction = 0.5f + (astraCentreY(astra) - state.y()) / (height * state.zoom());
+    assertEquals(fraction, actualFraction, 1e-5f);
     assertEquals(0f, state.yawDegrees(), 1e-6f);
-    assertEquals(0f, state.aheadDistance(), 1e-6f);
   }
 
   private static float astraCentreX(Astra astra) {
