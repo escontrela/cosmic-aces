@@ -102,17 +102,24 @@ cambiar de modo no altera el encuadre persistido: `NORTH_UP` ignora ese porcenta
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
 incluir el adaptador de almacenamiento junto a la configuración de presentación.
-`FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
-del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
-En exploración, el centro de Astra queda en el porcentaje persistido (18 % inicial,
+`FlightCameraState` calcula posición, rumbo y zoom sin depender
+del nativo LibGDX y recibe el `CameraMode` al construirse; `FlightCamera` aplica ese estado a
+`OrthographicCamera`.
+En `FOLLOW_ASTRA`, el centro de Astra queda en el porcentaje persistido (18 % inicial,
 configurable entre 10–35 %) de la altura visible desde el borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
-1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
+1,00/1,08/1,15.
+En `NORTH_UP`, la posición de la cámara es el centro exacto de Astra en cada actualización válida
+(también en la construcción y tras reaparecer), sin retardo ni adelanto, con `up = (0,1)` y yaw 0:
+el mundo mantiene el norte arriba y el escenario se desplaza con el movimiento real de la nave.
+El porcentaje persistido no interviene en este modo y se conserva para `FOLLOW_ASTRA`.
+Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
-referencia** (foco derivado de Astra, yaw suavizado y adelanto del alto visible con
-zoom del modo de vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para mantener Astra
+referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
+zoom del modo de vuelo; en `NORTH_UP`, centro de Astra, norte arriba y adelanto cero; nunca el
+adelanto/zoom de combate que se está decidiendo), el objetivo pasa
+a zoom `max(modo de vuelo, 1,25)` y, en `FOLLOW_ASTRA`, recalcula el adelanto según ese zoom para mantener Astra
 al 18 % desde el borde inferior, interpolados con las mismas constantes (0,25 s zoom,
 0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
@@ -1424,7 +1431,8 @@ com.davidpe.cosmicaces
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
                 1. update()  2. draw()  3. dispose()
-            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados según el viewport efectivo.
+            +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o centro exacto
+            |   norte-arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
             |   6. combatActive()  7. aheadDistance()
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
