@@ -94,8 +94,14 @@ aplica cambios de ventana/pantalla completa con restauración segura si el backe
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
 modelo visual elegido (`AstraVariant`, original por defecto, alternado con `cycleAstraVariant`) y los
 guarda a través de `GameSettingsStore`; `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva
-ese porcentaje en exploración y combate. El árbol de clases debe incluir el adaptador de almacenamiento
-junto a la configuración de presentación.
+ese porcentaje en exploración y combate. También conserva el modo de cámara elegido (`CameraMode`:
+`FOLLOW_ASTRA` —seguimiento actual, predeterminado— o `NORTH_UP` —norte fijo con Astra centrada—)
+bajo `presentation.cameraMode`; los IDs `follow-astra` y `north-up` son estables y un valor ausente,
+vacío o desconocido resuelve a `FOLLOW_ASTRA`. La carga no reescribe el valor guardado desconocido y
+cambiar de modo no altera el encuadre persistido: `NORTH_UP` ignora ese porcentaje.
+`GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
+`usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
+incluir el adaptador de almacenamiento junto a la configuración de presentación.
 `FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
 del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
 En exploración, el centro de Astra queda en el porcentaje persistido (18 % inicial,
@@ -1371,12 +1377,16 @@ com.davidpe.cosmicaces
         +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
-        |   1. initialize()  2. astraBottomFraction()  3. saveAstraBottomFraction()
-        |   4. flightSpeeds()  5. saveFlightSpeeds()  6. savedVideoPreference()  7. saveVideoPreference()
+        |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
+        |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
+        |   7. flightSpeeds()  8. saveFlightSpeeds()  9. savedVideoPreference()  10. saveVideoPreference()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
         +-- GamePresentationSettings: encuadre de Astra persistido; ajustable entre 10–35 %.
         |   1. loadFrom()  2. astraBottomFraction()  3. setAstraBottomFraction()
-        |   4. adjustAstraBottomFraction()
+        |   4. adjustAstraBottomFraction()  5. astraVariant()  6. setAstraVariant()
+        |   7. cycleAstraVariant()  8. cameraMode()  9. setCameraMode()
+        +-- CameraMode: modo de cámara persistido; IDs estables follow-astra/north-up y fallback a
+        |   seguimiento. 1. id()  2. fromId()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()

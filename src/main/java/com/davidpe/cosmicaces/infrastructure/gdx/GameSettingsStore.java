@@ -10,6 +10,7 @@ public final class GameSettingsStore {
 
   private static final String PREFERENCES_FILE = "cosmic-aces-settings";
   private static final String ASTRA_BOTTOM_FRACTION = "presentation.astraBottomFraction";
+  private static final String CAMERA_MODE = "presentation.cameraMode";
   private static final String VIDEO_FULLSCREEN = "video.fullscreen";
   private static final String VIDEO_WIDTH = "video.width";
   private static final String VIDEO_HEIGHT = "video.height";
@@ -25,7 +26,15 @@ public final class GameSettingsStore {
 
   /** Initializes storage after LibGDX has created its application context. */
   public void initialize() {
-    preferences = Gdx.app.getPreferences(PREFERENCES_FILE);
+    usePreferences(Gdx.app.getPreferences(PREFERENCES_FILE));
+  }
+
+  /**
+   * Binds the preferences backend. Package-private so tests can supply an in-memory implementation
+   * without booting LibGDX or touching the player's real settings file.
+   */
+  void usePreferences(Preferences preferences) {
+    this.preferences = preferences;
   }
 
   public float astraBottomFraction() {
@@ -35,6 +44,16 @@ public final class GameSettingsStore {
 
   public void saveAstraBottomFraction(float fraction) {
     preferences().putFloat(ASTRA_BOTTOM_FRACTION, fraction).flush();
+  }
+
+  /** Saved camera framing; a missing or unknown value resolves to the tracking camera. */
+  public CameraMode cameraMode() {
+    return CameraMode.fromId(
+        preferences().getString(CAMERA_MODE, CameraMode.FOLLOW_ASTRA.id()));
+  }
+
+  public void saveCameraMode(CameraMode mode) {
+    preferences().putString(CAMERA_MODE, mode.id()).flush();
   }
 
   public FlightSpeeds flightSpeeds() {
