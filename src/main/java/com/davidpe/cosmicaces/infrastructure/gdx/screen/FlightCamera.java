@@ -2,19 +2,31 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
+import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
-/** Applies lagged flight-camera state to a LibGDX orthographic camera. */
+/**
+ * Applies the flight-camera state to a LibGDX orthographic camera. The mode is fixed for the
+ * lifetime of the screen so a run cannot change framing mid-flight.
+ */
 final class FlightCamera {
   private final OrthographicCamera camera;
   private final FlightCameraState state;
 
   FlightCamera(OrthographicCamera camera, Astra astra) {
-    this(camera, astra, FlightCameraState.ASTRA_BOTTOM_FRACTION);
+    this(camera, astra, FlightCameraState.ASTRA_BOTTOM_FRACTION, CameraMode.FOLLOW_ASTRA);
   }
 
   FlightCamera(OrthographicCamera camera, Astra astra, float astraBottomFraction) {
+    this(camera, astra, astraBottomFraction, CameraMode.FOLLOW_ASTRA);
+  }
+
+  FlightCamera(OrthographicCamera camera, Astra astra, float astraBottomFraction,
+      CameraMode mode) {
     this.camera = camera;
-    state = new FlightCameraState(astra, astraBottomFraction);
+    state = new FlightCameraState(astra, astraBottomFraction, mode,
+        camera.viewportHeight > 0f ? camera.viewportHeight : VirtualScreenSize.HEIGHT);
+    // Applied eagerly so the first drawn frame already uses the selected framing.
     apply();
   }
 

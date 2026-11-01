@@ -1,17 +1,20 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
 /**
- * Pure presentation state for the lagged world camera.
+ * Pure presentation state for the world camera, framed by the selected {@link CameraMode}.
  *
- * <p>It normally frames the current exploration viewport: a look-ahead derived from viewport height
- * and a small zoom that only reflects the current flight mode. While the single enemy intersects
- * that framing it switches to the combat framing — a wider zoom that shows more space around both
- * ships while preserving Astra's vertical screen position — and returns smoothly to exploration
- * once the enemy leaves. The switch is a latch
+ * <p>In {@link CameraMode#FOLLOW_ASTRA} it frames the current exploration viewport: a look-ahead
+ * derived from viewport height and a small zoom that only reflects the current flight mode. In
+ * {@link CameraMode#NORTH_UP} world north stays up and Astra stays at the configured bottom fraction
+ * without position lag, so the map scrolls with her displacement while she keeps her world heading. While
+ * the single enemy intersects the mode's reference framing it switches to the combat framing — a
+ * wider zoom that shows more space around both ships — and returns smoothly to exploration once the
+ * enemy leaves. The switch is a latch
  * with a separate entry/exit threshold and a short hold, so brief crossings of the viewport edge
  * never alternate the mode. Everything here is presentation: it reads Astra's public state and the
  * enemy's centre/size and holds no gameplay rule.
@@ -35,6 +38,7 @@ final class FlightCameraState {
   private float zoom;
   private float aheadDistance;
   private final float astraBottomFraction;
+  private final CameraMode mode;
   private boolean combatActive;
   private float combatExitSeconds;
 
@@ -43,9 +47,22 @@ final class FlightCameraState {
   }
 
   FlightCameraState(Astra astra, float astraBottomFraction) {
+    this(astra, astraBottomFraction, CameraMode.FOLLOW_ASTRA);
+  }
+
+  FlightCameraState(Astra astra, float astraBottomFraction, CameraMode mode) {
+    this(astra, astraBottomFraction, mode, VirtualScreenSize.HEIGHT);
+  }
+
+  FlightCameraState(Astra astra, float astraBottomFraction, CameraMode mode, float viewHeight) {
+    this.mode = mode == null ? CameraMode.FOLLOW_ASTRA : mode;
     this.astraBottomFraction = clampBottomFraction(astraBottomFraction);
-    yawDegrees = astra.yawDegrees();
     zoom = desiredZoom(astra, false);
+    if (northUp()) {
+      frameNorthUp(astra, viewHeight);
+      return;
+    }
+    yawDegrees = astra.yawDegrees();
     aheadDistance = explorationAheadDistance(VirtualScreenSize.HEIGHT, zoom, this.astraBottomFraction);
     x = desiredX(astra, yawDegrees, aheadDistance);
     y = desiredY(astra, yawDegrees, aheadDistance);
@@ -76,6 +93,13 @@ final class FlightCameraState {
       float viewWidth, float viewHeight) {
     if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) return;
     float yawBlend = (float) (1d - Math.exp(-deltaSeconds / YAW_FOLLOW_SECONDS));
+    if (northUp()) {
+      updateCombatLatch(astra, deltaSeconds, target, viewWidth, viewHeight);
+      zoom += (desiredZoom(astra, combatActive) - zoom) * yawBlend;
+      // Use the applied zoom so the screen fraction stays exact even during zoom transitions.
+      frameNorthUp(astra, viewHeight);
+      return;
+    }
     float positionBlend = (float) (1d - Math.exp(-deltaSeconds / POSITION_FOLLOW_SECONDS));
     yawDegrees = normalize(yawDegrees
         + normalize(astra.yawDegrees() - yawDegrees) * yawBlend);
@@ -142,24 +166,55 @@ final class FlightCameraState {
   }
 
   /**
-   * Whether the enemy intersects the current exploration framing: Astra's centre, the smoothed yaw,
-   * the fixed exploration look-ahead and the current flight-mode zoom. It deliberately never
-   * uses the combat look-ahead or the combat zoom, so the combat framing cannot switch itself on.
+   * Whether the enemy intersects the mode's current exploration framing. {@link CameraMode#NORTH_UP}
+   * uses world north up and the configured bottom fraction; {@link CameraMode#FOLLOW_ASTRA}
+   * uses Astra's centre, the smoothed yaw, the fixed exploration look-ahead and the current
+   * flight-mode zoom. It deliberately never uses the combat look-ahead or the combat zoom, so the
+   * combat framing cannot switch itself on.
    *
    * @param extraMargin additional enemy-box margin beyond the base exploration view
    */
   private boolean referenceVisible(Astra astra, CombatTarget target, float extraMargin,
       float viewWidth, float viewHeight) {
-    double radians = Math.toRadians(yawDegrees);
-    float upX = (float) Math.sin(radians);
-    float upY = (float) Math.cos(radians);
-    float explorationAhead = explorationAheadDistance(
-        viewHeight, desiredZoom(astra, false), astraBottomFraction);
-    float referenceX = astra.x() + astra.drawWidth() / 2f + upX * explorationAhead;
-    float referenceY = astra.y() + astra.drawHeight() / 2f + upY * explorationAhead;
+    float upX;
+    float upY;
+    float referenceX = astraCentreX(astra);
+    float referenceY = astraCentreY(astra);
+    if (northUp()) {
+      upX = 0f;
+      upY = 1f;
+      referenceY += explorationAheadDistance(
+          viewHeight, desiredZoom(astra, false), astraBottomFraction);
+    } else {
+      double radians = Math.toRadians(yawDegrees);
+      upX = (float) Math.sin(radians);
+      upY = (float) Math.cos(radians);
+      float explorationAhead = explorationAheadDistance(
+          viewHeight, desiredZoom(astra, false), astraBottomFraction);
+      referenceX += upX * explorationAhead;
+      referenceY += upY * explorationAhead;
+    }
     return CameraVisibility.shipVisible(target.centerX(), target.centerY(),
         target.halfBox() + extraMargin, referenceX, referenceY, upX, upY,
         viewWidth, viewHeight, desiredZoom(astra, false));
+  }
+
+  private boolean northUp() {
+    return mode == CameraMode.NORTH_UP;
+  }
+
+  private void frameNorthUp(Astra astra, float viewHeight) {
+    aheadDistance = explorationAheadDistance(viewHeight, zoom, astraBottomFraction);
+    x = astraCentreX(astra);
+    y = astraCentreY(astra) + aheadDistance;
+  }
+
+  private static float astraCentreX(Astra astra) {
+    return astra.x() + astra.drawWidth() / 2f;
+  }
+
+  private static float astraCentreY(Astra astra) {
+    return astra.y() + astra.drawHeight() / 2f;
   }
 
   private static float desiredX(Astra astra, float yaw, float ahead) {

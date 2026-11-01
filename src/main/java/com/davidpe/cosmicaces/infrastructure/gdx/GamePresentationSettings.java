@@ -12,12 +12,15 @@ public final class GamePresentationSettings {
 
   private float astraBottomFraction = DEFAULT_ASTRA_BOTTOM_FRACTION;
   private AstraVariant astraVariant = AstraVariant.ORIGINAL;
+  private CameraMode cameraMode = CameraMode.FOLLOW_ASTRA;
   private GameSettingsStore settingsStore;
 
   void loadFrom(GameSettingsStore settingsStore) {
     this.settingsStore = settingsStore;
     setAstraBottomFraction(settingsStore.astraBottomFraction());
     setAstraVariant(settingsStore.astraVariant());
+    // Assigned directly: the load itself must not rewrite an unknown saved id as the fallback.
+    cameraMode = settingsStore.cameraMode();
   }
 
   public float astraBottomFraction() {
@@ -62,5 +65,22 @@ public final class GamePresentationSettings {
     int next = Math.floorMod(astraVariant.ordinal() + delta, variants.length);
     setAstraVariant(variants[next]);
     return astraVariant;
+  }
+
+  /** Camera framing for the next flight; defaults to the tracking camera. */
+  public CameraMode cameraMode() {
+    return cameraMode;
+  }
+
+  /**
+   * Selects the camera framing for the next flight and persists it. Selecting another mode never
+   * modifies the persisted Astra bottom fraction: {@link CameraMode#NORTH_UP} simply ignores it.
+   * A null selection falls back to {@link CameraMode#FOLLOW_ASTRA}.
+   */
+  public void setCameraMode(CameraMode mode) {
+    cameraMode = mode == null ? CameraMode.FOLLOW_ASTRA : mode;
+    if (settingsStore != null) {
+      settingsStore.saveCameraMode(cameraMode);
+    }
   }
 }

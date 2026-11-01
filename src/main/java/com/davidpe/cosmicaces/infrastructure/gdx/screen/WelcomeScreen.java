@@ -18,6 +18,7 @@ import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
 import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GameSettingsStore;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
@@ -65,10 +66,11 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static final float BLINK_PERIOD = 0.45f;
   private static final float SETTINGS_ROW_HEIGHT = 27f;
   private static final int MAX_VISIBLE_VIDEO_MODES = 10;
-  private static final String[] ROOT_OPTIONS_NO_STORE = {"Vídeo", "Encuadre de Astra"};
-  private static final String[] ROOT_OPTIONS = {
-    "Vídeo", "Encuadre de Astra", "Velocidades de Astra", "Nave de Astra"
-  };
+  private static final List<RootOption> ROOT_OPTIONS_NO_STORE =
+      List.of(RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.CAMERA);
+  private static final List<RootOption> ROOT_OPTIONS = List.of(
+      RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.ASTRA_SPEEDS,
+      RootOption.ASTRA_MODEL, RootOption.CAMERA);
   private static final float CELL_WIDTH = 15.36f;
   private static final float LINE_HEIGHT = 26.88f;
   private static final String[] ASCII_GLYPHS = new String[128];
@@ -245,6 +247,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ASTRA -> handleAstraInput();
       case ASTRA_MODEL -> handleAstraModelInput();
       case SPEEDS -> handleSpeedInput();
+      case CAMERA -> handleCameraInput();
       case CLOSED -> { }
     }
   }
@@ -253,14 +256,14 @@ public final class WelcomeScreen extends ScreenAdapter {
     if (Gdx.input.isKeyJustPressed(Input.Keys.UP)
         || Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
       rootSelection = Math.floorMod(rootSelection
-          + (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : -1), settingsRootOptionCount());
+          + (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : -1), rootOptions().size());
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
-      switch (rootSelection) {
-        case 0 -> openVideoSettings();
-        case 1 -> settingsPage = SettingsPage.ASTRA;
-        case 2 -> settingsPage = SettingsPage.SPEEDS;
-        default -> settingsPage = SettingsPage.ASTRA_MODEL;
+      RootOption selected = rootOptions().get(rootSelection);
+      if (selected == RootOption.VIDEO) {
+        openVideoSettings();
+      } else {
+        settingsPage = selected.page();
       }
     }
   }
@@ -321,12 +324,33 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
-  private int settingsRootOptionCount() {
-    return rootOptions().length;
+  private void handleCameraInput() {
+    int direction = Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1
+        : Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1 : 0;
+    if (direction == 0) {
+      return;
+    }
+    presentationSettings.setCameraMode(
+        cycleCameraMode(presentationSettings.cameraMode(), direction));
   }
 
-  private String[] rootOptions() {
-    return settingsStore == null ? ROOT_OPTIONS_NO_STORE : ROOT_OPTIONS;
+  /** Camera mode reached from {@code current} with ←/→, wrapping through the available modes. */
+  static CameraMode cycleCameraMode(CameraMode current, int direction) {
+    CameraMode[] modes = CameraMode.values();
+    return modes[Math.floorMod(current.ordinal() + direction, modes.length)];
+  }
+
+  private List<RootOption> rootOptions() {
+    return rootOptions(settingsStore != null);
+  }
+
+  /**
+   * Root settings entries available for a session. Speed and ship model only appear when their
+   * preference can be persisted; the camera framing also works in memory for the running session,
+   * so it stays available in both cases.
+   */
+  static List<RootOption> rootOptions(boolean hasSettingsStore) {
+    return hasSettingsStore ? ROOT_OPTIONS : ROOT_OPTIONS_NO_STORE;
   }
 
   private void handleSpeedInput() {
@@ -415,6 +439,8 @@ public final class WelcomeScreen extends ScreenAdapter {
       drawVideoSettings(left, top - 112f, panelY);
     } else if (settingsPage == SettingsPage.SPEEDS) {
       drawSpeedSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.CAMERA) {
+      drawCameraSettings(left, top - 112f);
     }
     batch.end();
   }
@@ -426,19 +452,20 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ASTRA -> "AJUSTES  >  ENCUADRE DE ASTRA";
       case ASTRA_MODEL -> "AJUSTES  >  NAVE DE ASTRA";
       case SPEEDS -> "AJUSTES  >  VELOCIDADES DE ASTRA";
+      case CAMERA -> "AJUSTES  >  CÁMARA";
       case CLOSED -> "";
     };
   }
 
   private void drawRootSettings(float left, float top) {
-    String[] options = rootOptions();
-    for (int index = 0; index < options.length; index++) {
+    List<RootOption> options = rootOptions();
+    for (int index = 0; index < options.size(); index++) {
       settingsFont.setColor(rootSelection == index ? Color.GOLD : Color.WHITE);
-      settingsFont.draw(batch, (rootSelection == index ? ">  " : "   ") + options[index], left,
-          top - index * 42f);
+      settingsFont.draw(batch, (rootSelection == index ? ">  " : "   ")
+          + options.get(index).label(), left, top - index * 42f);
     }
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - options.length * 42f - 21f);
+    settingsFont.draw(batch, "↑/↓ elegir   ENTER abrir", left, top - options.size() * 42f - 21f);
   }
 
   private void drawSpeedSettings(float left, float top) {
@@ -467,8 +494,40 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, "10%  " + slider(percent) + "  35%", left, top - 45f);
     settingsFont.setColor(Color.LIGHT_GRAY);
     settingsFont.draw(batch, "←/→ ajustar en pasos de 1%. Valor inicial: 18%.", left, top - 94f);
-    settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar la fase.",
+    settingsFont.draw(batch, "Se aplica a Seguimiento y Norte fijo al iniciar la fase.",
         left, top - 124f);
+  }
+
+  private void drawCameraSettings(float left, float top) {
+    CameraMode active = presentationSettings.cameraMode();
+    CameraMode[] modes = CameraMode.values();
+    settingsFont.setColor(Color.WHITE);
+    settingsFont.draw(batch, "Modo de cámara para la próxima partida:", left, top);
+    for (int index = 0; index < modes.length; index++) {
+      boolean selected = modes[index] == active;
+      settingsFont.setColor(selected ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (selected ? ">  " : "   ") + cameraModeLabel(modes[index])
+          + (selected ? "   (activo)" : ""), left, top - 44f - index * 38f);
+    }
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "←/→ cambiar el modo de cámara", left,
+        top - 44f - modes.length * 38f - 12f);
+    float hintTop = top - 44f - modes.length * 38f - 50f;
+    settingsFont.draw(batch,
+        "Seguimiento: la vista gira con Astra y conserva el porcentaje de encuadre.",
+        left, hintTop);
+    settingsFont.draw(batch, "Norte fijo: el norte permanece arriba y respeta el encuadre de Astra.",
+        left, hintTop - 30f);
+    settingsFont.draw(batch, "La elección se guarda y se aplica al iniciar la próxima partida.",
+        left, hintTop - 60f);
+  }
+
+  /** User-facing camera mode names used only by the settings overlay. */
+  private static String cameraModeLabel(CameraMode mode) {
+    return switch (mode) {
+      case FOLLOW_ASTRA -> "Seguimiento de Astra";
+      case NORTH_UP -> "Norte fijo";
+    };
   }
 
   private String slider(float percent) {
@@ -545,7 +604,35 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
   }
 
-  private enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS }
+  enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, CAMERA }
+
+  /**
+   * A root settings entry. Each option owns its destination page so adding one cannot fall through
+   * to another section, and the visible order is the declaration order of the exposed lists.
+   */
+  enum RootOption {
+    VIDEO("Vídeo", SettingsPage.VIDEO),
+    ASTRA_FRAMING("Encuadre de Astra", SettingsPage.ASTRA),
+    ASTRA_SPEEDS("Velocidades de Astra", SettingsPage.SPEEDS),
+    ASTRA_MODEL("Nave de Astra", SettingsPage.ASTRA_MODEL),
+    CAMERA("Cámara", SettingsPage.CAMERA);
+
+    private final String label;
+    private final SettingsPage page;
+
+    RootOption(String label, SettingsPage page) {
+      this.label = label;
+      this.page = page;
+    }
+
+    String label() {
+      return label;
+    }
+
+    SettingsPage page() {
+      return page;
+    }
+  }
 
   private void drawAsciiLines(String[] lines, float top, int accentRow) {
     for (int row = 0; row < lines.length; row++) {

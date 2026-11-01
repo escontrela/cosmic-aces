@@ -85,29 +85,63 @@ dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
-contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el tamaño de ventana y la selección de pantalla completa.
+contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
-de PhaseOne. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
+Vídeo, Cámara, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
+`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra` y `Cámara` con almacén de
+preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
+que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
+y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
+construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
+para ambos modos; el valor guardado no se sobrescribe ni se pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
 modelo visual elegido (`AstraVariant`, original por defecto, alternado con `cycleAstraVariant`) y los
 guarda a través de `GameSettingsStore`; `PhaseOneScreen` lo inyecta en `FlightCamera`, que conserva
-ese porcentaje en exploración y combate. El árbol de clases debe incluir el adaptador de almacenamiento
-junto a la configuración de presentación.
-`FlightCameraState` calcula posición, rumbo y zoom interpolados sin depender
-del nativo LibGDX; `FlightCamera` aplica ese estado a `OrthographicCamera`.
-En exploración, el centro de Astra queda en el porcentaje persistido (18 % inicial,
+ese porcentaje en exploración y combate. También conserva el modo de cámara elegido (`CameraMode`:
+`FOLLOW_ASTRA` —seguimiento actual, predeterminado— o `NORTH_UP` —norte fijo con encuadre configurable—)
+bajo `presentation.cameraMode`; los IDs `follow-astra` y `north-up` son estables y un valor ausente,
+vacío o desconocido resuelve a `FOLLOW_ASTRA`. La carga no reescribe el valor guardado desconocido y
+cambiar de modo no altera el encuadre persistido: ambos modos usan ese porcentaje.
+`GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
+`usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
+incluir el adaptador de almacenamiento junto a la configuración de presentación.
+`FlightCameraState` calcula posición, rumbo y zoom sin depender
+del nativo LibGDX y recibe el `CameraMode` al construirse; `FlightCamera` aplica ese estado a
+`OrthographicCamera`.
+En `FOLLOW_ASTRA`, el centro de Astra queda en el porcentaje persistido (18 % inicial,
 configurable entre 10–35 %) de la altura visible desde el borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
-1,00/1,08/1,15. Con COS-38 la cámara tiene un encuadre
+1,00/1,08/1,15.
+En `NORTH_UP`, Astra queda centrada horizontalmente y al porcentaje vertical persistido desde
+el borde inferior, independientemente de su rumbo. La cámara aplica sin retardo el centro mundial
+de Astra más un desplazamiento vertical `(0.5 - porcentaje) * alto lógico * zoom aplicado`,
+también al construirla y tras reaparecer. Usa `up = (0,1)` y yaw 0: el mundo mantiene el norte
+arriba y el escenario se desplaza con el movimiento real de la nave. El desplazamiento se
+recalcula con el zoom interpolado actual y el tamaño lógico efectivo para conservar exactamente
+el porcentaje durante combate, Ultra y resize. `FlightCamera` pasa al estado el alto de su
+cámara al construirlo (o el alto virtual de referencia si el viewport aún no está inicializado).
+El modo llega a la partida desde `GamePresentationSettings.cameraMode()`: `ScreenFactory`
+comparte esa instancia con `PhaseOneScreen`, y la pantalla captura el valor al construirse y lo
+pasa a `FlightCamera`, que crea su estado con ese `CameraMode` y lo aplica a la
+`OrthographicCamera` antes del primer frame. Cada partida construye pantalla y cámara nuevas, así
+que dos partidas consecutivas pueden usar modos distintos sin arrastrar estado. `render()` actualiza
+la cámara después del movimiento y del combate y antes de planificar terreno, decidir coincidencia,
+colocar el indicador fuera de pantalla, avanzar Geran-4 y resolver armas. Todos esos consumidores
+leen la transformación efectiva de `camera` (`position`, `up`, `zoom` y el viewport real), nunca el
+yaw de Astra, por lo que ambos modos comparten una sola regla y el norte fijo no necesita caminos
+paralelos. `resize()` solo actualiza los viewports de mundo y HUD; la siguiente actualización válida
+recalcula el encuadre con el tamaño lógico nuevo.
+Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
-referencia** (foco derivado de Astra, yaw suavizado y adelanto del alto visible con
-zoom del modo de vuelo, nunca el adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para mantener Astra
-al 18 % desde el borde inferior, interpolados con las mismas constantes (0,25 s zoom,
+referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
+zoom del modo de vuelo; en `NORTH_UP`, centro de Astra más el desplazamiento vertical configurado con norte arriba; nunca el
+adelanto/zoom de combate que se está decidiendo), el objetivo pasa
+a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para conservar el porcentaje configurado desde el borde
+inferior (18 % inicial). En seguimiento se interpola con las mismas constantes (0,25 s zoom,
 0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
 más de 0,75 s más allá de un margen adicional de 120 unidades, de modo que los
@@ -1371,12 +1405,16 @@ com.davidpe.cosmicaces
         +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
-        |   1. initialize()  2. astraBottomFraction()  3. saveAstraBottomFraction()
-        |   4. flightSpeeds()  5. saveFlightSpeeds()  6. savedVideoPreference()  7. saveVideoPreference()
+        |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
+        |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
+        |   7. flightSpeeds()  8. saveFlightSpeeds()  9. savedVideoPreference()  10. saveVideoPreference()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
         +-- GamePresentationSettings: encuadre de Astra persistido; ajustable entre 10–35 %.
         |   1. loadFrom()  2. astraBottomFraction()  3. setAstraBottomFraction()
-        |   4. adjustAstraBottomFraction()
+        |   4. adjustAstraBottomFraction()  5. astraVariant()  6. setAstraVariant()
+        |   7. cycleAstraVariant()  8. cameraMode()  9. setCameraMode()
+        +-- CameraMode: modo de cámara persistido; IDs estables follow-astra/north-up y fallback a
+        |   seguimiento. 1. id()  2. fromId()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()
@@ -1395,9 +1433,13 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre/velocidades e input de bienvenida.
+            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
             |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
-            +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos.
+            |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
+            |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
+            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
+            +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
+            |   de los ajustes y crea su FlightCamera por partida.
             |   1. render()  2. resize()  3. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
@@ -1414,14 +1456,16 @@ com.davidpe.cosmicaces
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
                 1. update()  2. draw()  3. dispose()
-            +-- FlightCameraState: seguimiento, zoom y encuadre de combate interpolados según el viewport efectivo.
+            +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable
+            |   con norte arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
             |   6. combatActive()  7. aheadDistance()
             |   +-- CombatTarget(active, centerX, centerY, halfBox): enemigo a encuadrar o none().
             +-- CameraVisibility: regla pura de visibilidad de una nave en la vista real.
             |   1. shipVisible()  2. localFrame() [marco de cámara compartido por el indicador]
-            +-- FlightCamera: aplica el estado a OrthographicCamera.
-            |   1. update()
+            +-- FlightCamera: aplica el estado a OrthographicCamera; recibe el CameraMode capturado
+            |   por la pantalla y lo fija durante esa partida.
+            |   1. update() [2 sobrecargas]
             +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
             |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
             |   5. draw()  6. drawScore()
