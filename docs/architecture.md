@@ -85,11 +85,18 @@ dimensiones efectivas; el arte y la tipografía mantienen su escala.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
-contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el tamaño de ventana y la selección de pantalla completa.
+contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
-de PhaseOne. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
+Vídeo, Cámara, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
+`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra` y `Cámara` con almacén de
+preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
+que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
+y `Norte fijo · Astra centrada`, muestra el modo activo y guarda la elección al instante; la partida la captura al
+construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` explica que en `Norte fijo` Astra queda
+centrada al 50 % y que el porcentaje 10–35 % solo se aplica a `Seguimiento`; el valor guardado no se sobrescribe ni se
+pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
 modelo visual elegido (`AstraVariant`, original por defecto, alternado con `cycleAstraVariant`) y los
@@ -1423,8 +1430,11 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/encuadre/velocidades e input de bienvenida.
+            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
             |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
+            |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
+            |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
+            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
             |   de los ajustes y crea su FlightCamera por partida.
             |   1. render()  2. resize()  3. dispose()
