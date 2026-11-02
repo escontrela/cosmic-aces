@@ -67,6 +67,44 @@ class ShipCombatStateTest {
   }
 
   @Test
+  void directMissileDamageClampsEnergyAndPreservesCannonImpactRemainder() {
+    ShipCombatState vesper = ShipCombatState.vesper();
+    for (int impact = 0; impact < 9; impact++) vesper.receiveProjectileHit();
+
+    assertTrue(vesper.receiveMissileDamage(60));
+    assertEquals(40, vesper.energyPercent());
+    assertTrue(vesper.receiveProjectileHit());
+    assertEquals(5, vesper.energyPercent(),
+        "the nine cannon impacts must remain pending across the missile hit");
+    assertTrue(vesper.receiveMissileDamage(60));
+    assertEquals(0, vesper.energyPercent(), "direct damage clamps at zero");
+  }
+
+  @Test
+  void directMissileDamageIgnoresInvulnerableOrDestroyedLives() {
+    ShipCombatState astra = ShipCombatState.astra();
+    astra.destroy();
+    astra.advance(3f);
+    astra.respawn();
+
+    assertFalse(astra.receiveMissileDamage(50));
+    assertEquals(100, astra.energyPercent());
+    astra.advance(2f);
+    assertTrue(astra.receiveMissileDamage(50));
+    assertEquals(50, astra.energyPercent());
+    astra.destroy();
+    assertFalse(astra.receiveMissileDamage(50));
+    assertEquals(0, astra.energyPercent());
+  }
+
+  @Test
+  void missileDamageMustBePositive() {
+    ShipCombatState astra = ShipCombatState.astra();
+    assertThrows(IllegalArgumentException.class, () -> astra.receiveMissileDamage(0));
+    assertThrows(IllegalArgumentException.class, () -> astra.receiveMissileDamage(-50));
+  }
+
+  @Test
   void bastionBomberNeedsThreeTimesVespersImpactsToBeDestroyed() {
     ShipCombatState bomber = ShipCombatState.bastionBomber();
 

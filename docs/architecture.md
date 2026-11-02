@@ -578,6 +578,8 @@ muerte; `advance(dt)` avanza el reloj de muerte o de inmunidad; `respawn()` rein
 energía, contador residual y generación de vida. `canAct()` = vivo o inmune;
 `canBeHit()` = solo activo. El controlador decide cuándo destruir (energía cero o
 contacto de cascos) para atribuir una única vez el bonus de destrucción.
+`receiveMissileDamage(points)` aplica daño directo positivo solo si `canBeHit()`, limita energía a cero y
+conserva el residual de cañón.
 
 `PhaseOneGameController` posee `astraCombat()` y `raiderCombat()`. Cada frame dentro
 del recorrido llama a `advanceCombat(delta)`: avanza los dos relojes, reapariciones y
@@ -1060,6 +1062,15 @@ los misiles enemigos; la selección de Astra sigue consultando únicamente la li
 expone además `faction()`, `heading()` y `combustionStage()` para reutilizar el atlas; no crea recursos ni
 decide daño, input o dibujo.
 
+`PhaseOneGameController.advanceGuidedMissiles()` integra los segmentos devueltos por el modelo con
+`CollisionDetector.sweep` y movimiento relativo del objetivo, en subpasos de 1/120 s. Revalida la
+referencia y generación de vida justo antes de aplicar el impacto. Un misil de Astra destruye enemigos
+normales y aplica 60 puntos de daño directo a Bastion; uno enemigo aplica 50 puntos a Astra. El daño
+directo de `ShipCombatState.receiveMissileDamage()` respeta `canBeHit()`, llega como máximo a cero y no
+altera el contador residual de impactos de cañón. Las transiciones idempotentes de destrucción evitan
+daño o recompensa duplicados; el controlador retira los misiles restantes cuando termina la misión y no
+procesa impactos fuera del tiempo activo del recorrido.
+
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
 avanza en línea recta con `advance(delta)` y no retiene referencias a nave,
@@ -1328,10 +1339,10 @@ com.davidpe.cosmicaces
 |   |   |   6. currentRegion() [abstracto protegido]
 |   |   |   +-- SpritePlacement(scale, offsetX, offsetY): registro de la pose.
 |   |   +-- ShipCombatState: energía, impactos, vidas e inmunidad de una nave.
-|   |   |   1. receiveProjectileHit()  2. destroy()  3. advance()
-|   |   |   4. readyToRespawn()  5. respawn()  6. energyPercent()
-|   |   |   7. canAct()  8. canBeHit()  9. secondsSinceDeath()
-|   |   |   10. invulnerabilityRemaining()  11. lifeGeneration()
+|   |   |   1. receiveProjectileHit()  2. receiveMissileDamage()  3. destroy()  4. advance()
+|   |   |   5. readyToRespawn()  6. respawn()  7. energyPercent()
+|   |   |   8. canAct()  9. canBeHit()  10. secondsSinceDeath()
+|   |   |   11. invulnerabilityRemaining()  12. lifeGeneration()
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player

@@ -110,6 +110,23 @@ public final class ShipCombatState {
     return true;
   }
 
+  /**
+   * Applies a direct weapon hit in energy points without changing the cannon impact remainder.
+   * The controller owns the destruction transition after observing zero energy.
+   *
+   * @return {@code true} when this active life accepted the damage
+   */
+  public boolean receiveMissileDamage(int damagePoints) {
+    if (damagePoints <= 0) {
+      throw new IllegalArgumentException("Missile damage must be positive");
+    }
+    if (!canBeHit()) {
+      return false;
+    }
+    energy = Math.max(0, energy - damagePoints);
+    return true;
+  }
+
   /** Marks the ship destroyed once, starting the death timer. Repeated calls are no-ops. */
   public void destroy() {
     if (state == State.DESTROYED) {

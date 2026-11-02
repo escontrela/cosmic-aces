@@ -10,10 +10,11 @@ import java.util.List;
 public final class GuidedMissile {
   private static final float MAX_SUBSTEP_SECONDS = 1f / 120f;
   private static final float EPSILON_SECONDS = 0.000001f;
+  public static final float COLLISION_RADIUS = 7f;
 
   public enum Owner { ASTRA, ENEMY }
   public enum FlightStage { SEPARATING, ACCELERATING, GUIDED, RETIRED }
-  public enum Retirement { NONE, FUEL_EXHAUSTED, TARGET_INVALID, IMPACTED }
+  public enum Retirement { NONE, FUEL_EXHAUSTED, TARGET_INVALID, IMPACTED, MISSION_FINISHED }
 
   /** One bounded piece of this frame's swept path, ready for downstream collision checks. */
   public record Segment(float fromX, float fromY, float toX, float toY,
@@ -137,6 +138,23 @@ public final class GuidedMissile {
   /** Marks a collision as the terminal event; damage is resolved by the combat coordinator. */
   public void consumeOnImpact() {
     if (isActive()) retire(Retirement.IMPACTED);
+  }
+
+  /** Consumes the missile at the exact world point returned by swept collision. */
+  public void consumeOnImpact(float impactX, float impactY) {
+    if (!Float.isFinite(impactX) || !Float.isFinite(impactY)) {
+      throw new IllegalArgumentException("Impact coordinates must be finite");
+    }
+    if (isActive() || retirement == Retirement.FUEL_EXHAUSTED) {
+      x = impactX;
+      y = impactY;
+      retire(Retirement.IMPACTED);
+    }
+  }
+
+  /** Stops a missile after its mission ends without treating the retirement as a hit. */
+  public void retireAfterMission() {
+    if (isActive()) retire(Retirement.MISSION_FINISHED);
   }
 
   private float speedAfter(float deltaSeconds) {

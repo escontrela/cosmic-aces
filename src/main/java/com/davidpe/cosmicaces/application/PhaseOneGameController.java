@@ -24,6 +24,7 @@ import com.davidpe.cosmicaces.domain.ship.ShipCombatState;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.domain.weapon.MissileAim;
 import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
@@ -73,6 +74,7 @@ public final class PhaseOneGameController extends GameController {
   private final MissileConfig missileConfig;
   private final MissileLoadout astraMissiles;
   private final MissileAim astraMissileAim;
+  private final List<GuidedMissile> guidedMissiles = new ArrayList<>();
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
   private final ShipCombatState bastionBomberCombat = ShipCombatState.bastionBomber();
@@ -391,6 +393,40 @@ public final class PhaseOneGameController extends GameController {
         validTarget && selectedAstraMissileTarget().isPresent());
   }
 
+  /** Launches one missile at the currently selected live target and consumes one round atomically. */
+  public boolean launchAstraMissile() {
+    if (!astraCanUseMissiles()) return false;
+    MissileTarget selected = selectedAstraMissileTarget().orElse(null);
+    if (selected == null || !consumeAstraMissileForLaunch(true)) return false;
+    MissileTarget target = missileTarget(selected.reference()).orElse(null);
+    if (target == null) return false;
+
+    double radians = Math.toRadians(astra().yawDegrees());
+    float forwardX = (float) Math.sin(radians);
+    float forwardY = (float) Math.cos(radians);
+    float centerX = astra().x() + astra().drawWidth() / 2f;
+    float centerY = astra().y() + astra().drawHeight() / 2f;
+    float launchOffset = astra().drawHeight() / 2f + GuidedMissile.COLLISION_RADIUS + 2f;
+    guidedMissiles.add(new GuidedMissile(GuidedMissile.Owner.ASTRA, target.reference(),
+        missileConfig, centerX - forwardX * launchOffset, centerY - forwardY * launchOffset,
+        astra().yawDegrees(), forwardX * astra().flightSpeed(), forwardY * astra().flightSpeed()));
+    return true;
+  }
+
+  /** Immutable view for presentation and deterministic combat inspection. */
+  public List<GuidedMissile> guidedMissiles() {
+    return List.copyOf(guidedMissiles);
+  }
+
+  /** Adds an already configured enemy missile; called by the later escort firing behavior. */
+  boolean enqueueEnemyMissile(GuidedMissile missile) {
+    if (missile == null || missile.owner() != GuidedMissile.Owner.ENEMY
+        || !isRunStarted() || mission.isFinished()
+        || currentMissileTarget(missile.targetReference()).isEmpty()) return false;
+    guidedMissiles.add(missile);
+    return true;
+  }
+
   private boolean astraCanUseMissiles() {
     return isRunStarted() && !isRunFinished() && !mission.isFinished() && astraCombat.canAct();
   }
@@ -462,6 +498,7 @@ public final class PhaseOneGameController extends GameController {
           escortEnabled ? escortShotSource(escort, shotRange) : null,
           this::raiderProjectileStep);
     }
+    advanceGuidedMissiles(frameDelta);
     return drainCombatPoints();
   }
 
@@ -769,7 +806,7 @@ public final class PhaseOneGameController extends GameController {
     ghostwingEncounter.markDestroyed(droneId);
     pendingGhostwingDeaths.add(
         new GhostwingDeath(droneId, drone.centerX(), drone.centerY(), cause));
-    if (cause == GhostwingDeath.Cause.SHOT) {
+    if (cause == GhostwingDeath.Cause.SHOT || cause == GhostwingDeath.Cause.MISSILE) {
       pendingCombatPoints += score.awardGhostwingDestroyed();
     }
   }
@@ -801,7 +838,7 @@ public final class PhaseOneGameController extends GameController {
     geran4Encounter.markDestroyed(droneId);
     pendingGeran4Deaths.add(
         new Geran4Death(droneId, uav.centerX(), uav.centerY(), cause));
-    if (cause == Geran4Death.Cause.SHOT) {
+    if (cause == Geran4Death.Cause.SHOT || cause == Geran4Death.Cause.MISSILE) {
       // The root approves the very same 100-point bonus already defined for the Ghostwing drone.
       pendingCombatPoints += score.awardGhostwingDestroyed();
     }
@@ -961,6 +998,134 @@ public final class PhaseOneGameController extends GameController {
     astraCombat.receiveProjectileHit();
     if (astraCombat.energyPercent() <= 0) {
       destroyAstra();
+    }
+  }
+
+  /** Package-level insertion point shared with the escort firing rule and focused combat tests. */
+  boolean trackGuidedMissile(GuidedMissile missile) {
+    if (missile == null || !isRunStarted() || mission.isFinished()) return false;
+    if (missile.owner() == GuidedMissile.Owner.ENEMY) return enqueueEnemyMissile(missile);
+    if (currentMissileTarget(missile.targetReference()).isEmpty()) return false;
+    guidedMissiles.add(missile);
+    return true;
+  }
+
+  private void advanceGuidedMissiles(float frameDelta) {
+    if (guidedMissiles.isEmpty()) return;
+    if (mission.isFinished()) {
+      guidedMissiles.forEach(GuidedMissile::retireAfterMission);
+      guidedMissiles.clear();
+      return;
+    }
+    float activeSeconds = boundedActiveSeconds(frameDelta);
+    if (!isRunStarted() || activeSeconds <= 0f) return;
+
+    for (GuidedMissile missile : List.copyOf(guidedMissiles)) {
+      if (!missile.isActive()) continue;
+      MissileTarget targetAtEnd = currentMissileTarget(missile.targetReference()).orElse(null);
+      if (targetAtEnd == null) {
+        missile.advance(activeSeconds, null);
+        continue;
+      }
+      MissileTarget targetAtStart = offsetTarget(targetAtEnd,
+          -targetAtEnd.velocityX() * activeSeconds, -targetAtEnd.velocityY() * activeSeconds);
+      float frameOffset = 0f;
+      while (frameOffset < activeSeconds && missile.isActive()) {
+        float step = Math.min(1f / 120f, activeSeconds - frameOffset);
+        MissileTarget targetAtStepStart = offsetTarget(targetAtStart,
+            targetAtStart.velocityX() * frameOffset, targetAtStart.velocityY() * frameOffset);
+        float missileAgeAtStepStart = missile.elapsedSeconds();
+        List<GuidedMissile.Segment> segments = missile.advance(step, targetAtStepStart);
+        boolean impacted = false;
+        for (GuidedMissile.Segment segment : segments) {
+          float startOffset = Math.max(0f, segment.startElapsedSeconds() - missileAgeAtStepStart);
+          float endOffset = Math.max(startOffset, segment.endElapsedSeconds() - missileAgeAtStepStart);
+          MissileTarget targetFrom = offsetTarget(targetAtStepStart,
+              targetAtStepStart.velocityX() * startOffset,
+              targetAtStepStart.velocityY() * startOffset);
+          MissileTarget targetTo = offsetTarget(targetAtStepStart,
+              targetAtStepStart.velocityX() * endOffset,
+              targetAtStepStart.velocityY() * endOffset);
+          CollisionDetector.Circle missileFrom = new CollisionDetector.Circle(segment.fromX(),
+              segment.fromY(), GuidedMissile.COLLISION_RADIUS);
+          CollisionDetector.Circle missileTo = new CollisionDetector.Circle(segment.toX(),
+              segment.toY(), GuidedMissile.COLLISION_RADIUS);
+          CollisionDetector.Circle targetFromCircle = new CollisionDetector.Circle(targetFrom.x(),
+              targetFrom.y(), targetFrom.radius());
+          CollisionDetector.Circle targetToCircle = new CollisionDetector.Circle(targetTo.x(),
+              targetTo.y(), targetTo.radius());
+          var hitFraction = CollisionDetector.sweep(missileFrom, missileTo,
+              targetFromCircle, targetToCircle);
+          if (hitFraction.isEmpty()) continue;
+          double fraction = hitFraction.getAsDouble();
+          float impactX = lerp(segment.fromX(), segment.toX(), (float) fraction);
+          float impactY = lerp(segment.fromY(), segment.toY(), (float) fraction);
+          missile.consumeOnImpact(impactX, impactY);
+          applyGuidedMissileImpact(missile);
+          impacted = true;
+          break;
+        }
+        if (impacted || segments.isEmpty()) break;
+        frameOffset += step;
+      }
+    }
+    guidedMissiles.removeIf(missile -> !missile.isActive());
+  }
+
+  private Optional<MissileTarget> currentMissileTarget(MissileTarget.Reference reference) {
+    if (reference.kind() != MissileTarget.Kind.ASTRA) return missileTarget(reference);
+    if (!astraCombat.canAct() || reference.lifeGeneration() != astraCombat.lifeGeneration()) {
+      return Optional.empty();
+    }
+    AstraMotion motion = astraMotion;
+    float velocityX = motion == null || motion.duration() <= 0f
+        ? 0f : (motion.afterX() - motion.beforeX()) / motion.duration();
+    float velocityY = motion == null || motion.duration() <= 0f
+        ? 0f : (motion.afterY() - motion.beforeY()) / motion.duration();
+    return Optional.of(new MissileTarget(reference,
+        astra().x() + astra().drawWidth() / 2f, astra().y() + astra().drawHeight() / 2f,
+        velocityX, velocityY, bodyRadius(astra())));
+  }
+
+  private static MissileTarget offsetTarget(MissileTarget target, float offsetX, float offsetY) {
+    return new MissileTarget(target.reference(), target.x() + offsetX, target.y() + offsetY,
+        target.velocityX(), target.velocityY(), target.radius());
+  }
+
+  private void applyGuidedMissileImpact(GuidedMissile missile) {
+    MissileTarget.Reference reference = missile.targetReference();
+    MissileTarget stillLive = currentMissileTarget(reference).orElse(null);
+    if (stillLive == null) return;
+    if (missile.owner() == GuidedMissile.Owner.ENEMY) {
+      if (reference.kind() != MissileTarget.Kind.ASTRA) return;
+      if (astraCombat.receiveMissileDamage(50)) {
+        astraHitFlash.trigger();
+        if (astraCombat.energyPercent() <= 0) destroyAstra();
+      }
+      return;
+    }
+
+    switch (reference.kind()) {
+      case ASTRA -> { }
+      case VESPER -> {
+        if (raiderCombat.canBeHit()) destroyRaider();
+      }
+      case ESCORT -> {
+        BastionEscort escort = bastionEscorts.stream()
+            .filter(candidate -> candidate.side() == reference.entityId())
+            .findFirst().orElse(null);
+        if (escort != null && escort.isActive() && escort.combat().canBeHit()) {
+          destroyBastionEscort(escort);
+        }
+      }
+      case GHOSTWING -> destroyGhostwingDrone(reference.entityId(), GhostwingDeath.Cause.MISSILE);
+      case GERAN4 -> destroyGeran4Uav(reference.entityId(), Geran4Death.Cause.MISSILE);
+      case BASTION -> {
+        if (bastionBomberCombat.receiveMissileDamage(60)) {
+          bastionBomberHitFlash.trigger();
+          if (bastionBomberCombat.energyPercent() <= 0) destroyBastionBomber();
+        }
+      }
     }
   }
 
