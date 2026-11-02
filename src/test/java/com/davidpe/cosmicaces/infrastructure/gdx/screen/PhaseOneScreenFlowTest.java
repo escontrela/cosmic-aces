@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import org.junit.jupiter.api.Test;
 
@@ -172,5 +174,52 @@ class PhaseOneScreenFlowTest {
     assertEquals(PhaseOneScreenFlow.Stage.PLAYING, flow.stage());
     flow.showResult();
     assertEquals(PhaseOneScreenFlow.Stage.RESULT, flow.stage());
+  }
+
+  @Test
+  void guidedMissileJourneySelectsLaunchesImpactsAndReturnsToCannon() {
+    PhaseOneGameController controller = new PhaseOneGameController(() -> 0f, () -> 0f);
+    controller.placeAstra(4000f, 6000f, 0f);
+    controller.start();
+    controller.advanceEncounter(3f);
+    var raider = controller.activeRaider();
+    float centerX = controller.astra().x() + controller.astra().drawWidth() / 2f;
+    float centerY = controller.astra().y() + controller.astra().drawHeight() / 2f;
+    raider.placeAt(centerX - raider.drawWidth() / 2f,
+        centerY + 70f - raider.drawHeight() / 2f, 0f, PhaseOneGameController.WORLD);
+
+    PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
+    flow.observeSpace(true);
+    assertTrue(flow.consumeStartPress(true));
+    flow.observeSpace(false);
+    assertTrue(flow.armMissile());
+    assertTrue(controller.armAstraMissile());
+    PhaseOneScreenFlow.AimDirection aim = flow.aimDirection(false, false, true, false);
+    controller.moveAstraMissileAim(aim.horizontal(), aim.vertical(), 0.01f);
+    assertTrue(controller.selectedAstraMissileTarget().isPresent());
+
+    flow.observeSpace(true);
+    assertTrue(flow.consumeMissileLaunch(true));
+    assertTrue(controller.launchAstraMissile());
+    assertFalse(flow.consumeMissileLaunch(true), "holding SPACE cannot launch twice");
+    assertEquals(1, controller.astraMissilesRemaining());
+    GuidedMissile launched = controller.guidedMissiles().get(0);
+    int combatPoints = 0;
+    for (int frame = 0; frame < 120 && launched.retirement() == GuidedMissile.Retirement.NONE;
+        frame++) {
+      combatPoints += controller.advanceWeapons(1f / 60f, 1f / 60f, false, false,
+          10_000f);
+    }
+
+    assertEquals(GuidedMissile.Retirement.IMPACTED, launched.retirement());
+    assertTrue(controller.raiderCombat().isDestroyed());
+    assertEquals(1, controller.vesperKills());
+    assertTrue(combatPoints > 0);
+
+    flow.observeSpace(false);
+    assertTrue(flow.consumeMissileEscape());
+    controller.armAstraCannon();
+    assertFalse(flow.isMissileArmed());
+    assertEquals(1, controller.astraMissilesRemaining(), "ESC does not replenish ammunition");
   }
 }

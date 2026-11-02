@@ -259,6 +259,41 @@ llama a `advanceGeran4` después de `flightCamera.update(...)` y antes de las ar
 y considera dogfight la coincidencia visible con Vesper o con un escolta caza
 activo que ataca a Astra.
 
+### Misiles guiados y comprobación visual del PO (COS-106)
+
+`PhaseOneGameController` es dueño del inventario por vida (`MissileLoadout`), la
+mira (`MissileAim`), los objetivos vivos (`MissileTarget`) y los proyectiles
+`GuidedMissile`. `armAstraMissile`, `moveAstraMissileAim` y
+`selectedAstraMissileTarget` coordinan el modo de apuntado; `launchAstraMissile`
+valida objetivo y munición antes de crear el misil. `advanceWeapons` avanza
+proyectiles y resuelve impactos dentro del tiempo activo de la fase. Los misiles
+de escolta se programan desde `BastionEscort` y comparten el mismo modelo de
+proyectil y la resolución de combate. `PhaseOneScreenFlow` mantiene los estados
+INTRO/PLAYING/RESULT y consume los flancos de SPACE; `PhaseOneScreen` convierte
+F, flechas, SPACE y ESC en llamadas al controlador, y presenta HUD/minimapa.
+`GuidedMissileSheet` describe el atlas y `GuidedMissileSpriteLayout` calcula el
+recorte/orientación sin poseer texturas. La pantalla comparte una textura del
+atlas para ambos bandos y la libera al disponer sus recursos; no se carga desde
+el bucle de render.
+
+Guion de QA visual manual del PO para COS-106:
+
+1. Abrir Ajustes → Armamento, comprobar el valor inicial 2, recorrer 0 y 10,
+   guardar, volver a entrar y confirmar persistencia.
+2. Iniciar PhaseOne en `FOLLOW_ASTRA` y `NORTH_UP`; comprobar el HUD, el
+   minimapa, la retícula y el aro del objetivo tras resize y en HiDPI.
+3. Con Astra en vuelo, pulsar F, fijar objetivos dentro y fuera del viewport y
+   lanzar con SPACE. Comprobar salida bajo la nave, breve separación, aceleración,
+   humo corto, giro suave y escala respecto a Astra y Vesper.
+4. Pulsar ESC después del lanzamiento: confirmar retorno al cañón sin recuperar
+   munición. Mantener SPACE en los cambios de modo y verificar que una pulsación
+   sostenida no dispara de nuevo.
+5. Revisar explosión de enemigo normal, daño escalonado del Bastion y daño a
+   Astra; comprobar que el contacto entre naves no reduce la vida enemiga.
+6. Verificar que solo los dos escoltas del Bastion usan misiles y que HUD,
+   efectos, munición y modo de arma se limpian tras muerte, reaparición y cambio
+   de pantalla.
+
 ### Combate y presentación del UAV Geran-4 (COS-95)
 
 El UAV entra en las mismas reglas de dron débil y explosivo que Ghostwing, sin tocar
