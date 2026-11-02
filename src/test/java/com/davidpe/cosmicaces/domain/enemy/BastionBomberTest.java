@@ -60,8 +60,11 @@ class BastionBomberTest {
     }
     assertEquals("assets/images/enemy/bastion_bomber/bastion_bomber_roll_sheet_v1.png",
         BastionBomberSheet.internalPath());
-    assertEquals(new BastionBomberSheet.Slice(4, 109, 376, 497),
+    assertEquals(new BastionBomberSheet.Slice(4, 93, 376, 529),
         BastionBomberSheet.frameSlice(0));
+    assertEquals(new BastionBomberSheet.Slice(392, 94, 419, 542),
+        BastionBomberSheet.frameSlice(1));
+    assertEquals(16, BastionBomberSheet.VERTICAL_FRAME_PADDING);
     for (int index = 1; index < BastionBomberSheet.FRAME_COUNT; index++) {
       BastionBomberSheet.Slice previous = BastionBomberSheet.frameSlice(index - 1);
       BastionBomberSheet.Slice current = BastionBomberSheet.frameSlice(index);

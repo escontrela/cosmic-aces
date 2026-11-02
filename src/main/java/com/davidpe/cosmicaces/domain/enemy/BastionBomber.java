@@ -39,7 +39,7 @@ public final class BastionBomber extends Ship {
       float targetRunwayCenterX, float targetRunwayCenterY,
       float orbitCenterX, float orbitCenterY) {
     super(FLIGHT_SPEED, runwayCenterX - DRAW_WIDTH / 2f, runwayCenterY - DRAW_HEIGHT / 2f,
-        DRAW_WIDTH, DRAW_HEIGHT, 416f, 506f);
+        DRAW_WIDTH, DRAW_HEIGHT, 419f, 542f);
     float[] coordinates = {runwayCenterX, runwayCenterY, targetRunwayCenterX,
         targetRunwayCenterY, orbitCenterX, orbitCenterY};
     for (float coordinate : coordinates) {
