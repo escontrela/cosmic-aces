@@ -44,6 +44,7 @@ import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSheet;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSpriteLayout;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissileVisuals;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
@@ -598,6 +599,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     missionHud.draw(batch, hudFont, MissionHud.Readout.from(controller, snapshot),
         raiderVisuals.region(VesperRaiderSheet.Pose.NEUTRAL, false),
         astraVisuals.region(HeroShipSheet.Pose.NEUTRAL, false, false),
+        guidedMissileVisuals.region(GuidedMissileSheet.Faction.ASTRA,
+            GuidedMissileSheet.Heading.NORTH, GuidedMissileSheet.CombustionStage.SPENT),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     // The enemy combat status reuses the single engagement read above and the energy already
     // resolved by this frame's impacts, so name and percentage always match the encounter actually

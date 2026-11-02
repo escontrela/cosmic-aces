@@ -44,6 +44,8 @@ class MissionHudTest {
     assertEquals(0, readout.vesperKills());
     assertEquals(3, readout.vesperKillGoal());
     assertEquals(3, readout.astraLives());
+    assertEquals(2, readout.missilesRemaining());
+    assertEquals("2", readout.missilesLabel());
     assertEquals(600f, readout.remainingSeconds());
     assertEquals("0/3", readout.killsLabel());
     assertEquals("3", readout.livesLabel());
@@ -51,22 +53,26 @@ class MissionHudTest {
   }
 
   @Test void readoutLabelsTrackKillsLivesAndClockProgression() {
-    assertEquals("1/3", new MissionHud.Readout(1, 3, 2, 500f).killsLabel());
-    assertEquals("2", new MissionHud.Readout(1, 3, 2, 500f).livesLabel());
-    assertEquals("08:20", new MissionHud.Readout(1, 3, 2, 500f).clockLabel());
+    assertEquals("1/3", new MissionHud.Readout(1, 3, 2, 1, 2, 500f).killsLabel());
+    assertEquals("2", new MissionHud.Readout(1, 3, 2, 1, 2, 500f).livesLabel());
+    assertEquals("1", new MissionHud.Readout(1, 3, 2, 1, 2, 500f).missilesLabel());
+    assertEquals("08:20", new MissionHud.Readout(1, 3, 2, 1, 2, 500f).clockLabel());
 
-    assertEquals("3/3", new MissionHud.Readout(3, 3, 1, 250f).killsLabel());
-    assertEquals("0", new MissionHud.Readout(3, 3, 0, 0f).livesLabel());
-    assertEquals("00:00", new MissionHud.Readout(3, 3, 0, 0f).clockLabel());
+    assertEquals("3/3", new MissionHud.Readout(3, 3, 1, 0, 2, 250f).killsLabel());
+    assertEquals("0", new MissionHud.Readout(3, 3, 0, 0, 2, 0f).livesLabel());
+    assertEquals("0", new MissionHud.Readout(3, 3, 0, 0, 2, 0f).missilesLabel());
+    assertEquals("00:00", new MissionHud.Readout(3, 3, 0, 0, 2, 0f).clockLabel());
   }
 
   @Test void readoutClampsKillsAndLivesToTheDisplayableRange() {
-    MissionHud.Readout overflow = new MissionHud.Readout(9, 3, -2, 10f);
+    MissionHud.Readout overflow = new MissionHud.Readout(9, 3, -2, 20, 5, 10f);
     assertEquals("3/3", overflow.killsLabel());
     assertEquals("0", overflow.livesLabel());
+    assertEquals("5", overflow.missilesLabel());
 
-    MissionHud.Readout negative = new MissionHud.Readout(-4, 3, 3, 10f);
+    MissionHud.Readout negative = new MissionHud.Readout(-4, 3, 3, -2, 5, 10f);
     assertEquals("0/3", negative.killsLabel());
+    assertEquals("0", negative.missilesLabel());
   }
 
   @Test void readoutRequiresControllerAndSnapshot() {
@@ -84,22 +90,26 @@ class MissionHudTest {
       float width = size[0];
       float height = size[1];
       MissionHud.Layout layout =
-          MissionHud.layout(width, height, killsWidth, livesWidth, clockWidth);
+          MissionHud.layout(width, height, killsWidth, livesWidth, 16f, clockWidth);
 
       assertTrue(layout.vesperIconX() >= MissionHud.EDGE_MARGIN);
       assertTrue(layout.astraIconX() >= MissionHud.EDGE_MARGIN);
       assertTrue(layout.vesperTextX() + killsWidth <= width - MissionHud.EDGE_MARGIN);
       assertTrue(layout.astraTextX() + livesWidth <= width - MissionHud.EDGE_MARGIN);
+      assertTrue(layout.missileIconX() >= MissionHud.EDGE_MARGIN);
+      assertTrue(layout.missileTextX() + 16f <= width - MissionHud.EDGE_MARGIN);
       assertTrue(layout.clockX() >= MissionHud.EDGE_MARGIN);
       assertTrue(layout.clockX() + clockWidth <= width - MissionHud.EDGE_MARGIN);
 
       assertTrue(layout.vesperTextY() <= height, "top row must stay inside the viewport");
       assertTrue(layout.astraTextY() > 0f, "second row must stay above the bottom edge");
       assertTrue(layout.astraIconY() > 0f);
+      assertTrue(layout.missileIconY() > 0f);
 
       // Counters never run into the centered clock.
       assertTrue(layout.clockX() >= layout.vesperTextX() + killsWidth);
       assertTrue(layout.clockX() >= layout.astraTextX() + livesWidth);
+      assertTrue(layout.clockX() >= layout.missileTextX() + 16f);
 
       // Clock never runs into the existing top-right score.
       float scoreLeft = FlightHud.rightAlignedX(width, scoreWidth);
@@ -108,9 +118,11 @@ class MissionHudTest {
     }
   }
 
-  @Test void layoutStacksTheTwoCounterRowsWithoutOverlap() {
-    MissionHud.Layout layout = MissionHud.layout(800f, 600f, 34f, 16f, 62f);
+  @Test void layoutStacksAllCounterRowsWithoutOverlap() {
+    MissionHud.Layout layout = MissionHud.layout(800f, 600f, 34f, 16f, 16f, 62f);
     assertTrue(layout.astraIconY() + layout.iconBox() <= layout.vesperIconY() + 0.001f,
         "the lives row must sit entirely below the kills row");
+    assertTrue(layout.missileIconY() + layout.iconBox() <= layout.astraIconY() + 0.001f,
+        "the missile row must sit entirely below the lives row");
   }
 }
