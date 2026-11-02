@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia, dibujo reutilizable de ráfagas y metadatos de láminas de proyectiles (`GuidedMissileSheet`). |
+| `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos y metadatos de láminas de proyectiles (`GuidedMissileSheet`). |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
@@ -1048,6 +1048,17 @@ preferencias y usa el valor inicial si el dato está ausente, tiene tipo incorre
 `ScreenFactory.createPhaseOneController` lee esa preferencia una vez al crear cada partida y construye un
 `MissileConfig` nuevo; cambiarla después afecta solo a partidas posteriores. Sin `GameSettingsStore`, el
 constructor alternativo de bienvenida mantiene el menú reducido y no presenta la sección Armamento.
+
+`domain.weapon.GuidedMissile` modela un único proyectil con propietario, referencia exacta de objetivo,
+posición y rumbo mundial. `advance(delta, target)` conserva la etapa de separación, acelera con una rampa
+lineal hasta el máximo configurado y después guía con giro acotado e intercepción de velocidad constante;
+divide el delta en subpasos y devuelve los segmentos recorridos para que el controlador de combate pueda
+resolver impactos barridos. El combustible cuenta desde el lanzamiento; objetivo ausente o de otra vida
+retira el misil sin cambiarlo por otro. `consumeOnImpact()` deja el misil terminal para que la capa de
+combate aplique daño una sola vez. `MissileTarget.Kind.ASTRA` permite representar a Astra como blanco de
+los misiles enemigos; la selección de Astra sigue consultando únicamente la lista de enemigos. El modelo
+expone además `faction()`, `heading()` y `combustionStage()` para reutilizar el atlas; no crea recursos ni
+decide daño, input o dibujo.
 
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,

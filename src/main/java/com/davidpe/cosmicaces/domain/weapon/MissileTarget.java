@@ -3,7 +3,7 @@ package com.davidpe.cosmicaces.domain.weapon;
 /** Immutable world-space view of one live aircraft, independent of the camera and textures. */
 public record MissileTarget(Reference reference, float x, float y, float velocityX, float velocityY,
     float radius) {
-  public enum Kind { VESPER, ESCORT, GHOSTWING, GERAN4, BASTION }
+  public enum Kind { ASTRA, VESPER, ESCORT, GHOSTWING, GERAN4, BASTION }
 
   /** Identity belongs to one entity and one life; a respawn must use a new generation. */
   public record Reference(Kind kind, long entityId, int lifeGeneration) {
@@ -28,6 +28,7 @@ public record MissileTarget(Reference reference, float x, float y, float velocit
 
   public String name() {
     return switch (reference.kind()) {
+      case ASTRA -> "Astra";
       case VESPER -> "Vesper Raider";
       case ESCORT -> "Escolta Bastion";
       case GHOSTWING -> "Ghostwing";
