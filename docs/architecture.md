@@ -1031,6 +1031,17 @@ configuración al construirse, expone lecturas y comandos, cancela el modo misil
 repone únicamente en `handleRespawns` después de una reaparición real. La emisión física, la validación
 de la identidad del objetivo y la operación atómica de crear el misil quedan para las subtareas posteriores.
 
+`MissileAim` mantiene una mira libre en coordenadas del mundo, normaliza diagonales y respeta los límites
+de `WorldBounds`. `select` fija la aeronave viva más cercana dentro del radio configurado y resuelve
+empates por tipo, identificador y generación. `MissileTarget` es una instantánea con referencia, centro,
+velocidad, radio, nombre y clasificación de jefe; no contiene texturas ni cámara. El controlador enumera
+Vesper, escoltas desplegados, Ghostwing individuales, Geran-4 individuales y Bastion; `missileTarget`
+resuelve la identidad exacta y no confunde una vida reaparecida con la anterior. La selección se calcula
+con los objetivos vivos actuales, incluidos los que están fuera del viewport; al desaparecer un objetivo
+su referencia deja de resolverse. `armAstraMissile` inicia la mira en el centro de Astra una sola vez,
+`moveAstraMissileAim` recibe dirección y delta ya traducidos por infraestructura, y `armAstraCannon`
+la cancela. La integración de teclas, minimapa y creación física del misil es trabajo posterior.
+
 `WelcomeScreen` ofrece Ajustes → Armamento → Misiles por vida con ←/→, paso 1, rango 0–10 y valor
 inicial 2. `GameSettingsStore` persiste el entero en `astra.missiles.perLife`, conserva las demás
 preferencias y usa el valor inicial si el dato está ausente, tiene tipo incorrecto o queda fuera de rango.

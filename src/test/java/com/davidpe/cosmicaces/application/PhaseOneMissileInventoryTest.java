@@ -17,6 +17,14 @@ class PhaseOneMissileInventoryTest {
         MissileConfig.DEFAULTS.withAstraMissilesPerLife(capacity));
   }
 
+  private void aimAtBoss(PhaseOneGameController controller) {
+    var bomber = controller.bastionBomber();
+    controller.placeAstra(bomber.centerX() - controller.astra().drawWidth() / 2f,
+        bomber.centerY() - controller.astra().drawHeight() / 2f, 0f);
+    assertTrue(controller.armAstraMissile());
+    assertTrue(controller.selectedAstraMissileTarget().isPresent());
+  }
+
   @Test
   void eachRunCapturesItsConfigurationAndOnlyValidLaunchesConsume() {
     PhaseOneGameController first = controller(2);
@@ -25,7 +33,7 @@ class PhaseOneMissileInventoryTest {
     assertEquals(10, next.astraMissileCapacity());
     assertFalse(first.armAstraMissile(), "intro cannot arm weapons");
     first.start();
-    assertTrue(first.armAstraMissile());
+    aimAtBoss(first);
     assertFalse(first.consumeAstraMissileForLaunch(false));
     assertTrue(first.consumeAstraMissileForLaunch(true));
     first.armAstraCannon();
@@ -48,8 +56,9 @@ class PhaseOneMissileInventoryTest {
     PhaseOneGameController controller = controller(2);
     controller.placeAstra(1600f, 6000f, 0f);
     controller.start();
-    controller.armAstraMissile();
+    aimAtBoss(controller);
     assertTrue(controller.consumeAstraMissileForLaunch(true));
+    controller.placeAstra(1600f, 6000f, 0f);
     controller.advanceEncounter(3f);
     var raider = controller.activeRaider();
     assertNotNull(raider);
@@ -62,7 +71,7 @@ class PhaseOneMissileInventoryTest {
     controller.advanceCombat(3f, 2);
     assertEquals(2, controller.astraMissilesRemaining());
     assertEquals(Weapon.CANNON, controller.astraWeapon());
-    assertTrue(controller.armAstraMissile());
+    aimAtBoss(controller);
     assertTrue(controller.consumeAstraMissileForLaunch(true));
     controller.advanceCombat(0.1f, 2);
     assertEquals(1, controller.astraMissilesRemaining(), "later ticks must not refill again");
@@ -85,8 +94,9 @@ class PhaseOneMissileInventoryTest {
     PhaseOneGameController controller = controller(2);
     controller.placeAstra(1600f, 6000f, 0f);
     controller.start();
-    controller.armAstraMissile();
+    aimAtBoss(controller);
     assertTrue(controller.consumeAstraMissileForLaunch(true));
+    controller.placeAstra(1600f, 6000f, 0f);
     controller.advanceEncounter(3f);
     var raider = controller.activeRaider();
     assertNotNull(raider);

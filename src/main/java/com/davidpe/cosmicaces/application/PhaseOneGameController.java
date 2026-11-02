@@ -25,9 +25,12 @@ import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
+import com.davidpe.cosmicaces.domain.weapon.MissileAim;
 import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
+import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -69,6 +72,7 @@ public final class PhaseOneGameController extends GameController {
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
   private final MissileConfig missileConfig;
   private final MissileLoadout astraMissiles;
+  private final MissileAim astraMissileAim;
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
   private final ShipCombatState bastionBomberCombat = ShipCombatState.bastionBomber();
@@ -153,6 +157,7 @@ public final class PhaseOneGameController extends GameController {
     if (missileConfig == null) throw new IllegalArgumentException("Missile config is required");
     this.missileConfig = missileConfig;
     astraMissiles = new MissileLoadout(missileConfig.astraMissilesPerLife());
+    astraMissileAim = new MissileAim(WORLD, missileConfig.aimSpeed(), missileConfig.aimCaptureRadius());
     raiderEncounter = new RaiderEncounter(raiderRandom);
     ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
     geran4Encounter = new Geran4Encounter(geran4Random);
@@ -264,7 +269,7 @@ public final class PhaseOneGameController extends GameController {
       astraMotion = null;
     }
     advanceRun(activeSeconds);
-    if (isRunFinished()) astraMissiles.armCannon();
+    if (isRunFinished()) armAstraCannon();
     return score.advance(activeSeconds, coincident && astraCombat.canAct());
   }
 
@@ -287,12 +292,94 @@ public final class PhaseOneGameController extends GameController {
   /** Arming is allowed only while the run and Astra are active; it never consumes ammunition. */
   public boolean armAstraMissile() {
     if (!astraCanUseMissiles()) return false;
+    if (astraMissiles.weapon() != MissileLoadout.Weapon.MISSILE) {
+      astraMissileAim.begin(astra().x() + astra().drawWidth() / 2f,
+          astra().y() + astra().drawHeight() / 2f);
+    }
     astraMissiles.armMissile();
     return true;
   }
 
   public void armAstraCannon() {
     astraMissiles.armCannon();
+    astraMissileAim.cancel();
+  }
+
+  public boolean isAstraMissileAimActive() { return astraMissileAim.isActive(); }
+  public float astraMissileAimX() { return astraMissileAim.x(); }
+  public float astraMissileAimY() { return astraMissileAim.y(); }
+
+  /** The screen translates arrows to world axes; this method never reads input or camera state. */
+  public void moveAstraMissileAim(float horizontal, float vertical, float deltaSeconds) {
+    if (astraCanUseMissiles()) {
+      astraMissileAim.move(horizontal, vertical, boundedActiveSeconds(deltaSeconds));
+    }
+  }
+
+  /** Selection always uses the current live set, so a removed target immediately loses its lock. */
+  public Optional<MissileTarget> selectedAstraMissileTarget() {
+    return astraMissileAim.select(liveMissileTargets());
+  }
+
+  /** Resolve one exact entity and life; a respawn never satisfies the old reference. */
+  public Optional<MissileTarget> missileTarget(MissileTarget.Reference reference) {
+    if (reference == null) throw new IllegalArgumentException("Target reference is required");
+    return liveMissileTargets().stream().filter(target -> target.reference().equals(reference)).findFirst();
+  }
+
+  /** Individual live aircraft snapshots, including targets outside the current viewport. */
+  public List<MissileTarget> liveMissileTargets() {
+    List<MissileTarget> targets = new ArrayList<>();
+    VesperRaider raider = activeRaider();
+    if (raider != null && raiderCombat.canAct()) {
+      targets.add(raiderTarget(raider, MissileTarget.Kind.VESPER, 0, raiderCombat.lifeGeneration()));
+    }
+    for (BastionEscort escort : bastionEscorts) {
+      if (!escort.isActive()) continue;
+      VesperRaider ship = escort.raider();
+      if (escort.isAttacking()) {
+        targets.add(raiderTarget(ship, MissileTarget.Kind.ESCORT, escort.side(),
+            escort.combat().lifeGeneration()));
+      } else {
+        float[] velocity = bomberVelocity();
+        targets.add(new MissileTarget(new MissileTarget.Reference(MissileTarget.Kind.ESCORT,
+            escort.side(), escort.combat().lifeGeneration()), ship.centerX(), ship.centerY(),
+            velocity[0], velocity[1], bodyRadius(ship)));
+      }
+    }
+    for (GhostwingDrone drone : ghostwingEncounter.activeDrones()) {
+      targets.add(new MissileTarget(new MissileTarget.Reference(MissileTarget.Kind.GHOSTWING,
+          drone.id(), 0), drone.centerX(), drone.centerY(), drone.speed() * drone.direction().horizontal(),
+          drone.speed() * drone.direction().vertical(), bodyRadius(drone)));
+    }
+    for (Geran4Uav drone : geran4Encounter.activeDrones()) {
+      targets.add(new MissileTarget(new MissileTarget.Reference(MissileTarget.Kind.GERAN4,
+          drone.id(), 0), drone.centerX(), drone.centerY(), drone.speed() * drone.directionX(),
+          drone.speed() * drone.directionY(), bodyRadius(drone)));
+    }
+    if (isBastionBomberActive()) {
+      float[] velocity = bomberVelocity();
+      targets.add(new MissileTarget(new MissileTarget.Reference(MissileTarget.Kind.BASTION, 0,
+          bastionBomberCombat.lifeGeneration()), bastionBomber.centerX(), bastionBomber.centerY(),
+          velocity[0], velocity[1], bodyRadius(bastionBomber)));
+    }
+    return List.copyOf(targets);
+  }
+
+  private static MissileTarget raiderTarget(VesperRaider ship, MissileTarget.Kind kind, long id,
+      int generation) {
+    double heading = Math.toRadians(ship.headingDegrees());
+    return new MissileTarget(new MissileTarget.Reference(kind, id, generation), ship.centerX(),
+        ship.centerY(), (float) Math.sin(heading) * ship.currentSpeed(),
+        -(float) Math.cos(heading) * ship.currentSpeed(), bodyRadius(ship));
+  }
+
+  private float[] bomberVelocity() {
+    if (bastionBomber == null || !bastionBomber.hasTakenOff()) return new float[] {0f, 0f};
+    float speed = bastionBomber.flightState() == BastionBomber.FlightState.ORBITING
+        ? BastionBomber.ORBIT_RADIUS * BastionBomber.ORBIT_ANGULAR_SPEED : BastionBomber.FLIGHT_SPEED;
+    double heading = Math.toRadians(bastionBomber.headingDegrees());
+    return new float[] {(float) Math.sin(heading) * speed, (float) Math.cos(heading) * speed};
   }
 
   /**
@@ -300,7 +387,8 @@ public final class PhaseOneGameController extends GameController {
    * later child and must perform validation and this operation atomically with that creation.
    */
   public boolean consumeAstraMissileForLaunch(boolean validTarget) {
-    return astraCanUseMissiles() && astraMissiles.consumeForLaunch(validTarget);
+    return astraCanUseMissiles() && astraMissiles.consumeForLaunch(
+        validTarget && selectedAstraMissileTarget().isPresent());
   }
 
   private boolean astraCanUseMissiles() {
@@ -624,7 +712,7 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     astraCombat.destroy();
-    astraMissiles.armCannon();
+    armAstraCannon();
     astraHitFlash.clear();
     astraDeathX = astra().x();
     astraDeathY = astra().y();
@@ -1032,7 +1120,7 @@ public final class PhaseOneGameController extends GameController {
    */
   public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
     PhaseOutcome outcome = mission.resolve(astraLivesRemaining, remainingRunSeconds());
-    if (outcome.isFinished()) astraMissiles.armCannon();
+    if (outcome.isFinished()) armAstraCannon();
     return outcome;
   }
 
