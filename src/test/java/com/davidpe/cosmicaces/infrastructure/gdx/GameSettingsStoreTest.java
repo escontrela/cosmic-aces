@@ -4,12 +4,58 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import org.junit.jupiter.api.Test;
 
 class GameSettingsStoreTest {
 
   private static final String CAMERA_MODE_KEY = "presentation.cameraMode";
   private static final String ASTRA_BOTTOM_FRACTION_KEY = "presentation.astraBottomFraction";
+  private static final String ASTRA_MISSILES_KEY = "astra.missiles.perLife";
+
+  @Test
+  void missileCapacityDefaultsToTwoAndPersistsBothBounds() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+    assertEquals(2, store.astraMissilesPerLife());
+    store.saveAstraMissilesPerLife(0);
+    assertEquals(0, storeWith(preferences).astraMissilesPerLife());
+    store.saveAstraMissilesPerLife(10);
+    assertEquals(10, storeWith(preferences).astraMissilesPerLife());
+    assertTrue(preferences.flushCount() >= 2);
+    assertThrows(IllegalArgumentException.class, () -> store.saveAstraMissilesPerLife(-1));
+    assertThrows(IllegalArgumentException.class, () -> store.saveAstraMissilesPerLife(11));
+    assertEquals(10, store.astraMissilesPerLife());
+  }
+
+  @Test
+  void invalidMissilePreferencesFallBackWithoutOverwritingThemOrOtherSettings() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putFloat(ASTRA_BOTTOM_FRACTION_KEY, 0.27f);
+    preferences.putInteger(ASTRA_MISSILES_KEY, 11);
+    GameSettingsStore store = storeWith(preferences);
+    assertEquals(2, store.astraMissilesPerLife());
+    assertEquals(11, preferences.getInteger(ASTRA_MISSILES_KEY));
+    preferences.putString(ASTRA_MISSILES_KEY, "broken");
+    assertEquals(2, store.astraMissilesPerLife());
+    assertEquals("broken", preferences.getString(ASTRA_MISSILES_KEY));
+    store.saveAstraMissilesPerLife(5);
+    assertEquals(0.27f, store.astraBottomFraction(), 0.0001f);
+  }
+
+  @Test
+  void factoryCapturesMissileSettingsWhenCreatingEachController() {
+    GameSettingsStore store = storeWith(new InMemoryPreferences());
+    PhaseOneGameController first = ScreenFactory.createPhaseOneController(store);
+    store.saveAstraMissilesPerLife(10);
+    PhaseOneGameController second = ScreenFactory.createPhaseOneController(store);
+    store.saveAstraMissilesPerLife(0);
+    PhaseOneGameController third = ScreenFactory.createPhaseOneController(store);
+    assertEquals(2, first.astraMissileCapacity());
+    assertEquals(10, second.astraMissileCapacity());
+    assertEquals(0, third.astraMissileCapacity());
+    assertEquals(2, first.astraMissilesRemaining());
+  }
 
   @Test
   void missingCameraPreferenceUsesTheTrackingCamera() {

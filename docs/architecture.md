@@ -88,9 +88,9 @@ LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.
 contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo, Cámara, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+Vídeo, Cámara, Encuadre, Nave, Velocidades de Astra y Armamento son overlays de infraestructura y no cambian la transición de Y ni el ESC
 de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
-`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra` y `Cámara` con almacén de
+`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra`, `Armamento` y `Cámara` con almacén de
 preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
 que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
 y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
@@ -1030,6 +1030,13 @@ válido; `restoreForNewLife` repone capacidad y selecciona cañón. `PhaseOneGam
 configuración al construirse, expone lecturas y comandos, cancela el modo misil al morir o terminar y
 repone únicamente en `handleRespawns` después de una reaparición real. La emisión física, la validación
 de la identidad del objetivo y la operación atómica de crear el misil quedan para las subtareas posteriores.
+
+`WelcomeScreen` ofrece Ajustes → Armamento → Misiles por vida con ←/→, paso 1, rango 0–10 y valor
+inicial 2. `GameSettingsStore` persiste el entero en `astra.missiles.perLife`, conserva las demás
+preferencias y usa el valor inicial si el dato está ausente, tiene tipo incorrecto o queda fuera de rango.
+`ScreenFactory.createPhaseOneController` lee esa preferencia una vez al crear cada partida y construye un
+`MissileConfig` nuevo; cambiarla después afecta solo a partidas posteriores. Sin `GameSettingsStore`, el
+constructor alternativo de bienvenida mantiene el menú reducido y no presenta la sección Armamento.
 
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,

@@ -18,6 +18,7 @@ import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.scenery.Starfield;
 import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
+import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GameSettingsStore;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
@@ -70,7 +71,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       List.of(RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.CAMERA);
   private static final List<RootOption> ROOT_OPTIONS = List.of(
       RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.ASTRA_SPEEDS,
-      RootOption.ASTRA_MODEL, RootOption.CAMERA);
+      RootOption.ASTRA_MODEL, RootOption.ARMAMENT, RootOption.CAMERA);
   private static final float CELL_WIDTH = 15.36f;
   private static final float LINE_HEIGHT = 26.88f;
   private static final String[] ASCII_GLYPHS = new String[128];
@@ -101,6 +102,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   private int rootSelection;
   private int speedSelection;
   private FlightSpeeds flightSpeeds = FlightSpeeds.DEFAULTS;
+  private int astraMissilesPerLife = MissileConfig.DEFAULTS.astraMissilesPerLife();
   private int selectedVideoMode;
   private boolean targetFullscreen;
   private String settingsMessage = "";
@@ -125,7 +127,10 @@ public final class WelcomeScreen extends ScreenAdapter {
     this.videoSettings = videoSettings;
     this.presentationSettings = presentationSettings;
     this.settingsStore = settingsStore;
-    if (settingsStore != null) flightSpeeds = settingsStore.flightSpeeds();
+    if (settingsStore != null) {
+      flightSpeeds = settingsStore.flightSpeeds();
+      astraMissilesPerLife = settingsStore.astraMissilesPerLife();
+    }
     camera = new OrthographicCamera();
     // One world unit remains one logical screen pixel; a larger window reveals more world
     // instead of scaling the existing 4:3 composition to fit.
@@ -247,6 +252,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ASTRA -> handleAstraInput();
       case ASTRA_MODEL -> handleAstraModelInput();
       case SPEEDS -> handleSpeedInput();
+      case ARMAMENT -> handleArmamentInput();
       case CAMERA -> handleCameraInput();
       case CLOSED -> { }
     }
@@ -345,7 +351,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   }
 
   /**
-   * Root settings entries available for a session. Speed and ship model only appear when their
+   * Root settings entries available for a session. Speed, ship model and armament appear when their
    * preference can be persisted; the camera framing also works in memory for the running session,
    * so it stays available in both cases.
    */
@@ -370,6 +376,22 @@ public final class WelcomeScreen extends ScreenAdapter {
       default -> flightSpeeds.withUltra(flightSpeeds.ultra() + adjustment);
     };
     if (settingsStore != null) settingsStore.saveFlightSpeeds(flightSpeeds);
+  }
+
+  private void handleArmamentInput() {
+    int adjustment = Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1
+        : Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1 : 0;
+    if (adjustment == 0) return;
+    int next = adjustMissilesPerLife(astraMissilesPerLife, adjustment);
+    if (next != astraMissilesPerLife) {
+      astraMissilesPerLife = next;
+      if (settingsStore != null) settingsStore.saveAstraMissilesPerLife(next);
+    }
+  }
+
+  static int adjustMissilesPerLife(int current, int adjustment) {
+    return Math.max(MissileConfig.MIN_ASTRA_MISSILES,
+        Math.min(MissileConfig.MAX_ASTRA_MISSILES, current + adjustment));
   }
 
   private void refreshVideoCatalog() {
@@ -439,6 +461,8 @@ public final class WelcomeScreen extends ScreenAdapter {
       drawVideoSettings(left, top - 112f, panelY);
     } else if (settingsPage == SettingsPage.SPEEDS) {
       drawSpeedSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.ARMAMENT) {
+      drawArmamentSettings(left, top - 112f);
     } else if (settingsPage == SettingsPage.CAMERA) {
       drawCameraSettings(left, top - 112f);
     }
@@ -452,6 +476,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case ASTRA -> "AJUSTES  >  ENCUADRE DE ASTRA";
       case ASTRA_MODEL -> "AJUSTES  >  NAVE DE ASTRA";
       case SPEEDS -> "AJUSTES  >  VELOCIDADES DE ASTRA";
+      case ARMAMENT -> "AJUSTES  >  ARMAMENTO";
       case CAMERA -> "AJUSTES  >  CÁMARA";
       case CLOSED -> "";
     };
@@ -483,6 +508,16 @@ public final class WelcomeScreen extends ScreenAdapter {
         left, top - 174f);
     settingsFont.draw(batch, "El cambio se guarda y se aplica al iniciar la siguiente fase.",
         left, top - 206f);
+  }
+
+  private void drawArmamentSettings(float left, float top) {
+    settingsFont.setColor(Color.GOLD);
+    settingsFont.draw(batch, ">  Misiles por vida: " + astraMissilesPerLife, left, top);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "←/→ ajustar en pasos de 1. Rango: 0–10. Valor inicial: 2.",
+        left, top - 48f);
+    settingsFont.draw(batch, "Se guarda y se aplica al iniciar una nueva partida.",
+        left, top - 80f);
   }
 
   private void drawAstraSettings(float left, float top) {
@@ -604,7 +639,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
   }
 
-  enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, CAMERA }
+  enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, ARMAMENT, CAMERA }
 
   /**
    * A root settings entry. Each option owns its destination page so adding one cannot fall through
@@ -615,6 +650,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     ASTRA_FRAMING("Encuadre de Astra", SettingsPage.ASTRA),
     ASTRA_SPEEDS("Velocidades de Astra", SettingsPage.SPEEDS),
     ASTRA_MODEL("Nave de Astra", SettingsPage.ASTRA_MODEL),
+    ARMAMENT("Armamento", SettingsPage.ARMAMENT),
     CAMERA("Cámara", SettingsPage.CAMERA);
 
     private final String label;
