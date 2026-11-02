@@ -172,14 +172,18 @@ orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
 lecturas. Marca el centro aliado con un punto cian y el enemigo con una X roja,
-además de Astra, Vesper y Ghostwing. `GoForwardPrompt`, propiedad de `PhaseOneScreen`, crea y
-libera una textura procedural con aro azul degradado y dispone “GO FORWARD” en
-un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier
-tecla o clic lo oculta. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un
-Vesper activo intersecta el viewport, usando la misma comprobación de cámara
-rotada y zoom que decide dibujar al enemigo. Al salir del viewport o quedar
-destruido, el mapa recupera la preferencia elegida con M; la ocultación temporal
-no modifica esa preferencia. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
+además de Astra, Vesper y Ghostwing. Durante el apuntado de misiles, la pantalla fuerza la
+visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al salir del modo;
+M no puede ocultar la única superficie de selección. El rombo cian muestra la mira libre y un aro
+amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
+la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
+la cámara actual, sin moverla. `FlightHud` presenta AIM-120 AMRAAM, munición, objetivo fijado o su
+ausencia y la ayuda de controles dentro de la banda inferior. `GoForwardPrompt`, propiedad de
+`PhaseOneScreen`, crea y libera una textura procedural con aro azul degradado y dispone “GO FORWARD”
+en un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier tecla o clic lo
+oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras un Vesper activo
+intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
+enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
 el punto rojo con estela direccional de Vesper Raider.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
@@ -1557,10 +1561,10 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, bases, Astra, Vesper, Bastion y grupos Ghostwing.
-                1. toggle()  2. isVisible()  3. draw()
-                4. bomberBlinkVisible()  5. diamondVertices() [geom. pura del rombo]
-                6. GROUP_MARKER_HALF
+            +-- FlightMinimap: overlay opcional del mundo, selección de misil y marcadores de objetivo.
+                1. toggle()  2. isVisible()  3. setTargeting()  4. draw()
+                5. aimMarkers() [proyección pura del cursor/objetivo]  6. bomberBlinkVisible()
+                7. diamondVertices() [geom. pura del rombo]  8. GROUP_MARKER_HALF
             +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
                 1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.

@@ -43,6 +43,7 @@ import com.davidpe.cosmicaces.domain.scenery.SceneryField;
 import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
+import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
@@ -100,6 +101,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
+  private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
   private final GameId gameId;
@@ -537,8 +539,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
     }
     shapes.end();
+    drawMissileAimReticle();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
+    minimap.setTargeting(flow.isMissileArmed());
     // Off-screen Vesper indicator: drawn first so the minimap overlay never covers it, and only
     // while a live raider stays outside the real camera view (destroyed, awaiting respawn, not yet
     // appeared or a finished run produce no placement). The triangle stays above the fixed bottom
@@ -546,7 +550,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     drawOffscreenIndicator();
     // Combat temporarily suppresses the overlay without changing the player's M preference.
     // Use the same current-camera visibility decision as the enemy drawing above.
-    if (!enemyInViewport) {
+    if (!enemyInViewport || minimap.isTargeting()) {
+      MissileTarget selectedTarget = controller.selectedAstraMissileTarget().orElse(null);
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
           ghostwingGroupPoints(),
@@ -557,11 +562,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
+          controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget);
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
-        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
+        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth(), flow.isMissileArmed(),
+        controller.astraMissilesRemaining(), controller.astraMissileCapacity(),
+        missileTargetLabel());
     PhaseResult snapshot = phaseSnapshot.get();
     hud.drawScore(batch, hudFont, snapshot.points(),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
@@ -816,6 +824,37 @@ public final class PhaseOneScreen extends ScreenAdapter {
     return CameraVisibility.shipVisible(centerX, centerY, halfBox,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
+  }
+
+  /** Draws the free-aim cursor in world space only while it intersects the active camera view. */
+  private void drawMissileAimReticle() {
+    if (!flow.isMissileArmed() || !controller.isAstraMissileAimActive()) return;
+    float x = controller.astraMissileAimX();
+    float y = controller.astraMissileAimY();
+    if (!shipVisible(x, y, 0f)) return;
+    Color previous = shapes.getColor().cpy();
+    shapes.setProjectionMatrix(camera.combined);
+    shapes.setColor(AIM_RETICLE_COLOR);
+    shapes.begin(ShapeRenderer.ShapeType.Line);
+    shapes.circle(x, y, 24f, 24);
+    shapes.line(x - 34f, y, x - 12f, y);
+    shapes.line(x + 12f, y, x + 34f, y);
+    shapes.line(x, y - 34f, x, y - 12f);
+    shapes.line(x, y + 12f, x, y + 34f);
+    shapes.end();
+    shapes.setColor(previous);
+  }
+
+  /** Target identity is read from the same live selection used by the missile controller. */
+  private String missileTargetLabel() {
+    MissileTarget target = controller.selectedAstraMissileTarget().orElse(null);
+    if (target == null) return null;
+    long entityId = target.reference().entityId();
+    return switch (target.reference().kind()) {
+      case GHOSTWING, GERAN4 -> target.name() + " #" + entityId;
+      case ESCORT -> target.name() + " " + (entityId < 0 ? "IZQ" : "DER");
+      default -> target.name();
+    };
   }
 
   /** Immutable camera geometry for the Geran-4 placement rule, taken from the frame being drawn. */

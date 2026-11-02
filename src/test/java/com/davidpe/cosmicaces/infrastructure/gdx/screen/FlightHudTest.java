@@ -22,6 +22,14 @@ class FlightHudTest {
     assertEquals("", FlightHud.weaponLabel(false));
   }
 
+  @Test void missileReadoutExplainsAmmoAndWhetherAnEnemyIsLocked() {
+    assertEquals("MISILES 2/2", FlightHud.missileAmmoLabel(2, 2));
+    assertEquals("Sin misiles", FlightHud.missileAmmoLabel(0, 2));
+    assertEquals("Sin objetivo", FlightHud.missileTargetLabel(null));
+    assertEquals("Sin objetivo", FlightHud.missileTargetLabel(" "));
+    assertEquals("OBJETIVO Ghostwing #17", FlightHud.missileTargetLabel("Ghostwing #17"));
+  }
+
   @Test void energyLabelRendersThePercentageClampedToZeroHundred() {
     assertEquals("ENERGIA 100%", FlightHud.energyLabel(100));
     assertEquals("ENERGIA 0%", FlightHud.energyLabel(0));
