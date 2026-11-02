@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia y dibujo reutilizable de ráfagas. |
+| `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia, dibujo reutilizable de ráfagas y metadatos de láminas de proyectiles (`GuidedMissileSheet`). |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
@@ -1001,6 +1001,14 @@ Una instancia visual puede compartirse entre Astra y Vesper y todos sus disparos
 Longitud y grosor (42 y 1,2 unidades inicialmente) son ajuste de dibujo, no alcance
 ni velocidad. Se dibuja una vez por proyectil de cada cañón; la colocación de los
 dos cañones, emisión, movimiento, cadencia y retirada corresponden a COS-27.
+
+`domain.weapon.GuidedMissileSheet` describe `assets/images/projectiles/guided-missile-sheet-v1.png`,
+un atlas de 1280×1280 con celdas de 160×160. `slice(faction, heading, stage)` selecciona una región
+de 8 orientaciones (columnas, norte y sentido horario) y 4 etapas de combustión (filas por bando:
+primero Astra y después enemigo). `region(texture, faction, heading, stage)` crea la `TextureRegion`
+equivalente y valida las dimensiones del atlas. El llamador —normalmente la pantalla o el renderer—
+es dueño de la `Texture` y debe liberarla; esta clase solo describe y recorta el recurso, sin añadir
+todavía comportamiento de movimiento, guiado, impactos ni carga por frame.
 
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
