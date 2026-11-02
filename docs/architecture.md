@@ -739,7 +739,11 @@ El panel WIN/LOSE visible corresponde al hijo de flujo de pantalla.
 pantalla: `Stage` = `INTRO` (panel de objetivo), `PLAYING` (misión activa) y `RESULT` (panel
 congelado). También posee el latch de ESPACIO: una pulsación solo actúa después de que la tecla se
 haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara y la que dispara el
-golpe final no confirma el panel. Sustituye al antiguo `boolean runFinished`. `ScreenFactory` ya no
+golpe final no confirma el panel. Gestiona además el modo de arma: F lo activa solo durante PLAYING;
+en ese modo ESPACIO acepta una sola pulsación nueva, las flechas producen dirección de mira y los
+controles de vuelo quedan neutros (incluido P/Ultra). ESC consume la entrada y vuelve al cañón; en
+modo cañón conserva el abandono de fase. Muerte, nueva vida y resultado limpian el modo y exigen
+liberar ESPACIO antes de una nueva ráfaga. `ScreenFactory` ya no
 llama a `controller.start()` al construir la pantalla; el inicio ocurre en `PhaseOneScreen` al
 consumir la primera pulsación de ESPACIO, y ese mismo frame simula 0 segundos y no emite disparos.
 
@@ -1518,9 +1522,11 @@ com.davidpe.cosmicaces
             |   15. drawObjectivePanel()  16. drawResultPanel()  17. drawOverlayPanel()
             |   18. objectiveDetailLines() [copy puro]
             |   19. overlayPanelHeight() / overlayPanelY() [geometría pura de ambos paneles]
-            +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
-            |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
-            |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
+            +-- PhaseOneScreenFlow: ciclo de pantalla y selección input cañón/misil, sin LibGDX.
+            |   1. observeSpace()  2. consumeStartPress()  3. armMissile()
+            |   4. consumeMissileLaunch()  5. consumeMissileEscape()  6. fireTrigger()
+            |   7. aimDirection()  8. flightControls()  9. resetWeaponMode()
+            |   10. showResult()  11. consumeResultConfirm()  12. stage()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.

@@ -296,9 +296,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
+    boolean canceledMissileModeThisFrame = false;
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-      publisher.publish(new GameAbandoned(gameId, phase));
-      return;
+      if (flow.consumeMissileEscape()) {
+        controller.armAstraCannon();
+        canceledMissileModeThisFrame = true;
+      } else {
+        publisher.publish(new GameAbandoned(gameId, phase));
+        return;
+      }
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
       minimap.toggle();
@@ -321,6 +327,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
+    boolean armedMissileThisFrame = false;
+    if (!canceledMissileModeThisFrame && flow.isPlaying() && !startedThisFrame
+        && Gdx.input.isKeyJustPressed(Input.Keys.F) && !flow.isMissileArmed()
+        && controller.armAstraMissile()) {
+      armedMissileThisFrame = flow.armMissile();
+    }
+    boolean missileLaunchRequested = !canceledMissileModeThisFrame && !armedMissileThisFrame
+        && flow.consumeMissileLaunch(spaceJustPressed);
     // Only an already-running mission advances, and never on the frame that consumed the start press.
     boolean simulate = flow.isPlaying() && !startedThisFrame;
     // The still-active slice of this frame: it bounds the clock and every simulation step to the
@@ -341,10 +355,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.advanceGhostwing(activeSeconds);
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
+      boolean astraWasActiveBeforeCombat = controller.isAstraActive();
       earned += controller.advanceCombat(activeSeconds, astraLives);
+      if (astraWasActiveBeforeCombat && !controller.isAstraActive()) {
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
+      }
       int lifeGeneration = controller.astraCombat().lifeGeneration();
       if (lifeGeneration != observedAstraLifeGeneration) {
         observedAstraLifeGeneration = lifeGeneration;
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
         goForwardPromptVisible = true;
       }
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
@@ -385,6 +406,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       long astraBurstsBefore = controller.astraGun().emissionCount();
       long raiderBurstsBefore = controller.raiderGun().emissionCount();
       long escortBurstsBefore = escortEmissionCount();
+      boolean astraWasActiveBeforeWeapons = controller.isAstraActive();
+      if (missileLaunchRequested) controller.launchAstraMissile();
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
           flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
@@ -401,6 +424,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // A raider projectile can also destroy Astra inside advanceWeapons; publish that loss too
       // before the mission decision and the HUD read the authoritative snapshot.
       publishAstraLifeLosses();
+      if (astraWasActiveBeforeWeapons && !controller.isAstraActive()) {
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
+      }
       // Decide the single mission outcome only after every movement, contact and projectile of the
       // active slice has been resolved and its points and lives are already published. The priority
       // lives in PhaseOneMission: 0 lives loses before the third kill, then the goal, then the clock.
@@ -684,8 +711,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
     boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
-    return controller.advanceFlight(new FlightControls(left, right, up, down,
-        Gdx.input.isKeyJustPressed(Input.Keys.P)), delta, coincident);
+    PhaseOneScreenFlow.AimDirection aim = flow.aimDirection(left, right, up, down);
+    controller.moveAstraMissileAim(aim.horizontal(), aim.vertical(), delta);
+    FlightControls controls = flow.flightControls(left, right, up, down,
+        Gdx.input.isKeyJustPressed(Input.Keys.P));
+    return controller.advanceFlight(controls, delta, coincident);
   }
 
   /**

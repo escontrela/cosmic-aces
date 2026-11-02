@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.player.FlightControls;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -99,6 +100,67 @@ class PhaseOneScreenFlowTest {
     // The same physical press that fired the ending shot is still down when RESULT appears.
     flow.showResult();
     assertFalse(flow.consumeResultConfirm(true), "the ending press must be released first");
+  }
+
+  @Test
+  void missileModeUsesOneFreshSpacePressAndSuppressesCannonUntilEscape() {
+    PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
+    assertFalse(flow.armMissile(), "intro cannot arm a weapon");
+    flow.observeSpace(true);
+    assertTrue(flow.consumeStartPress(true));
+    flow.observeSpace(false);
+
+    assertTrue(flow.armMissile());
+    assertFalse(flow.armMissile(), "repeated F must not restart missile mode");
+    assertTrue(flow.isMissileArmed());
+    assertFalse(flow.fireTrigger(true), "missile mode suppresses cannon bursts");
+    assertEquals(new PhaseOneScreenFlow.AimDirection(1f, 1f),
+        flow.aimDirection(false, true, true, false));
+    assertEquals(FlightControls.neutral(),
+        flow.flightControls(true, true, true, true, true));
+
+    flow.observeSpace(true);
+    assertTrue(flow.consumeMissileLaunch(true));
+    assertFalse(flow.consumeMissileLaunch(true), "one press requests at most one missile");
+    assertTrue(flow.isMissileArmed(), "launching does not leave missile mode");
+    assertFalse(flow.fireTrigger(true));
+
+    flow.observeSpace(false);
+    flow.observeSpace(true);
+    assertTrue(flow.consumeMissileLaunch(true), "a fresh later press can launch another round");
+    assertTrue(flow.consumeMissileEscape());
+    assertFalse(flow.isMissileArmed());
+    assertFalse(flow.consumeMissileEscape(), "ESC in cannon mode belongs to phase abandonment");
+    assertFalse(flow.fireTrigger(true), "the held missile trigger must not become a cannon burst");
+    assertEquals(new PhaseOneScreenFlow.AimDirection(0f, 0f),
+        flow.aimDirection(false, true, true, false));
+    flow.observeSpace(false);
+    flow.observeSpace(true);
+    assertTrue(flow.fireTrigger(true));
+    assertEquals(new FlightControls(true, false, true, false, true),
+        flow.flightControls(true, false, true, false, true));
+  }
+
+  @Test
+  void deathOrResultClearsMissileModeAndRequiresSpaceRelease() {
+    PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
+    flow.observeSpace(true);
+    flow.consumeStartPress(true);
+    flow.observeSpace(false);
+    assertTrue(flow.armMissile());
+
+    flow.resetWeaponMode();
+    assertFalse(flow.isMissileArmed());
+    assertFalse(flow.fireTrigger(true), "a held key must not fire after death/respawn");
+    flow.observeSpace(false);
+    flow.observeSpace(true);
+    assertTrue(flow.fireTrigger(true), "a new press works after release");
+
+    assertTrue(flow.armMissile());
+    flow.showResult();
+    assertFalse(flow.isMissileArmed());
+    assertFalse(flow.consumeMissileLaunch(true));
+    assertFalse(flow.consumeMissileEscape(), "ESC on a result remains phase abandonment");
   }
 
   @Test
