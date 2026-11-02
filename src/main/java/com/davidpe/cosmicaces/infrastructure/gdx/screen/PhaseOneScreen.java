@@ -43,6 +43,9 @@ import com.davidpe.cosmicaces.domain.scenery.SceneryField;
 import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSpriteLayout;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileVisuals;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
@@ -127,6 +130,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final BastionBomber.Visuals bastionBomberVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
   private final Geran4Uav.Visuals geran4Visuals;
+  private final GuidedMissileVisuals guidedMissileVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final AstraLightEffect astraLightEffect;
@@ -197,6 +201,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     BastionBomber.Visuals loadedBastionBomber = null;
     GhostwingDrone.Visuals loadedGhostwing = null;
     Geran4Uav.Visuals loadedGeran4 = null;
+    GuidedMissileVisuals loadedGuidedMissiles = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     AstraLightEffect loadedAstraLight = null;
@@ -213,6 +218,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedBastionBomber = new BastionBomber.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedGeran4 = new Geran4Uav.Visuals();
+      loadedGuidedMissiles = new GuidedMissileVisuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
@@ -256,6 +262,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedGeran4 != null) {
         loadedGeran4.dispose();
       }
+      if (loadedGuidedMissiles != null) {
+        loadedGuidedMissiles.dispose();
+      }
       if (loadedAstra != null) {
         loadedAstra.dispose();
       }
@@ -282,6 +291,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     bastionBomberVisuals = loadedBastionBomber;
     ghostwingVisuals = loadedGhostwing;
     geran4Visuals = loadedGeran4;
+    guidedMissileVisuals = loadedGuidedMissiles;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
     astraLightEffect = loadedAstraLight;
@@ -465,6 +475,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (escort.isActive()) escort.raider().setMuzzleFlashVisible(escort.gun().flashVisible());
     }
     batch.begin();
+    drawGuidedMissiles(batch, true);
     if (goForwardPromptVisible && controller.isAstraActive()) {
       goForwardPrompt.draw(batch, hudFont,
           controller.astra().x() + controller.astra().drawWidth() / 2f,
@@ -518,6 +529,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // propeller frame from its own clock, culled against the camera that draws this frame.
     drawGeran4Uavs(batch);
     drawExplosions(batch);
+    drawGuidedMissiles(batch, false);
     batch.end();
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
     // projectile with its frozen shot-time position and forward vector. Never re-read the current
@@ -642,6 +654,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     bastionBomberVisuals.dispose();
     ghostwingVisuals.dispose();
     geran4Visuals.dispose();
+    guidedMissileVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     astraLightEffect.dispose();
@@ -824,6 +837,25 @@ public final class PhaseOneScreen extends ScreenAdapter {
     return CameraVisibility.shipVisible(centerX, centerY, halfBox,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
+  }
+
+  /**
+   * Draws only the requested depth layer. The short separating phase sits behind the aircraft;
+   * acceleration and guidance draw above the ships. Culling affects drawing only, never simulation.
+   */
+  private void drawGuidedMissiles(SpriteBatch batch, boolean separatingLayer) {
+    float astraFuselageLength = controller.astra().drawHeight();
+    for (GuidedMissile missile : controller.guidedMissiles()) {
+      if (!missile.isActive()
+          || (missile.stage() == GuidedMissile.FlightStage.SEPARATING) != separatingLayer) {
+        continue;
+      }
+      GuidedMissileSpriteLayout.Layout layout =
+          GuidedMissileSpriteLayout.forMissile(missile, astraFuselageLength);
+      if (shipVisible(missile.x(), missile.y(), layout.cullingRadius())) {
+        guidedMissileVisuals.draw(batch, missile, layout);
+      }
+    }
   }
 
   /** Draws the free-aim cursor in world space only while it intersects the active camera view. */

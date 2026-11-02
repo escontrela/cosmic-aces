@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos y metadatos de láminas de proyectiles (`GuidedMissileSheet`). |
+| `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos, metadatos (`GuidedMissileSheet`) y su layout gráfico puro (`GuidedMissileSpriteLayout`). |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
@@ -1025,10 +1025,15 @@ al dibujar con una rotación matemática LibGDX debe convertirse explícitamente
 
 `domain.weapon.GuidedMissileVisuals` crea una `Texture` y prepara una sola vez 64 `TextureRegion`;
 `region(faction, heading, stage)` devuelve una región prestada que el consumidor no debe modificar.
-El llamador —normalmente la pantalla o el renderer— es dueño de los visuales y debe llamar a `dispose()`;
-el constructor libera la textura si falla la preparación y `dispose()` es idempotente. No hay carga por
-frame ni recursos estáticos. Esta preparación aún no añade movimiento, guiado, impactos ni dibujo en
-PhaseOne; la integración posterior debe reutilizar los visuales y liberar su dueño al salir de pantalla.
+El llamador —en PhaseOne, la pantalla— es dueño de los visuales y debe llamar a `dispose()`; el
+constructor libera la textura si falla la preparación y `dispose()` es idempotente. No hay carga por
+frame ni recursos estáticos. `GuidedMissileSpriteLayout` escoge la orientación atlas más cercana,
+convierte a rotación antihoraria solo el residuo del rumbo y calcula el pivote, las dimensiones y un
+radio conservador de culling. Escala el cuerpo medido al 30% del largo del fuselaje de Astra,
+independiente del espacio transparente de la celda. `GuidedMissileVisuals.draw` usa el pivote medido
+para mantener el centro del cuerpo en la posición mundial en las cuatro etapas. `PhaseOneScreen`
+carga/libera una sola instancia compartida, dibuja SEPARATING debajo de las aeronaves y los misiles
+en aceleración/guiado por encima; el culling solo omite dibujo y no detiene simulación ni guiado.
 
 `domain.weapon.MissileConfig` captura los parámetros inmutables de misiles de una partida: dos por vida
 para Astra (rango 0–10), uno por escolta, seis segundos de combustible, velocidad máxima de 1500 u/s y
@@ -1050,7 +1055,8 @@ resuelve la identidad exacta y no confunde una vida reaparecida con la anterior.
 con los objetivos vivos actuales, incluidos los que están fuera del viewport; al desaparecer un objetivo
 su referencia deja de resolverse. `armAstraMissile` inicia la mira en el centro de Astra una sola vez,
 `moveAstraMissileAim` recibe dirección y delta ya traducidos por infraestructura, y `armAstraCannon`
-la cancela. La integración de teclas, minimapa y creación física del misil es trabajo posterior.
+la cancela. `PhaseOneScreen` traduce F/flechas/ESPACIO/ESC, conserva la preferencia del minimapa M y
+solicita el dibujo de la mira, mientras el controlador crea y avanza los misiles desde sus coordenadas.
 
 `WelcomeScreen` ofrece Ajustes → Armamento → Misiles por vida con ←/→, paso 1, rango 0–10 y valor
 inicial 2. `GameSettingsStore` persiste el entero en `astra.missiles.perLife`, conserva las demás

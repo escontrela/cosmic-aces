@@ -1,7 +1,9 @@
 package com.davidpe.cosmicaces.domain.weapon;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.utils.Disposable;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSheet.CombustionStage;
@@ -11,6 +13,7 @@ import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSheet.Heading;
 /** One phase-owned missile texture and its prepared regions, shared by all missiles. */
 public final class GuidedMissileVisuals implements Disposable {
   private final Texture texture;
+  private final Color savedBatchColor = new Color();
   private final TextureRegion[][][] regions = new TextureRegion[Faction.values().length]
       [Heading.values().length][CombustionStage.values().length];
   private boolean disposed;
@@ -47,6 +50,36 @@ public final class GuidedMissileVisuals implements Disposable {
       throw new IllegalArgumentException("Faction, heading and combustion stage are required");
     }
     return regions[faction.ordinal()][heading.ordinal()][stage.ordinal()];
+  }
+
+  /** Draws one missile from cached regions with its body pivot fixed at its world coordinate. */
+  public void draw(SpriteBatch batch, GuidedMissile missile, float astraFuselageLength) {
+    GuidedMissileSpriteLayout.Layout layout =
+        GuidedMissileSpriteLayout.forMissile(missile, astraFuselageLength);
+    draw(batch, missile, layout);
+  }
+
+  /** Draws using one already calculated layout so culling and drawing share the same bounds. */
+  public void draw(SpriteBatch batch, GuidedMissile missile,
+      GuidedMissileSpriteLayout.Layout layout) {
+    ensureOpen();
+    if (batch == null || missile == null || layout == null) {
+      throw new IllegalArgumentException("Batch, missile and sprite layout are required");
+    }
+    TextureRegion region = region(layout.faction(), layout.heading(), layout.combustionStage());
+    savedBatchColor.set(batch.getColor());
+    try {
+      batch.setColor(Color.WHITE);
+      batch.draw(region, missile.x() - layout.originX(), missile.y() - layout.originY(),
+          layout.originX(), layout.originY(), layout.width(), layout.height(), 1f, 1f,
+          layout.rotationDegrees());
+    } finally {
+      batch.setColor(savedBatchColor);
+    }
+  }
+
+  private void ensureOpen() {
+    if (disposed) throw new IllegalStateException("Guided missile visuals have been disposed");
   }
 
   @Override
