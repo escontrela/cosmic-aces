@@ -40,6 +40,22 @@ class WelcomeScreenSettingsMenuTest {
   }
 
   @Test
+  void armamentMenuCyclesBetweenCapacityAndMissileSpeed() {
+    assertEquals(1, WelcomeScreen.cycleArmamentSelection(0, 1));
+    assertEquals(0, WelcomeScreen.cycleArmamentSelection(1, 1));
+    assertEquals(1, WelcomeScreen.cycleArmamentSelection(0, -1));
+    assertEquals(0, WelcomeScreen.cycleArmamentSelection(1, -1));
+  }
+
+  @Test
+  void guidedMissileSpeedAdjustsByOneHundredAndStaysFasterThanAircraft() {
+    assertEquals(1400, WelcomeScreen.adjustGuidedMissileMaxSpeed(1500, -1));
+    assertEquals(1600, WelcomeScreen.adjustGuidedMissileMaxSpeed(1500, 1));
+    assertEquals(1100, WelcomeScreen.adjustGuidedMissileMaxSpeed(1100, -1));
+    assertEquals(3000, WelcomeScreen.adjustGuidedMissileMaxSpeed(3000, 1));
+  }
+
+  @Test
   void cameraSelectionTogglesInBothDirectionsAndWrapsAround() {
     assertEquals(CameraMode.NORTH_UP, WelcomeScreen.cycleCameraMode(CameraMode.FOLLOW_ASTRA, 1));
     assertEquals(CameraMode.NORTH_UP, WelcomeScreen.cycleCameraMode(CameraMode.FOLLOW_ASTRA, -1));

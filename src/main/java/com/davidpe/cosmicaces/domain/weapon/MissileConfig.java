@@ -7,6 +7,9 @@ public record MissileConfig(int astraMissilesPerLife, int escortMissiles,
     float aimSpeed) {
   public static final int MIN_ASTRA_MISSILES = 0;
   public static final int MAX_ASTRA_MISSILES = 10;
+  public static final int MIN_MAX_SPEED = 1100;
+  public static final int MAX_MAX_SPEED = 3000;
+  public static final int MAX_SPEED_ADJUSTMENT_STEP = 100;
   public static final String ASTRA_MISSILE_NAME = "AIM-120 AMRAAM";
   public static final MissileConfig DEFAULTS = new MissileConfig(
       2, 1, 6f, 1500f, 180f, 0.25f, 0.5f, 180f, 1200f);
@@ -33,6 +36,12 @@ public record MissileConfig(int astraMissilesPerLife, int escortMissiles,
   /** Returns a new configuration for a new run without changing any existing instance. */
   public MissileConfig withAstraMissilesPerLife(int count) {
     return new MissileConfig(count, escortMissiles, fuelSeconds, maxSpeed,
+        maxTurnDegreesPerSecond, separationSeconds, accelerationSeconds, aimCaptureRadius, aimSpeed);
+  }
+
+  /** Returns a per-run configuration with a different maximum speed for both missile sides. */
+  public MissileConfig withMaxSpeed(float speed) {
+    return new MissileConfig(astraMissilesPerLife, escortMissiles, fuelSeconds, speed,
         maxTurnDegreesPerSecond, separationSeconds, accelerationSeconds, aimCaptureRadius, aimSpeed);
   }
 

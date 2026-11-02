@@ -103,6 +103,8 @@ public final class WelcomeScreen extends ScreenAdapter {
   private int speedSelection;
   private FlightSpeeds flightSpeeds = FlightSpeeds.DEFAULTS;
   private int astraMissilesPerLife = MissileConfig.DEFAULTS.astraMissilesPerLife();
+  private int guidedMissileMaxSpeed = (int) MissileConfig.DEFAULTS.maxSpeed();
+  private int armamentSelection;
   private int selectedVideoMode;
   private boolean targetFullscreen;
   private String settingsMessage = "";
@@ -130,6 +132,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     if (settingsStore != null) {
       flightSpeeds = settingsStore.flightSpeeds();
       astraMissilesPerLife = settingsStore.astraMissilesPerLife();
+      guidedMissileMaxSpeed = settingsStore.guidedMissileMaxSpeed();
     }
     camera = new OrthographicCamera();
     // One world unit remains one logical screen pixel; a larger window reveals more world
@@ -379,19 +382,42 @@ public final class WelcomeScreen extends ScreenAdapter {
   }
 
   private void handleArmamentInput() {
+    int selectionAdjustment = Gdx.input.isKeyJustPressed(Input.Keys.UP) ? -1
+        : Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : 0;
+    if (selectionAdjustment != 0) {
+      armamentSelection = cycleArmamentSelection(armamentSelection, selectionAdjustment);
+    }
     int adjustment = Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1
         : Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1 : 0;
     if (adjustment == 0) return;
-    int next = adjustMissilesPerLife(astraMissilesPerLife, adjustment);
-    if (next != astraMissilesPerLife) {
-      astraMissilesPerLife = next;
-      if (settingsStore != null) settingsStore.saveAstraMissilesPerLife(next);
+    if (armamentSelection == 0) {
+      int next = adjustMissilesPerLife(astraMissilesPerLife, adjustment);
+      if (next != astraMissilesPerLife) {
+        astraMissilesPerLife = next;
+        if (settingsStore != null) settingsStore.saveAstraMissilesPerLife(next);
+      }
+    } else {
+      int next = adjustGuidedMissileMaxSpeed(guidedMissileMaxSpeed, adjustment);
+      if (next != guidedMissileMaxSpeed) {
+        guidedMissileMaxSpeed = next;
+        if (settingsStore != null) settingsStore.saveGuidedMissileMaxSpeed(next);
+      }
     }
+  }
+
+  static int cycleArmamentSelection(int current, int adjustment) {
+    return Math.floorMod(current + adjustment, 2);
   }
 
   static int adjustMissilesPerLife(int current, int adjustment) {
     return Math.max(MissileConfig.MIN_ASTRA_MISSILES,
         Math.min(MissileConfig.MAX_ASTRA_MISSILES, current + adjustment));
+  }
+
+  static int adjustGuidedMissileMaxSpeed(int current, int adjustment) {
+    return Math.max(MissileConfig.MIN_MAX_SPEED,
+        Math.min(MissileConfig.MAX_MAX_SPEED,
+            current + adjustment * MissileConfig.MAX_SPEED_ADJUSTMENT_STEP));
   }
 
   private void refreshVideoCatalog() {
@@ -511,13 +537,18 @@ public final class WelcomeScreen extends ScreenAdapter {
   }
 
   private void drawArmamentSettings(float left, float top) {
-    settingsFont.setColor(Color.GOLD);
-    settingsFont.draw(batch, ">  Misiles por vida: " + astraMissilesPerLife, left, top);
+    settingsFont.setColor(armamentSelection == 0 ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (armamentSelection == 0 ? ">  " : "   ")
+        + "Misiles por vida: " + astraMissilesPerLife, left, top);
+    settingsFont.setColor(armamentSelection == 1 ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (armamentSelection == 1 ? ">  " : "   ")
+        + "Velocidad máxima de misil: " + guidedMissileMaxSpeed + " u/s", left, top - 38f);
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "←/→ ajustar en pasos de 1. Rango: 0–10. Valor inicial: 2.",
-        left, top - 48f);
-    settingsFont.draw(batch, "Se guarda y se aplica al iniciar una nueva partida.",
-        left, top - 80f);
+    settingsFont.draw(batch, "↑/↓ elegir ajuste   ←/→ cambiar el valor.", left, top - 88f);
+    settingsFont.draw(batch, "Misiles por vida: 0–10 (paso 1, inicial 2). Velocidad: 1100–3000 u/s.",
+        left, top - 118f);
+    settingsFont.draw(batch, "Velocidad en pasos de 100 u/s; inicial 1500. Se guarda para la próxima partida.",
+        left, top - 148f);
   }
 
   private void drawAstraSettings(float left, float top) {

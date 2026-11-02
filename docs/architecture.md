@@ -21,7 +21,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo y dibujo de instancias; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
-| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
+| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
@@ -178,7 +178,11 @@ M no puede ocultar la única superficie de selección. El rombo cian muestra la 
 amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
 la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
 la cámara actual, sin moverla. `FlightHud` presenta AIM-120 AMRAAM, munición, objetivo fijado o su
-ausencia y la ayuda de controles dentro de la banda inferior. `GoForwardPrompt`, propiedad de
+ausencia y la ayuda de controles dentro de la banda inferior. Mientras haya misiles guiados activos,
+`PhaseOneScreen` fuerza temporalmente la visibilidad del minimapa incluso fuera del modo de apuntado;
+`FlightMinimap` proyecta su posición actual por frame como un punto brillante, verde para Astra y
+magenta para los misiles enemigos. La preferencia M se conserva y se restaura al retirarse todos los
+misiles. `GoForwardPrompt`, propiedad de
 `PhaseOneScreen`, crea y libera una textura procedural con aro azul degradado y dispone “GO FORWARD”
 en un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier tecla o clic lo
 oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras un Vesper activo
@@ -274,12 +278,16 @@ F, flechas, SPACE y ESC en llamadas al controlador, y presenta HUD/minimapa.
 `GuidedMissileSheet` describe el atlas y `GuidedMissileSpriteLayout` calcula el
 recorte/orientación sin poseer texturas. La pantalla comparte una textura del
 atlas para ambos bandos y la libera al disponer sus recursos; no se carga desde
-el bucle de render.
+el bucle de render. `PhaseOneAudio` carga `sound-misile-fire-burst.wav` como un
+`Sound` compartido de la pantalla y lo libera en `dispose()`; la pantalla lo
+reproduce solo si `launchAstraMissile()` confirma el lanzamiento y consumió
+munición. La mira sin objetivo, el agotamiento de munición y las pulsaciones
+rechazadas permanecen silenciosas.
 
 Guion de QA visual manual del PO para COS-106:
 
-1. Abrir Ajustes → Armamento, comprobar el valor inicial 2, recorrer 0 y 10,
-   guardar, volver a entrar y confirmar persistencia.
+1. Abrir Ajustes → Armamento, comprobar los valores iniciales 2 misiles y
+   1500 u/s, ajustar ambos extremos, guardar, volver a entrar y confirmar persistencia.
 2. Iniciar PhaseOne en `FOLLOW_ASTRA` y `NORTH_UP`; comprobar el HUD, el
    minimapa, la retícula y el aro del objetivo tras resize y en HiDPI.
 3. Con Astra en vuelo, pulsar F, fijar objetivos dentro y fuera del viewport y
@@ -1079,7 +1087,8 @@ en aceleración/guiado por encima; el culling solo omite dibujo y no detiene sim
 `domain.weapon.MissileConfig` captura los parámetros inmutables de misiles de una partida: dos por vida
 para Astra (rango 0–10), uno por escolta, seis segundos de combustible, velocidad máxima de 1500 u/s y
 giro máximo de 180°/s por defecto. También centraliza los parámetros técnicos de separación, aceleración,
-mira y fijación; `withAstraMissilesPerLife` crea una configuración nueva sin alterar partidas existentes.
+mira y fijación; `withAstraMissilesPerLife` y `withMaxSpeed` crean una configuración nueva sin alterar
+partidas existentes. La velocidad máxima común se puede ajustar entre 1100 y 3000 u/s para ambos bandos.
 `MissileLoadout` mantiene el arma seleccionada y la munición restante: `armMissile`/`armCannon` no
 recargan; `consumeForLaunch(validTarget)` consume una unidad solo si el misil está armado y el blanco es
 válido; `restoreForNewLife` repone capacidad y selecciona cañón. `PhaseOneGameController` recibe la
@@ -1099,12 +1108,14 @@ su referencia deja de resolverse. `armAstraMissile` inicia la mira en el centro 
 la cancela. `PhaseOneScreen` traduce F/flechas/ESPACIO/ESC, conserva la preferencia del minimapa M y
 solicita el dibujo de la mira, mientras el controlador crea y avanza los misiles desde sus coordenadas.
 
-`WelcomeScreen` ofrece Ajustes → Armamento → Misiles por vida con ←/→, paso 1, rango 0–10 y valor
-inicial 2. `GameSettingsStore` persiste el entero en `astra.missiles.perLife`, conserva las demás
-preferencias y usa el valor inicial si el dato está ausente, tiene tipo incorrecto o queda fuera de rango.
-`ScreenFactory.createPhaseOneController` lee esa preferencia una vez al crear cada partida y construye un
-`MissileConfig` nuevo; cambiarla después afecta solo a partidas posteriores. Sin `GameSettingsStore`, el
-constructor alternativo de bienvenida mantiene el menú reducido y no presenta la sección Armamento.
+`WelcomeScreen` ofrece Ajustes → Armamento con ↑/↓ para elegir entre misiles por vida y velocidad máxima,
+y ←/→ para ajustar. La dotación usa paso 1, rango 0–10 e inicial 2; la velocidad compartida por Astra y
+escoltas usa paso 100 u/s, rango 1100–3000 e inicial 1500. `GameSettingsStore` persiste esos enteros en
+`astra.missiles.perLife` y `weapon.guidedMissile.maxSpeed`, conserva las demás preferencias y usa los
+valores iniciales si alguno está ausente, tiene tipo incorrecto o queda fuera de rango.
+`ScreenFactory.createPhaseOneController` captura ambas preferencias al crear cada partida y construye un
+`MissileConfig` nuevo; cambiar ajustes después afecta solo a partidas posteriores. Sin `GameSettingsStore`,
+el constructor alternativo de bienvenida mantiene el menú reducido y no presenta la sección Armamento.
 
 `domain.weapon.GuidedMissile` modela un único proyectil con propietario, referencia exacta de objetivo,
 posición y rumbo mundial. `advance(delta, target)` conserva la etapa de separación, acelera con una rampa

@@ -12,6 +12,7 @@ class GameSettingsStoreTest {
   private static final String CAMERA_MODE_KEY = "presentation.cameraMode";
   private static final String ASTRA_BOTTOM_FRACTION_KEY = "presentation.astraBottomFraction";
   private static final String ASTRA_MISSILES_KEY = "astra.missiles.perLife";
+  private static final String GUIDED_MISSILE_SPEED_KEY = "weapon.guidedMissile.maxSpeed";
 
   @Test
   void missileCapacityDefaultsToTwoAndPersistsBothBounds() {
@@ -44,10 +45,39 @@ class GameSettingsStoreTest {
   }
 
   @Test
+  void guidedMissileSpeedDefaultsPersistsAndStaysWithinTheConfiguredRange() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(1500, store.guidedMissileMaxSpeed());
+    store.saveGuidedMissileMaxSpeed(1100);
+    assertEquals(1100, storeWith(preferences).guidedMissileMaxSpeed());
+    store.saveGuidedMissileMaxSpeed(3000);
+    assertEquals(3000, storeWith(preferences).guidedMissileMaxSpeed());
+    assertThrows(IllegalArgumentException.class, () -> store.saveGuidedMissileMaxSpeed(1000));
+    assertThrows(IllegalArgumentException.class, () -> store.saveGuidedMissileMaxSpeed(3100));
+    assertEquals(3000, store.guidedMissileMaxSpeed());
+  }
+
+  @Test
+  void invalidGuidedMissileSpeedFallsBackWithoutOverwritingTheStoredValue() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger(GUIDED_MISSILE_SPEED_KEY, 1000);
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(1500, store.guidedMissileMaxSpeed());
+    assertEquals(1000, preferences.getInteger(GUIDED_MISSILE_SPEED_KEY));
+    preferences.putString(GUIDED_MISSILE_SPEED_KEY, "broken");
+    assertEquals(1500, store.guidedMissileMaxSpeed());
+    assertEquals("broken", preferences.getString(GUIDED_MISSILE_SPEED_KEY));
+  }
+
+  @Test
   void factoryCapturesMissileSettingsWhenCreatingEachController() {
     GameSettingsStore store = storeWith(new InMemoryPreferences());
     PhaseOneGameController first = ScreenFactory.createPhaseOneController(store);
     store.saveAstraMissilesPerLife(10);
+    store.saveGuidedMissileMaxSpeed(2300);
     PhaseOneGameController second = ScreenFactory.createPhaseOneController(store);
     store.saveAstraMissilesPerLife(0);
     PhaseOneGameController third = ScreenFactory.createPhaseOneController(store);
@@ -55,6 +85,9 @@ class GameSettingsStoreTest {
     assertEquals(10, second.astraMissileCapacity());
     assertEquals(0, third.astraMissileCapacity());
     assertEquals(2, first.astraMissilesRemaining());
+    assertEquals(1500f, first.missileConfig().maxSpeed());
+    assertEquals(2300f, second.missileConfig().maxSpeed());
+    assertEquals(2300f, third.missileConfig().maxSpeed());
   }
 
   @Test

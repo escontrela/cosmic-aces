@@ -61,6 +61,7 @@ public final class ScreenFactory {
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */
   static PhaseOneGameController createPhaseOneController(GameSettingsStore store) {
     return new PhaseOneGameController(store.flightSpeeds(),
-        MissileConfig.DEFAULTS.withAstraMissilesPerLife(store.astraMissilesPerLife()));
+        MissileConfig.DEFAULTS.withAstraMissilesPerLife(store.astraMissilesPerLife())
+            .withMaxSpeed(store.guidedMissileMaxSpeed()));
   }
 }

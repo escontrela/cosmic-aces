@@ -419,7 +419,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       long raiderBurstsBefore = controller.raiderGun().emissionCount();
       long escortBurstsBefore = escortEmissionCount();
       boolean astraWasActiveBeforeWeapons = controller.isAstraActive();
-      if (missileLaunchRequested) controller.launchAstraMissile();
+      if (missileLaunchRequested && controller.launchAstraMissile()) {
+        audio.playMissileLaunch();
+      }
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
           flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
@@ -555,6 +557,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
     minimap.setTargeting(flow.isMissileArmed());
+    minimap.setMissileTracking(
+        controller.guidedMissiles().stream().anyMatch(GuidedMissile::isActive));
     // Off-screen Vesper indicator: drawn first so the minimap overlay never covers it, and only
     // while a live raider stays outside the real camera view (destroyed, awaiting respawn, not yet
     // appeared or a finished run produce no placement). The triangle stays above the fixed bottom
@@ -562,7 +566,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     drawOffscreenIndicator();
     // Combat temporarily suppresses the overlay without changing the player's M preference.
     // Use the same current-camera visibility decision as the enemy drawing above.
-    if (!enemyInViewport || minimap.isTargeting()) {
+    if (!enemyInViewport || minimap.isTargeting() || minimap.hasMissileTracking()) {
       MissileTarget selectedTarget = controller.selectedAstraMissileTarget().orElse(null);
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
@@ -575,7 +579,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
           hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
-          controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget);
+          controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget,
+          controller.guidedMissiles());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),

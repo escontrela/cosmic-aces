@@ -23,6 +23,7 @@ public final class GameSettingsStore {
   private static final String ASTRA_ULTRA_SPEED = "astra.speed.ultra";
   private static final String ASTRA_VARIANT = "astra.variant";
   private static final String ASTRA_MISSILES_PER_LIFE = "astra.missiles.perLife";
+  private static final String GUIDED_MISSILE_MAX_SPEED = "weapon.guidedMissile.maxSpeed";
 
   private Preferences preferences;
 
@@ -91,6 +92,26 @@ public final class GameSettingsStore {
   public void saveAstraMissilesPerLife(int count) {
     MissileConfig.DEFAULTS.withAstraMissilesPerLife(count);
     preferences().putInteger(ASTRA_MISSILES_PER_LIFE, count).flush();
+  }
+
+  /** Saved maximum speed shared by Astra and escort missiles, with a safe default on bad data. */
+  public int guidedMissileMaxSpeed() {
+    Preferences prefs = preferences();
+    try {
+      int speed = prefs.getInteger(GUIDED_MISSILE_MAX_SPEED,
+          (int) MissileConfig.DEFAULTS.maxSpeed());
+      return speed >= MissileConfig.MIN_MAX_SPEED && speed <= MissileConfig.MAX_MAX_SPEED
+          ? speed : (int) MissileConfig.DEFAULTS.maxSpeed();
+    } catch (IllegalArgumentException | ClassCastException invalidSavedSetting) {
+      return (int) MissileConfig.DEFAULTS.maxSpeed();
+    }
+  }
+
+  public void saveGuidedMissileMaxSpeed(int speed) {
+    if (speed < MissileConfig.MIN_MAX_SPEED || speed > MissileConfig.MAX_MAX_SPEED) {
+      throw new IllegalArgumentException("Guided missile speed must be between 1100 and 3000 u/s");
+    }
+    preferences().putInteger(GUIDED_MISSILE_MAX_SPEED, speed).flush();
   }
 
   /** Saved Astra appearance; a missing or unknown value resolves to the original ship. */

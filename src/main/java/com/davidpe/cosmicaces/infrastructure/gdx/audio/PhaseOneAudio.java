@@ -39,6 +39,8 @@ public final class PhaseOneAudio implements Disposable {
   /** Internal resource path of the short PCM 16-bit M61 burst cue, loaded as a {@link Sound}. */
   public static final String VULCAN_BURST_PATH =
       "assets/sounds/sound-machine-gun-burst-pcm16.wav";
+  /** Internal resource path of the one-shot guided missile launch cue. */
+  public static final String MISSILE_LAUNCH_PATH = "assets/sounds/sound-misile-fire-burst.wav";
   /**
    * Internal resource path of the mono PCM 16-bit explosion cue loaded as a {@link Sound}. The
    * original ships as PCM 16-bit, so the LWJGL3 WAV decoder accepts it unchanged.
@@ -50,27 +52,35 @@ public final class PhaseOneAudio implements Disposable {
   private static final float CABIN_AMBIENCE_VOLUME = 0.7f;
   /** Centralized M61 burst gain, balanced under the cabin ambience. */
   private static final float VULCAN_BURST_VOLUME = 0.6f;
+  /** Missile ignition sits slightly above the cannon burst so the launch reads clearly. */
+  private static final float MISSILE_LAUNCH_VOLUME = 0.75f;
   /** Centralized explosion gain; slightly above the shots to read as a destruction. */
   private static final float EXPLOSION_VOLUME = 0.8f;
 
   private final Music cabinAmbience;
   private final Sound vulcanBurst;
+  private final Sound missileLaunch;
   private final Sound explosion;
   private boolean cabinAmbienceAudible;
 
   public PhaseOneAudio() {
     Music loadedAmbience = null;
     Sound loadedBurst = null;
+    Sound loadedMissileLaunch = null;
     Sound loadedExplosion = null;
     try {
       loadedAmbience = Gdx.audio.newMusic(Gdx.files.internal(CABIN_AMBIENCE_PATH));
       loadedAmbience.setLooping(true);
       loadedAmbience.setVolume(CABIN_AMBIENCE_VOLUME);
       loadedBurst = Gdx.audio.newSound(Gdx.files.internal(VULCAN_BURST_PATH));
+      loadedMissileLaunch = Gdx.audio.newSound(Gdx.files.internal(MISSILE_LAUNCH_PATH));
       loadedExplosion = Gdx.audio.newSound(Gdx.files.internal(EXPLOSION_PATH));
     } catch (RuntimeException | Error failure) {
       if (loadedExplosion != null) {
         loadedExplosion.dispose();
+      }
+      if (loadedMissileLaunch != null) {
+        loadedMissileLaunch.dispose();
       }
       if (loadedBurst != null) {
         loadedBurst.dispose();
@@ -82,6 +92,7 @@ public final class PhaseOneAudio implements Disposable {
     }
     cabinAmbience = loadedAmbience;
     vulcanBurst = loadedBurst;
+    missileLaunch = loadedMissileLaunch;
     explosion = loadedExplosion;
     cabinAmbienceAudible = false;
   }
@@ -112,6 +123,11 @@ public final class PhaseOneAudio implements Disposable {
     for (int i = 0; i < bursts; i++) {
       vulcanBurst.play(VULCAN_BURST_VOLUME);
     }
+  }
+
+  /** Plays one short ignition cue after the controller accepts Astra's missile launch. */
+  public void playMissileLaunch() {
+    missileLaunch.play(MISSILE_LAUNCH_VOLUME);
   }
 
   /**
@@ -173,6 +189,9 @@ public final class PhaseOneAudio implements Disposable {
     }
     if (vulcanBurst != null) {
       vulcanBurst.dispose();
+    }
+    if (missileLaunch != null) {
+      missileLaunch.dispose();
     }
     if (explosion != null) {
       explosion.dispose();

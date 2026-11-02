@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
+import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FlightMinimapTest {
@@ -36,6 +39,42 @@ class FlightMinimapTest {
     minimap.setTargeting(true);
     minimap.setTargeting(false);
     assertTrue(minimap.isVisible(), "a map opened before aiming remains open after ESC");
+  }
+
+  @Test void activeMissileTrackingShowsMapAndRestoresThePlayersVisibilityPreference() {
+    FlightMinimap minimap = new FlightMinimap();
+
+    minimap.setMissileTracking(true);
+    assertTrue(minimap.isVisible());
+    minimap.toggle();
+    minimap.setMissileTracking(false);
+
+    assertTrue(minimap.isVisible(), "M pressed during flight becomes the restored preference");
+    minimap.toggle();
+    assertFalse(minimap.isVisible());
+  }
+
+  @Test void missileMarkerFollowsItsCurrentPositionAndOmitsRetiredMissiles() {
+    MinimapProjection projection = MinimapProjection.fit(
+        new WorldBounds(8192f, 12000f), 1024f, 768f);
+    MissileTarget.Reference targetReference =
+        new MissileTarget.Reference(MissileTarget.Kind.VESPER, 0, 0);
+    MissileTarget target = new MissileTarget(targetReference, 4000f, 8000f, 0f, 0f, 20f);
+    GuidedMissile missile = new GuidedMissile(GuidedMissile.Owner.ASTRA, targetReference,
+        MissileConfig.DEFAULTS, 2000f, 3000f, 0f, 0f, 300f);
+
+    FlightMinimap.MissileMarker before =
+        FlightMinimap.missileMarkers(projection, List.of(missile)).get(0);
+    missile.advance(0.25f, target);
+    FlightMinimap.MissileMarker after =
+        FlightMinimap.missileMarkers(projection, List.of(missile)).get(0);
+
+    assertEquals(GuidedMissile.Owner.ASTRA, after.owner());
+    assertNotEquals(before.position(), after.position(), "marker follows the moving missile");
+    assertEquals(projection.projectMarker(missile.x(), missile.y(), 5f), after.position());
+
+    missile.retireAfterMission();
+    assertTrue(FlightMinimap.missileMarkers(projection, List.of(missile)).isEmpty());
   }
 
   @Test void aimCursorAndExactSelectedDroneHaveSeparateProjectedMarkers() {

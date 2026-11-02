@@ -32,6 +32,19 @@ class GuidedMissileTest {
   }
 
   @Test
+  void reachesMaximumSpeedCapturedByItsPerRunConfiguration() {
+    MissileConfig config = MissileConfig.DEFAULTS.withMaxSpeed(2100f);
+    GuidedMissile missile = new GuidedMissile(GuidedMissile.Owner.ASTRA, ENEMY, config,
+        0f, 0f, 0f, 0f, 100f);
+
+    missile.advance(0.75f, target(ENEMY, 0f, 3000f, 0f, 0f));
+
+    assertEquals(2100f, missile.speed(), 0.01f);
+    assertEquals(1500f, MissileConfig.DEFAULTS.maxSpeed(), 0.01f,
+        "changing one run's setting cannot mutate the shared defaults");
+  }
+
+  @Test
   void turnsAlongShortestDirectionAndNeverExceedsTurnRate() {
     GuidedMissile missile = astraMissile(0f, 0f, 359f, 0f, 100f);
     MissileTarget target = target(ENEMY,
