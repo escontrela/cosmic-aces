@@ -421,6 +421,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       boolean astraWasActiveBeforeWeapons = controller.isAstraActive();
       if (missileLaunchRequested && controller.launchAstraMissile()) {
         audio.playMissileLaunch();
+        flow.missileLaunched();
+        controller.armAstraCannon();
       }
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
           flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,

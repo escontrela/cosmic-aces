@@ -105,7 +105,7 @@ class PhaseOneScreenFlowTest {
   }
 
   @Test
-  void missileModeUsesOneFreshSpacePressAndSuppressesCannonUntilEscape() {
+  void successfulMissileLaunchReturnsToCannonAndConsumesTriggerUntilRelease() {
     PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
     assertFalse(flow.armMissile(), "intro cannot arm a weapon");
     flow.observeSpace(true);
@@ -124,16 +124,19 @@ class PhaseOneScreenFlowTest {
     flow.observeSpace(true);
     assertTrue(flow.consumeMissileLaunch(true));
     assertFalse(flow.consumeMissileLaunch(true), "one press requests at most one missile");
-    assertTrue(flow.isMissileArmed(), "launching does not leave missile mode");
+    flow.missileLaunched();
+    assertFalse(flow.isMissileArmed(), "successful launch returns to cannon mode");
     assertFalse(flow.fireTrigger(true));
 
+    assertTrue(flow.armMissile(), "missile mode can be selected again without ESC");
+    assertFalse(flow.fireTrigger(true), "the launch press cannot become a cannon burst");
     flow.observeSpace(false);
     flow.observeSpace(true);
-    assertTrue(flow.consumeMissileLaunch(true), "a fresh later press can launch another round");
-    assertTrue(flow.consumeMissileEscape());
+    assertTrue(flow.consumeMissileLaunch(true), "a later fresh press launches the next missile");
+    assertTrue(flow.consumeMissileEscape(), "ESC still cancels an armed missile mode");
     assertFalse(flow.isMissileArmed());
     assertFalse(flow.consumeMissileEscape(), "ESC in cannon mode belongs to phase abandonment");
-    assertFalse(flow.fireTrigger(true), "the held missile trigger must not become a cannon burst");
+    assertFalse(flow.fireTrigger(true), "the missile trigger must be released before cannon fire");
     assertEquals(new PhaseOneScreenFlow.AimDirection(0f, 0f),
         flow.aimDirection(false, true, true, false));
     flow.observeSpace(false);
@@ -201,7 +204,11 @@ class PhaseOneScreenFlowTest {
     flow.observeSpace(true);
     assertTrue(flow.consumeMissileLaunch(true));
     assertTrue(controller.launchAstraMissile());
+    flow.missileLaunched();
+    controller.armAstraCannon();
+    assertFalse(flow.isMissileArmed(), "successful launch returns to cannon without ESC");
     assertFalse(flow.consumeMissileLaunch(true), "holding SPACE cannot launch twice");
+    assertFalse(flow.fireTrigger(true), "the missile trigger is not reused as a cannon burst");
     assertEquals(1, controller.astraMissilesRemaining());
     GuidedMissile launched = controller.guidedMissiles().get(0);
     int combatPoints = 0;
@@ -216,10 +223,7 @@ class PhaseOneScreenFlowTest {
     assertEquals(1, controller.vesperKills());
     assertTrue(combatPoints > 0);
 
-    flow.observeSpace(false);
-    assertTrue(flow.consumeMissileEscape());
-    controller.armAstraCannon();
-    assertFalse(flow.isMissileArmed());
+    assertFalse(flow.isMissileArmed(), "impact does not require ESC to restore cannon mode");
     assertEquals(1, controller.astraMissilesRemaining(), "ESC does not replenish ammunition");
   }
 }

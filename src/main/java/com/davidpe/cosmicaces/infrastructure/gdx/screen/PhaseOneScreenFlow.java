@@ -65,6 +65,14 @@ final class PhaseOneScreenFlow {
     return true;
   }
 
+  /** Returns to cannon mode after a successful launch while consuming its SPACE press. */
+  void missileLaunched() {
+    if (stage != Stage.PLAYING || !missileArmed) return;
+    missileArmed = false;
+    // The launch press must be released before it can produce a cannon burst.
+    spaceArmed = false;
+  }
+
   /** Returns true when ESC should cancel missile mode instead of leaving the phase. */
   boolean consumeMissileEscape() {
     if (stage != Stage.PLAYING || !missileArmed) return false;
