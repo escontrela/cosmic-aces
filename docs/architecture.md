@@ -1020,6 +1020,17 @@ el constructor libera la textura si falla la preparación y `dispose()` es idemp
 frame ni recursos estáticos. Esta preparación aún no añade movimiento, guiado, impactos ni dibujo en
 PhaseOne; la integración posterior debe reutilizar los visuales y liberar su dueño al salir de pantalla.
 
+`domain.weapon.MissileConfig` captura los parámetros inmutables de misiles de una partida: dos por vida
+para Astra (rango 0–10), uno por escolta, seis segundos de combustible, velocidad máxima de 1500 u/s y
+giro máximo de 180°/s por defecto. También centraliza los parámetros técnicos de separación, aceleración,
+mira y fijación; `withAstraMissilesPerLife` crea una configuración nueva sin alterar partidas existentes.
+`MissileLoadout` mantiene el arma seleccionada y la munición restante: `armMissile`/`armCannon` no
+recargan; `consumeForLaunch(validTarget)` consume una unidad solo si el misil está armado y el blanco es
+válido; `restoreForNewLife` repone capacidad y selecciona cañón. `PhaseOneGameController` recibe la
+configuración al construirse, expone lecturas y comandos, cancela el modo misil al morir o terminar y
+repone únicamente en `handleRespawns` después de una reaparición real. La emisión física, la validación
+de la identidad del objetivo y la operación atómica de crear el misil quedan para las subtareas posteriores.
+
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
 avanza en línea recta con `advance(delta)` y no retiene referencias a nave,

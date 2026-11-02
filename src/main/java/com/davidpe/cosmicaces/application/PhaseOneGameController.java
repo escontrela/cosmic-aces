@@ -24,6 +24,8 @@ import com.davidpe.cosmicaces.domain.ship.ShipCombatState;
 import com.davidpe.cosmicaces.domain.weapon.GunBurst;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
+import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
+import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -65,6 +67,8 @@ public final class PhaseOneGameController extends GameController {
   private final PhaseOneMission mission = new PhaseOneMission();
   private final GunBurst astraGun = new GunBurst();
   private final GunBurst raiderGun = new GunBurst(GunTuning.RAIDER_BURST_INTERVAL_SECONDS);
+  private final MissileConfig missileConfig;
+  private final MissileLoadout astraMissiles;
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
   private final ShipCombatState bastionBomberCombat = ShipCombatState.bastionBomber();
@@ -134,7 +138,21 @@ public final class PhaseOneGameController extends GameController {
 
   public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
       FlightSpeeds speeds, UnitRandom geran4Random) {
+    this(raiderRandom, ghostwingRandom, speeds, geran4Random, MissileConfig.DEFAULTS);
+  }
+
+  /** Captures the missile settings for this run; changing later preferences cannot alter it. */
+  public PhaseOneGameController(FlightSpeeds speeds, MissileConfig missileConfig) {
+    this(ThreadLocalRandom.current()::nextFloat, ThreadLocalRandom.current()::nextFloat, speeds,
+        ThreadLocalRandom.current()::nextFloat, missileConfig);
+  }
+
+  public PhaseOneGameController(UnitRandom raiderRandom, UnitRandom ghostwingRandom,
+      FlightSpeeds speeds, UnitRandom geran4Random, MissileConfig missileConfig) {
     super(speeds);
+    if (missileConfig == null) throw new IllegalArgumentException("Missile config is required");
+    this.missileConfig = missileConfig;
+    astraMissiles = new MissileLoadout(missileConfig.astraMissilesPerLife());
     raiderEncounter = new RaiderEncounter(raiderRandom);
     ghostwingEncounter = new GhostwingEncounter(ghostwingRandom);
     geran4Encounter = new Geran4Encounter(geran4Random);
@@ -246,7 +264,47 @@ public final class PhaseOneGameController extends GameController {
       astraMotion = null;
     }
     advanceRun(activeSeconds);
+    if (isRunFinished()) astraMissiles.armCannon();
     return score.advance(activeSeconds, coincident && astraCombat.canAct());
+  }
+
+  public MissileConfig missileConfig() {
+    return missileConfig;
+  }
+
+  public int astraMissileCapacity() {
+    return astraMissiles.capacity();
+  }
+
+  public int astraMissilesRemaining() {
+    return astraMissiles.remaining();
+  }
+
+  public MissileLoadout.Weapon astraWeapon() {
+    return astraMissiles.weapon();
+  }
+
+  /** Arming is allowed only while the run and Astra are active; it never consumes ammunition. */
+  public boolean armAstraMissile() {
+    if (!astraCanUseMissiles()) return false;
+    astraMissiles.armMissile();
+    return true;
+  }
+
+  public void armAstraCannon() {
+    astraMissiles.armCannon();
+  }
+
+  /**
+   * Reserves one round only for an accepted, valid launch. Missile creation is introduced in a
+   * later child and must perform validation and this operation atomically with that creation.
+   */
+  public boolean consumeAstraMissileForLaunch(boolean validTarget) {
+    return astraCanUseMissiles() && astraMissiles.consumeForLaunch(validTarget);
+  }
+
+  private boolean astraCanUseMissiles() {
+    return isRunStarted() && !isRunFinished() && !mission.isFinished() && astraCombat.canAct();
   }
 
   /** Astra's combat energy, impacts and life timers. */
@@ -538,6 +596,7 @@ public final class PhaseOneGameController extends GameController {
   private void handleRespawns(int astraLivesRemaining) {
     if (astraCombat.readyToRespawn() && astraLivesRemaining > 0) {
       astraCombat.respawn();
+      astraMissiles.restoreForNewLife();
       astraHitFlash.clear();
       placeAstraAtOperationsBase();
       astraMotion = null;
@@ -565,6 +624,7 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
     astraCombat.destroy();
+    astraMissiles.armCannon();
     astraHitFlash.clear();
     astraDeathX = astra().x();
     astraDeathY = astra().y();
@@ -971,7 +1031,9 @@ public final class PhaseOneGameController extends GameController {
    * The screen calls it once per active frame; this class only exposes the state and the rule.
    */
   public PhaseOutcome resolveMissionOutcome(int astraLivesRemaining) {
-    return mission.resolve(astraLivesRemaining, remainingRunSeconds());
+    PhaseOutcome outcome = mission.resolve(astraLivesRemaining, remainingRunSeconds());
+    if (outcome.isFinished()) astraMissiles.armCannon();
+    return outcome;
   }
 
   /**
