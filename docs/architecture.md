@@ -453,7 +453,13 @@ intermitente con intervalos de 0,3 s.
 `BastionEscort` mantiene dos encuentros Vesper adicionales: se despliegan a izquierda y derecha
 cuando el bombardero despega y conservan esos puestos mientras Astra está fuera de 1800 u. Al
 detectar a Astra pasan al mismo encuentro de aproximación, pasadas y disparo que el Raider normal.
-El controlador resuelve por separado su energía, impactos, cañones, puntos y muertes; la pantalla
+Cada escolta posee además su dotación configurada (una por defecto), un objetivo de fijación y un
+reloj independiente: `advanceMissileLock(delta, target)` exige 2 s continuos dentro de 1800 u y
+`consumeLockedMissile(reference)` consume una sola vez la referencia exacta de la vida de Astra.
+Salir del radio, perder el objetivo o destruir la escolta reinicia la fijación. El controlador genera
+un misil de bando ENEMY desde la escolta concreta y lo añade al mismo flujo de guiado, colisiones y
+daño; no habilita misiles para el Raider suelto, el Bastion ni los drones. El controlador resuelve por
+separado su energía, impactos, cañones, puntos y muertes; la pantalla
 reutiliza las texturas compartidas de Vesper y solo emite disparos cuando escolta y Astra coinciden
 en cámara. La aparición inicial del Raider principal permanece independiente.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
@@ -1381,8 +1387,10 @@ com.davidpe.cosmicaces
 |   |   |   1. advance()  2. flightState()  3. hasTakenOff()  4. frameIndex()
 |   |   |   5. headingDegrees()  6. centerX()  7. centerY()  8. setVisuals()
 |   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
-|   |   +-- BastionEscort: Vesper adicional que conserva formación y activa su encuentro al detectar Astra.
-|   |   |   1. deploy()  2. advance()  3. isAttacking()  4. combat()  5. gun()  6. destroy()
+|   |   +-- BastionEscort: Vesper adicional que conserva formación, activa su encuentro al detectar Astra,
+|   |   |   y mantiene fijación/dotación de misil independiente.
+|   |   |   1. deploy()  2. advance()  3. advanceMissileLock()  4. consumeLockedMissile()
+|   |   |   5. isAttacking()  6. combat()  7. gun()  8. missilesRemaining()  9. destroy()
 |   |   +-- Geran4UavSheet: ruta, tamaño y tres recortes de hélice del PNG Geran-4.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- Geran4Uav extends Ship: UAV sin armas con rumbo fijo y hélice de tres fases.

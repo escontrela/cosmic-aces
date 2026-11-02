@@ -62,9 +62,7 @@ public final class PhaseOneGameController extends GameController {
   private final RaiderEncounter raiderEncounter;
   private final GhostwingEncounter ghostwingEncounter;
   private final Geran4Encounter geran4Encounter;
-  private final List<BastionEscort> bastionEscorts = List.of(
-      new BastionEscort(-1, ThreadLocalRandom.current()::nextFloat),
-      new BastionEscort(1, ThreadLocalRandom.current()::nextFloat));
+  private final List<BastionEscort> bastionEscorts;
   private BastionBomber bastionBomber;
   private PhaseOneScenery phaseOneScenery;
   private final PhaseScore score = new PhaseScore();
@@ -158,6 +156,11 @@ public final class PhaseOneGameController extends GameController {
     super(speeds);
     if (missileConfig == null) throw new IllegalArgumentException("Missile config is required");
     this.missileConfig = missileConfig;
+    bastionEscorts = List.of(
+        new BastionEscort(-1, ThreadLocalRandom.current()::nextFloat,
+            missileConfig.escortMissiles()),
+        new BastionEscort(1, ThreadLocalRandom.current()::nextFloat,
+            missileConfig.escortMissiles()));
     astraMissiles = new MissileLoadout(missileConfig.astraMissilesPerLife());
     astraMissileAim = new MissileAim(WORLD, missileConfig.aimSpeed(), missileConfig.aimCaptureRadius());
     raiderEncounter = new RaiderEncounter(raiderRandom);
@@ -499,7 +502,36 @@ public final class PhaseOneGameController extends GameController {
           this::raiderProjectileStep);
     }
     advanceGuidedMissiles(frameDelta);
+    advanceEscortMissileLocks(boundedActiveSeconds(emissionSeconds));
     return drainCombatPoints();
+  }
+
+  /** Each Bastion escort owns its lock clock and one configured missile; viewport visibility is irrelevant. */
+  private void advanceEscortMissileLocks(float deltaSeconds) {
+    MissileTarget.Reference reference = new MissileTarget.Reference(MissileTarget.Kind.ASTRA, 0,
+        astraCombat.lifeGeneration());
+    MissileTarget target = astraCombat.canAct()
+        ? currentMissileTarget(reference).orElse(null) : null;
+    if (!isRunStarted() || isRunFinished() || mission.isFinished()) {
+      target = null;
+    }
+    for (BastionEscort escort : bastionEscorts) {
+      if (!escort.advanceMissileLock(deltaSeconds, target)) continue;
+      MissileTarget liveTarget = currentMissileTarget(reference).orElse(null);
+      if (liveTarget == null || !escort.consumeLockedMissile(reference)) continue;
+
+      VesperRaider launcher = escort.raider();
+      double radians = Math.toRadians(launcher.headingDegrees());
+      float forwardX = (float) Math.sin(radians);
+      float forwardY = -(float) Math.cos(radians);
+      float launchOffset = launcher.drawHeight() / 2f + GuidedMissile.COLLISION_RADIUS + 2f;
+      float heading = 180f - launcher.headingDegrees();
+      GuidedMissile missile = new GuidedMissile(GuidedMissile.Owner.ENEMY, reference,
+          missileConfig, launcher.centerX() - forwardX * launchOffset,
+          launcher.centerY() - forwardY * launchOffset, heading,
+          forwardX * launcher.currentSpeed(), forwardY * launcher.currentSpeed());
+      guidedMissiles.add(missile);
+    }
   }
 
   /**
