@@ -1003,12 +1003,22 @@ ni velocidad. Se dibuja una vez por proyectil de cada cañón; la colocación de
 dos cañones, emisión, movimiento, cadencia y retirada corresponden a COS-27.
 
 `domain.weapon.GuidedMissileSheet` describe `assets/images/projectiles/guided-missile-sheet-v1.png`,
-un atlas de 1280×1280 con celdas de 160×160. `slice(faction, heading, stage)` selecciona una región
-de 8 orientaciones (columnas, norte y sentido horario) y 4 etapas de combustión (filas por bando:
-primero Astra y después enemigo). `region(texture, faction, heading, stage)` crea la `TextureRegion`
-equivalente y valida las dimensiones del atlas. El llamador —normalmente la pantalla o el renderer—
-es dueño de la `Texture` y debe liberarla; esta clase solo describe y recorta el recurso, sin añadir
-todavía comportamiento de movimiento, guiado, impactos ni carga por frame.
+un atlas de 1280×1280 con una cuadrícula base de 160×160. `slice(faction, heading, stage)` selecciona
+una región de 8 orientaciones (columnas, norte y sentido horario) y 4 etapas de combustión (filas por
+bando: primero Astra y después enemigo). La estela de Astra/norte/ignición cruza seis píxeles a la fila
+siguiente: su recorte termina en y=166 y el de combustión empieza allí, para evitar contaminación entre
+fases. Los demás recortes conservan su celda de 160×160. `bodyAnchor(...)` devuelve un pivote medido
+sobre el cuerpo, no sobre el humo, en píxeles locales con origen inferior izquierdo; el renderer debe
+colocar ese pivote en la posición mundial del misil y rotar alrededor de él. Esto compensa el cambio de
+posición del cuerpo entre filas. El rumbo de las columnas crece en sentido horario desde el norte;
+al dibujar con una rotación matemática LibGDX debe convertirse explícitamente a sentido antihorario.
+
+`domain.weapon.GuidedMissileVisuals` crea una `Texture` y prepara una sola vez 64 `TextureRegion`;
+`region(faction, heading, stage)` devuelve una región prestada que el consumidor no debe modificar.
+El llamador —normalmente la pantalla o el renderer— es dueño de los visuales y debe llamar a `dispose()`;
+el constructor libera la textura si falla la preparación y `dispose()` es idempotente. No hay carga por
+frame ni recursos estáticos. Esta preparación aún no añade movimiento, guiado, impactos ni dibujo en
+PhaseOne; la integración posterior debe reutilizar los visuales y liberar su dueño al salir de pantalla.
 
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
