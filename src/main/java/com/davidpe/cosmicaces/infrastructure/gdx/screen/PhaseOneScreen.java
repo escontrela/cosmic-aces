@@ -225,8 +225,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedAstraLight = new AstraLightEffect();
       loadedAudio = new PhaseOneAudio();
       loadedSceneryRenderer = new TerrainSceneryRenderer(
-          phaseScenery.config(), phaseScenery.operationsBasePlacement(),
-          phaseScenery.enemyBasePlacement());
+          phaseScenery.config(), phaseScenery.villagePlacements(),
+          phaseScenery.operationsBasePlacement(), phaseScenery.enemyBasePlacement());
       loadedFont = new BitmapFont();
       loadedFont.getData().setScale(1.4f);
       loadedHudFont = new BitmapFont();
@@ -582,7 +582,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
           hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
           controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget,
-          controller.guidedMissiles());
+          controller.guidedMissiles(), controller.phaseOneScenery().villagePlacements());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
@@ -687,7 +687,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     PhaseOneTerrainPlanner.Camera terrainCamera = new PhaseOneTerrainPlanner.Camera(
         camera.position.x, camera.position.y, camera.up.x, camera.up.y, camera.zoom,
         viewport.getWorldWidth(), viewport.getWorldHeight());
-    return PhaseOneTerrainPlanner.visibleBounds(terrainCamera);
+    return PhaseOneTerrainPlanner.visibleBounds(terrainCamera, PhaseOneGameController.WORLD);
   }
 
   /** Draws continuous ground and only the decoration footprints crossing the visible world bounds. */
@@ -698,6 +698,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     batch.setColor(Color.WHITE);
     batch.begin();
     sceneryRenderer.drawGround(batch, visibleArea);
+    sceneryRenderer.drawVillageMilestones(batch, visibleArea);
     sceneryRenderer.drawOperationsBase(batch, visibleArea);
     sceneryRenderer.drawEnemyOperationsBase(batch, visibleArea);
     sceneryRenderer.drawScenery(batch, sceneryField, visibleArea);

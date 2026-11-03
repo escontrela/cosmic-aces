@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.scenery.SceneryPlacement;
+import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
@@ -92,6 +94,33 @@ class FlightMinimapTest {
     assertNotEquals(markers.cursor(), markers.selectedTarget(),
         "a drone lock must not be drawn at the free cursor position");
     assertEquals(null, FlightMinimap.aimMarkers(projection, 5900f, 8100f, null).selectedTarget());
+  }
+
+  @Test
+  void villageMarkersProjectEachApprovedCellAndKeepTheirSouthToNorthOrder() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    MinimapProjection projection = MinimapProjection.fit(extended, 1024f, 768f);
+    MinimapProjection.Rectangle map = projection.map();
+    List<SceneryPlacement> villages = List.of(
+        village("a", 0, 2304), village("b", 1024, 2304),
+        village("c", 0, 4608), village("d", 1024, 4608),
+        village("e", 1024, 34560));
+
+    List<MinimapProjection.Point> markers = FlightMinimap.villageMarkers(projection, villages);
+
+    assertEquals(5, markers.size());
+    for (MinimapProjection.Point marker : markers) {
+      assertTrue(marker.x() >= map.x() && marker.x() <= map.x() + map.width());
+      assertTrue(marker.y() >= map.y() && marker.y() <= map.y() + map.height());
+    }
+    assertTrue(markers.get(0).y() < markers.get(2).y());
+    assertTrue(markers.get(4).y() > markers.get(3).y());
+  }
+
+  private static SceneryPlacement village(String id, double x, double y) {
+    WorldRect bounds = new WorldRect(x, y, 1024, 768);
+    return new SceneryPlacement(id, "map-" + id, SceneryPlacement.Anchor.BOTTOM_LEFT,
+        bounds.x(), bounds.y(), bounds, 50, 48);
   }
 
   @Test

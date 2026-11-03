@@ -20,7 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo y dibujo de instancias; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
+| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
@@ -160,24 +160,31 @@ En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 `MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
 rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
-del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
-unidades. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
+del recorrido y fija el mundo en 8192×36000: ocho anchos virtuales de 1024
+unidades y el triple de la longitud original de 12000. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
 Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne conserva un `PhaseOneScenery` determinista por ejecución en el controlador: un mapa de
-terreno y un campo de decoración con reserva para la base se generan una sola vez con semilla fija.
-La pista ocupa el extremo sur, Astra despega desde su umbral y cada reaparición vuelve allí, orientada
-al norte. `PhaseOneScreen` usa `TerrainSceneryRenderer` para repetir el césped, dibujar la base y
-dibujar árboles, arbustos, charcos y rocas dentro
-de la caja visible de la cámara. `PhaseOneTerrainPlanner.visibleBounds` calcula la caja conservadora
-de cámara con giro, zoom y dimensiones reales del `ScreenViewport`; así se consultan solo adornos
-cercanos y se recortan los sprites que cruzan el límite del mundo. El atlas compartido de una página
-se carga al crear la pantalla y se libera al salir. El terreno y la decoración se dibujan antes de
-naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame y
-la pantalla no abre los 128 PNG históricos. El minimapa conserva su marco y marcadores de Astra,
-Vesper, Ghostwing, las dos bases y el Bastion Bomber tras despegar. `WelcomeScreen`
+terreno y un campo de decoración con reservas para las bases y los pueblos se generan una sola vez
+con semilla fija. La pista ocupa el extremo sur, Astra despega desde su umbral y cada reaparición
+vuelve allí, orientada al norte. `PhaseOneScreen` usa `TerrainSceneryRenderer` para repetir el césped,
+dibujar los cinco parches de pueblo, las dos bases y árboles, arbustos, charcos y rocas dentro de la
+caja visible de la cámara. Los pueblos conservan las celdas `row-02-col-01/02`,
+`row-03-col-01/02` y `row-16-col-02` del mosaico retirado, a 1024×768 y sin estirar: su coordenada
+sur se multiplica por la relación entre el mundo nuevo y el original (`yNuevo = yAnterior × 3`), de
+modo que la fila 16 queda en 34560–35328. `PhaseOneScenery` centraliza ese mapeo y añade una reserva
+de 48 unidades para que la decoración procedural no cubra ningún pueblo.
+`PhaseOneTerrainPlanner.visibleBounds(camera, WorldBounds)` calcula la caja conservadora de cámara con
+giro, zoom y dimensiones reales del `ScreenViewport` y la recorta al mundo activo, no al catálogo
+retirado de 12000. Así se consultan solo adornos cercanos y se recortan los sprites que cruzan el
+límite del mundo. `TerrainSceneryRenderer` empaqueta el terreno y las bases en el atlas compartido de
+una página y carga los cinco PNG de pueblo como texturas opacas 1:1, todas propiedad de la pantalla y
+liberadas al salir. El terreno, los pueblos, las bases y la decoración se dibujan en ese orden antes
+de naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame
+y no se abre el mosaico completo de 128 PNG históricos. El minimapa conserva su marco y marcadores de
+Astra, Vesper, Ghostwing, las dos bases, los cinco pueblos y el Bastion Bomber tras despegar. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
 `WelcomeScreen.resize` cambia el viewport; el campo queda visible únicamente en las franjas que
 deja el arte. La antigua composición ASCII se sustituyó por `welcome-background-v1.png` y el logo

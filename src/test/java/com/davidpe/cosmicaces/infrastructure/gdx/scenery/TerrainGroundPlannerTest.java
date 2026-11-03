@@ -62,4 +62,17 @@ class TerrainGroundPlannerTest {
             }
         }
     }
+
+    @Test
+    void extendedMapCoversTheWholeHeightWithASinglePartialFinalRow() {
+        TerrainGroundPlanner planner = new TerrainGroundPlanner(8192, 36000);
+        List<TerrainGroundPlanner.Tile> tiles = planner.plan(new WorldRect(0, 0, 8192, 36000));
+
+        assertEquals(16 * 71, tiles.size());
+        List<TerrainGroundPlanner.Tile> finalRow = tiles.stream().filter(tile -> tile.row() == 70).toList();
+        assertEquals(16, finalRow.size());
+        assertTrue(finalRow.stream().allMatch(tile -> tile.height() == 160 && tile.sourceY() == 352));
+        assertEquals(35840, finalRow.getFirst().y());
+        assertEquals(36000, finalRow.getFirst().y() + finalRow.getFirst().height());
+    }
 }

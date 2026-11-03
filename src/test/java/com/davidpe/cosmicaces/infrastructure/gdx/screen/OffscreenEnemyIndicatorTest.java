@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -113,8 +113,10 @@ class OffscreenEnemyIndicatorTest {
   @Test
   void slidesOffTheMinimapPanelAlongTheSameEdgePreservingDirection() {
     OffscreenEnemyIndicator.Placement placement = compute(1000f, -1000f, 0f, 0f, 1f, 1f);
-    MinimapProjection.Rectangle panel = MinimapProjection.fit(PhaseOneGameController.WORLD,
-        VIEW_WIDTH, VIEW_HEIGHT).panel();
+    // The minimap reservation geometry is independent of the active map length; this retired
+    // 8192×12000 panel keeps the test focused on the sliding rule.
+    MinimapProjection.Rectangle panel = MinimapProjection.fit(
+        new WorldBounds(8192f, 12000f), VIEW_WIDTH, VIEW_HEIGHT).panel();
 
     OffscreenEnemyIndicator.Placement moved = OffscreenEnemyIndicator.avoidReservations(
         placement, VIEW_WIDTH, VIEW_HEIGHT, panel);

@@ -8,6 +8,7 @@ import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.domain.scenery.SceneryPlacement;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import java.util.List;
@@ -35,6 +36,8 @@ final class FlightMinimap {
   private static final Color LOCK_COLOR = new Color(1f, 0.92f, 0.30f, 1f);
   private static final Color ASTRA_MISSILE_COLOR = new Color(0.28f, 1f, 0.56f, 1f);
   private static final Color ENEMY_MISSILE_COLOR = new Color(1f, 0.28f, 0.92f, 1f);
+  /** Muted tan used for the approved village PNG milestones on the long map. */
+  private static final Color VILLAGE_COLOR = new Color(0.86f, 0.72f, 0.46f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
@@ -99,6 +102,18 @@ final class FlightMinimap {
       float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
       float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
       MissileTarget selectedTarget, List<GuidedMissile> guidedMissiles) {
+    draw(shapes, world, astra, raider, ghostwingGroups, bomber, escorts, elapsedSeconds,
+        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth,
+        viewportHeight, aiming, aimX, aimY, selectedTarget, guidedMissiles, List.of());
+  }
+
+  void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
+      VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
+      BastionBomber bomber, List<BastionEscort> escorts, float elapsedSeconds,
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
+      float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
+      MissileTarget selectedTarget, List<GuidedMissile> guidedMissiles,
+      List<SceneryPlacement> villagePlacements) {
     if (!isVisible()) return;
     Color previousColor = shapes.getColor().cpy();
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
@@ -122,6 +137,7 @@ final class FlightMinimap {
     shapes.end();
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
+    drawVillageMarkers(shapes, projection, villagePlacements);
     drawAstra(shapes, projection, astra);
     drawEnemyBaseMarker(shapes, projection, enemyBaseCenterX, enemyBaseCenterY);
     if (bomber != null && bomber.hasTakenOff() && bomberBlinkVisible(elapsedSeconds)) {
@@ -146,6 +162,26 @@ final class FlightMinimap {
     drawMissileMarkers(shapes, projection, guidedMissiles);
     shapes.end();
     shapes.setColor(previousColor);
+  }
+
+  private static void drawVillageMarkers(ShapeRenderer shapes, MinimapProjection projection,
+      List<SceneryPlacement> villagePlacements) {
+    shapes.setColor(VILLAGE_COLOR);
+    for (MinimapProjection.Point point : villageMarkers(projection, villagePlacements)) {
+      shapes.rect(point.x() - 2f, point.y() - 2f, 4f, 4f);
+    }
+  }
+
+  /** One projected marker per approved village cell, in the south-to-north order received. */
+  static List<MinimapProjection.Point> villageMarkers(MinimapProjection projection,
+      List<SceneryPlacement> villagePlacements) {
+    if (projection == null || villagePlacements == null) {
+      throw new IllegalArgumentException("Projection and village placements are required");
+    }
+    return villagePlacements.stream()
+        .map(placement -> projection.projectMarker(
+            (float) placement.bounds().centerX(), (float) placement.bounds().centerY(), 4f))
+        .toList();
   }
 
   private static void drawMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,

@@ -63,6 +63,18 @@ class MinimapProjectionTest {
     assertPoint(MinimapProjection.raiderDirection(90f), 1f, 0f);
   }
 
+  @Test void extendedLongWorldKeepsBothExtremesAndTheAspectRatio() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    MinimapProjection projection = MinimapProjection.fit(extended, 1024f, 768f);
+    MinimapProjection.Rectangle map = projection.map();
+
+    assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
+    assertPoint(projection.project(extended.width() / 2f, 0f),
+        map.x() + map.width() / 2f, map.y());
+    assertPoint(projection.project(extended.width() / 2f, extended.height()),
+        map.x() + map.width() / 2f, map.y() + map.height());
+  }
+
   @Test void rejectsNonFinitePositionsAndHeadings() {
     MinimapProjection projection = MinimapProjection.fit(WORLD, 1024f, 768f);
     assertThrows(IllegalArgumentException.class,

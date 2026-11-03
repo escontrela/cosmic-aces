@@ -20,7 +20,7 @@ class PhaseOneGameControllerTest {
     assertSame(scenery, controller.phaseOneScenery());
     assertEquals(PhaseOneScenery.DEFAULT_SEED, scenery.config().seed());
     assertEquals(128, scenery.terrainMap().columns());
-    assertEquals(188, scenery.terrainMap().rows());
+    assertEquals(563, scenery.terrainMap().rows());
     assertFalse(scenery.sceneryField().instances().isEmpty());
   }
 

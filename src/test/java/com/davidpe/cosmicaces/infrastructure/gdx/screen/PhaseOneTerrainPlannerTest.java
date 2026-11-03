@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainCatalog.Tile;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainPlanner.Bounds;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainPlanner.Camera;
@@ -294,6 +295,31 @@ class PhaseOneTerrainPlannerTest {
         seenRear = true;
       }
     }
+  }
+
+  @Test
+  void extendedWorldVisibleBoundsAreNotClippedAtTheRetiredMosaicHeight() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    Bounds middle = PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(4096f, 30000f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT), extended);
+
+    assertTrue(middle.maxY() > PhaseOneTerrainCatalog.WORLD_HEIGHT);
+    assertTrue(middle.minY() >= 0f);
+    assertTrue(middle.maxY() <= extended.height());
+
+    Bounds northEdge = PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(4096f, 35999f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT), extended);
+    assertEquals(extended.height(), northEdge.maxY(), 0.001f);
+    assertEquals(extended.width(), PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(8191f, 30000f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT), extended)
+        .maxX(), 0.001f);
+  }
+
+  @Test
+  void extendedWorldVisibleBoundsRequireAWorld() {
+    Camera camera = new Camera(0f, 0f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    assertThrows(IllegalArgumentException.class,
+        () -> PhaseOneTerrainPlanner.visibleBounds(camera, null));
   }
 
   private static void assertNonDecreasingDistance(
