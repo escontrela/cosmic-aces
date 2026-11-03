@@ -34,7 +34,8 @@ import java.util.function.Supplier;
  * <p>A confirmation revalidates eligibility, builds the new ranking, persists it and only then
  * publishes the new snapshot. If the save fails, the previous ranking and the candidate remain
  * untouched so the player can retry with the same identity and date. A repeated confirmation never
- * saves a second row.
+ * saves a second row. {@link #dismissResolvedCandidate()} may discard only a non-qualifying result
+ * that no longer needs the editor, never a qualifying one that is still waiting for initials.
  */
 public final class HallOfFameSession {
 
@@ -143,6 +144,23 @@ public final class HallOfFameSession {
     pendingCandidate = new HallOfFameCandidate(entryId, result.gameId(), result.points(),
         result.lives(), outcome, ZonedDateTime.now(clock));
     capturedGames.add(result.gameId());
+    return true;
+  }
+
+  /**
+   * Discards a terminal result that no longer needs player action because it did not qualify for the
+   * ranking. A qualifying candidate still waiting for initials is never removed, so an open editor
+   * or a storage failure keeps blocking the attraction loop until the entry is resolved.
+   *
+   * @return {@code true} only when a non-qualifying candidate was discarded
+   */
+  public boolean dismissResolvedCandidate() {
+    requireLoaded();
+    if (pendingCandidate == null || qualifies(pendingCandidate)) {
+      return false;
+    }
+    processedEntryIds.add(pendingCandidate.entryId());
+    pendingCandidate = null;
     return true;
   }
 

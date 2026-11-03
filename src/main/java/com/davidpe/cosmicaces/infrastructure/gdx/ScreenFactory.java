@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import com.badlogic.gdx.Screen;
+import com.davidpe.cosmicaces.application.AttractCycle;
 import com.davidpe.cosmicaces.application.GameCoordinator;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import com.davidpe.cosmicaces.application.score.HallOfFameSession;
@@ -28,12 +29,14 @@ public final class ScreenFactory {
   private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
   private final HallOfFameSession hallOfFameSession;
   private final HallOfFameScroll hallOfFameScroll = new HallOfFameScroll();
+  private final AttractCycle attractCycle;
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher,
-      HallOfFameSession hallOfFameSession) {
+      HallOfFameSession hallOfFameSession, AttractCycle attractCycle) {
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.hallOfFameSession = Objects.requireNonNull(hallOfFameSession, "hallOfFameSession");
+    this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
   }
 
   /**
@@ -52,7 +55,8 @@ public final class ScreenFactory {
   public Screen createWelcomeScreen() {
     GameState state = coordinator.state();
     return new WelcomeScreen(
-        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore);
+        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore,
+        attractCycle);
   }
 
   /**
@@ -73,11 +77,14 @@ public final class ScreenFactory {
    * Creates the Hall of Fame screen from the shared application session. The screen reads the view
    * and load result once per visit, confirms the pending initials through the session and refreshes
    * its own view after a successful registration. The shared scroll keeps the reading position
-   * between visits. The attraction rotation and the start-from-consult navigation arrive with
-   * COS-125.
+   * between visits, and the shared attraction cycle alternates this page with the welcome lobby.
+   * The screen receives the current identity and phase so a Y press in the consultation can request
+   * the same start the welcome screen publishes.
    */
   public Screen createHallOfFameScreen() {
-    return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll);
+    GameState state = coordinator.state();
+    return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll, attractCycle,
+        publisher, state.gameId(), state.phase());
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */

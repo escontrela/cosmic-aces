@@ -59,10 +59,10 @@ es terminal. `PhaseOneScreen.completeRun()` publica el snapshot y `controller.mi
 `GameCoordinator(int)` sigue existiendo sin sesión para pruebas y usos que solo necesitan el estado;
 el arranque de escritorio construye la sesión en `DesktopLauncher` (boot), la inyecta en
 `CosmicAcesGame` y `ScreenFactory.loadSettings()` la carga una vez. La transición terminal la
-materializa `CosmicAcesGame` al final del frame como `HallOfFameScreen` (COS-124); la alternancia de
-atracción y el inicio desde la consulta pertenecen a COS-125. Antes del resultado, `GameAbandoned`
-vuelve a Welcome sin crear candidato; después del resultado se rechaza, de modo que una pantalla
-antigua no puede descartar el candidato pendiente.
+materializa `CosmicAcesGame` al final del frame como `HallOfFameScreen` (COS-124). La alternancia de
+reposo y el inicio con Y desde la consulta viven en `AttractCycle` y en la composición (COS-125).
+Antes del resultado, `GameAbandoned` vuelve a Welcome sin crear candidato; después del resultado se
+rechaza, de modo que una pantalla antigua no puede descartar el candidato pendiente.
 
 ### Hall of Fame: registro de iniciales (COS-124)
 
@@ -101,8 +101,31 @@ retrasado para no saltar la tabla y, al llegar al puesto 50, hace una pausa y un
 antes de continuar. Al cambiar el tamaño se conserva la posición y se ajusta al nuevo número de filas
 visibles. La pantalla recibe la `HallOfFameSession` y distingue lista vacía, datos ilegibles y fallo de
 lectura; no carga el archivo desde `render`. La edición de iniciales (COS-124) añade el modo `ENTRY`,
-el panel de registro y el resaltado de la fila nueva; la alternancia de atracción (COS-125) añade el
-ciclo de reposo y el inicio desde la consulta.
+el panel de registro y el resaltado de la fila nueva. La alternancia de reposo y el inicio con Y
+desde la consulta se describen a continuación.
+
+### Atracción de reposo y ciclo de 10 s (COS-125)
+
+`application.AttractCycle` es el estado puro de la atracción: guarda la página visible
+(`WELCOME`/`HALL_OF_FAME`), el intervalo acumulado y la pausa; no importa LibGDX ni crea pantallas,
+partidas o eventos. `tick(delta)` acumula el delta real, cambia como máximo una vez por llamada al
+superar el umbral inclusivo de `INTERVAL_SECONDS` (10 s) y descarta el exceso tras un lag largo para
+no encadenar páginas. El delta inválido, cero o negativo se ignora. `setPaused(false)` rearma un
+intervalo completo, de modo que Ajustes o el editor abiertos más de diez segundos nunca reutilizan
+tiempo parcial. `enter(Page)` sincroniza el ciclo con una pantalla recién construida y empieza un
+intervalo completo; `restartInterval()` hace lo mismo sin cambiar de página.
+
+`CosmicAcesGame.render()` aplica primero la transición pendiente del coordinador (inicio, ajustes o
+confirmación de la pantalla activa) y solo si no hubo ninguna avanza el ciclo una vez con el delta
+del frame. Al cambiar a `HALL_OF_FAME` materializa `HallOfFameScreen`; al volver a `WELCOME` llama a
+`GameCoordinator.returnToAttractionLobby()`, que devuelve la partida terminada a un lobby nuevo y
+descarta un candidato no clasificado ya resuelto, pero nunca un candidato que aún espera iniciales.
+La partida en curso y la aplicación pausada detienen el ciclo; `WelcomeScreen` lo pausa con Ajustes
+abierto y `HallOfFameScreen` mientras el editor está activo. En la consulta, Y publica
+`StartRequested` con la identidad y fase de la visita: el coordinador lo acepta desde `WELCOME` o
+desde `HALL_OF_FAME` solo si no hay un candidato que clasifique, y crea exactamente una partida. Los
+eventos viejos de otra pantalla siguen rechazándose por identidad/fase. `HallOfFameScroll` se
+comparte entre visitas, así que cada regreso continúa la lectura en lugar de reiniciarla.
 
 LibGDX está permitido en el dominio: las naves y los elementos del escenario
 pueden encapsular su dibujo. El dominio no importa clases de `application`,
@@ -157,7 +180,7 @@ la pantalla no abre los 128 PNG históricos. El minimapa conserva su marco y mar
 Vesper, Ghostwing, las dos bases y el Bastion Bomber tras despegar. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
 `WelcomeScreen.resize` cambia el viewport; el campo queda visible únicamente en las franjas que
-deja el arte. La composición ASCII histórica se sustituye por `welcome-background-v1.png` y el logo
+deja el arte. La antigua composición ASCII se sustituyó por `welcome-background-v1.png` y el logo
 `cosmic-aces-logo-v1.png`, cargados una sola vez por pantalla. `WelcomeScreen.fitCentered` ajusta el
 fondo 4:3 sin deformarlo (letterbox/pillarbox centrado) y el logo se dibuja en la zona superior
 despejada del arte; el prompt `INSERT COIN (pulsa Y)` y `ESC: AJUSTES` se anclan a la franja
@@ -901,10 +924,11 @@ de objetivo (COS-99) enumera las dos metas —destruir los Vesper Raider y derri
 su destino—, advierte del LOSE si el bombardero llega vivo y resume vidas y límite; se dibuja una
 fila por línea y la altura del panel crece con el número de filas (`overlayPanelHeight`), con
 `overlayPanelY` recortando el panel dentro del viewport para que ninguna fila choque. El de resultado
-lee `controller.missionOutcome()` y muestra `WIN`/`LOSE` con una sola fila. ESPACIO (pulsación nueva)
-publica `GameAbandoned` y vuelve a Welcome; ESC abandona desde cualquier estado. Al volver a Welcome,
-`CosmicAcesGame` libera PhaseOne y una partida nueva recibe un controlador y estado nuevos (3 vidas,
-0/3 bajas, 10:00).
+lee `controller.missionOutcome()` y muestra `WIN`/`LOSE` con una sola fila. Tras un resultado
+terminal ya no hay retorno a Welcome desde RESULT: `CosmicAcesGame` sustituye la pantalla por el Hall
+of Fame al terminar el frame y el panel es solo el último frame congelado. ESC abandona mientras no
+exista resultado terminal; entonces vuelve a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
+nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
 
 ### HUD de misión en pantalla (COS-71)
 
@@ -1471,13 +1495,17 @@ com.davidpe.cosmicaces
 |       1. getInstance()  2. createConfiguration()
 |
 +-- application
-|   +-- CosmicAcesGame extends Game: conecta bus, coordinador y pantallas.
+|   +-- CosmicAcesGame extends Game: conecta bus, coordinador, ciclo de atracción y pantallas.
 |   |   1. create(): muestra WelcomeScreen y registra listeners.
-|   |   2. render(): dibuja la pantalla y aplica la transición pendiente.
-|   |   3. dispose(): libera pantalla y suscripciones.
+|   |   2. render(): dibuja la pantalla, aplica la transición pendiente y, si no hubo, avanza la atracción.
+|   |   3. pause()/resume(): pausa o rearma el ciclo de atracción.
+|   |   4. dispose(): libera pantalla y suscripciones.
+|   +-- AttractCycle: estado puro de la alternancia bienvenida/Hall cada 10 s.
+|   |   1. tick(delta)  2. page()  3. elapsedSeconds()
+|   |   4. setPaused()/pause()/resume()  5. enter(page)  6. restartInterval()
 |   +-- GameCoordinator: mantiene la partida global y decide transiciones.
 |   |   1. onEvent()  2. state()  3. snapshot()
-|   |   4. consumePendingTransition()
+|   |   4. consumePendingTransition()  5. returnToAttractionLobby()
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
@@ -1694,7 +1722,7 @@ com.davidpe.cosmicaces
         |       1. drawGround()  2. drawOperationsBase()  3. drawScenery()  4. pageCount()  5. estimatedBytes()  6. dispose()
         +-- ScreenFactory: construye pantallas, carga ajustes y ranking persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
-        |   4. createHallOfFameScreen() [sesión y scroll compartidos]
+        |   4. createHallOfFameScreen() [sesión, scroll y ciclo de atracción compartidos]
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
         |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
         |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
@@ -1725,17 +1753,21 @@ com.davidpe.cosmicaces
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
             +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
-            |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
+            |   1. render() [incluye pausa del ciclo con Ajustes abierto]  2. resize()
+            |   3. handleSettingsInput()  4. dispose()
             |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
             |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
             |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
-            +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado y editor
-            |   de iniciales. Usa la HallOfFameSession y no escribe desde render.
-            |   1. render()  2. resize()  3. dispose()
+            +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado, editor
+            |   de iniciales y consulta de atracción con Y. Usa la HallOfFameSession y no escribe
+            |   desde render; recibe el AttractCycle, el publisher y la identidad/fase de la visita.
+            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con Y]
+            |   2. resize()  3. dispose()
             |   4. drawBackground()  5. drawPanel()  6. drawFixedText()
             |   7. drawRows()  8. drawEmptyState()  9. handleEntryInput()
-            |   10. confirmEntry()  11. drawEntryEditor()  12. drawNonQualifyingNotice()
+            |   10. confirmEntry() [reinicia el intervalo tras REGISTERED]
+            |   11. drawEntryEditor()  12. drawNonQualifyingNotice()
             +-- HallOfFameInitials: estado puro de las tres iniciales y el cursor.
             |   1. initials()  2. cursor()  3. letterAt()  4. isSelected()
             |   5. moveCursor()  6. cycleLetter()  7. reset()  8. LENGTH
@@ -1821,9 +1853,12 @@ PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al termina
 pasa a `HALL_OF_FAME` y, al final del frame, CosmicAcesGame sustituye PhaseOneScreen por el Hall of
 Fame. Si la partida clasifica, el Hall abre el editor de tres iniciales y solo persiste al confirmar
 con Enter; si no clasifica, muestra la tabla sin editor. Antes del resultado, ESC/abandono vuelve a
-Welcome sin crear candidato. La alternancia de atracción y el inicio desde la consulta llegan con
-COS-125. El ranking puro está modelado en `domain.score` (COS-120) y la persistencia local en
-`application.score` e `infrastructure.persistence` (COS-121).
+Welcome sin crear candidato. En reposo, `AttractCycle` alterna Welcome y la consulta del Hall cada
+diez segundos; Ajustes, el editor y una partida activa lo pausan, y Y inicia una única partida desde
+cualquiera de las dos páginas de reposo. Tras registrar o resolver una partida no clasificada, la
+consulta dispone de diez segundos completos y luego vuelve a Welcome con un lobby nuevo. El ranking
+puro está modelado en `domain.score` (COS-120) y la persistencia local en `application.score` e
+`infrastructure.persistence` (COS-121).
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.
 

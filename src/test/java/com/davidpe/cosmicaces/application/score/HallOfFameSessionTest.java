@@ -168,6 +168,37 @@ class HallOfFameSessionTest {
   }
 
   @Test
+  void dismissingANonQualifyingCandidateNeverWritesOrBlocksTheLobby() {
+    InMemoryHallOfFameRepository repository =
+        new InMemoryHallOfFameRepository(fullRanking(1000));
+    HallOfFameSession session = session(repository);
+    PhaseResult low = new PhaseResult(GAME_ONE, GamePhase.PLAYING_PHASE_ONE, 100, 3);
+    assertTrue(session.captureTerminalResult(low, PhaseOutcome.WIN));
+    assertEquals(HallOfFameView.Mode.CONSULT, session.view().mode());
+
+    assertTrue(session.dismissResolvedCandidate());
+
+    assertTrue(session.pendingCandidate().isEmpty());
+    assertEquals(0, repository.saveCalls());
+    assertEquals(HallOfFame.MAX_ENTRIES, session.ranking().size());
+  }
+
+  @Test
+  void dismissingNeverRemovesAQualifyingCandidateOrAStorageFailure() {
+    InMemoryHallOfFameRepository repository = new InMemoryHallOfFameRepository();
+    repository.failNextSaves(1);
+    HallOfFameSession session = session(repository);
+    assertTrue(session.captureTerminalResult(WIN_RESULT, PhaseOutcome.WIN));
+    assertEquals(HallOfFameView.Mode.ENTRY, session.view().mode());
+    assertEquals(HallOfFameConfirmation.Status.STORAGE_FAILURE, session.confirm("ABC").status());
+
+    assertFalse(session.dismissResolvedCandidate());
+
+    assertTrue(session.pendingCandidate().isPresent());
+    assertEquals(HallOfFameView.Mode.ENTRY, session.view().mode());
+  }
+
+  @Test
   void confirmsOncePersistsTheRankingAndClearsTheCandidate() {
     InMemoryHallOfFameRepository repository = new InMemoryHallOfFameRepository();
     HallOfFameSession session = session(repository);

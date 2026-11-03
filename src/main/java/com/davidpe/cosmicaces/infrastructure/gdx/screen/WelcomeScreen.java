@@ -14,6 +14,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.davidpe.cosmicaces.application.AttractCycle;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
@@ -28,6 +29,7 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.VideoDisplaySettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Welcome screen, including its artwork, star field, input and all owned LibGDX resources.
@@ -74,6 +76,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final VideoDisplaySettings videoSettings;
   private final GamePresentationSettings presentationSettings;
   private final GameSettingsStore settingsStore;
+  private final AttractCycle attractCycle;
   private SettingsPage settingsPage = SettingsPage.CLOSED;
   private VideoDisplaySettings.DisplayCatalog videoCatalog;
   private int rootSelection;
@@ -100,12 +103,20 @@ public final class WelcomeScreen extends ScreenAdapter {
   public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
       VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
       GameSettingsStore settingsStore) {
+    this(publisher, gameId, phase, videoSettings, presentationSettings, settingsStore,
+        new AttractCycle());
+  }
+
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
+      GameSettingsStore settingsStore, AttractCycle attractCycle) {
     this.publisher = publisher;
     this.gameId = gameId;
     this.phase = phase;
     this.videoSettings = videoSettings;
     this.presentationSettings = presentationSettings;
     this.settingsStore = settingsStore;
+    this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
     if (settingsStore != null) {
       flightSpeeds = settingsStore.flightSpeeds();
       astraMissilesPerLife = settingsStore.astraMissilesPerLife();
@@ -137,12 +148,16 @@ public final class WelcomeScreen extends ScreenAdapter {
             STAR_MIN_RADIUS,
             STAR_MAX_RADIUS,
             STAR_WRAP_MARGIN);
+    // A newly built lobby always starts a complete attraction interval.
+    attractCycle.enter(AttractCycle.Page.WELCOME);
   }
 
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
     handleSettingsInput();
+    // Ajustes owns the keyboard and the attraction loop while it is open.
+    attractCycle.setPaused(settingsPage != SettingsPage.CLOSED);
     if (settingsPage == SettingsPage.CLOSED && !startRequested
         && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
       startRequested = true;

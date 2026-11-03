@@ -17,13 +17,18 @@ import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.davidpe.cosmicaces.application.AttractCycle;
 import com.davidpe.cosmicaces.application.score.HallOfFameCandidate;
 import com.davidpe.cosmicaces.application.score.HallOfFameConfirmation;
 import com.davidpe.cosmicaces.application.score.HallOfFameLoadResult;
 import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.application.score.HallOfFameView;
+import com.davidpe.cosmicaces.domain.game.GameId;
+import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
+import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.score.HallOfFameEntry;
+import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.List;
 import java.util.Objects;
 
@@ -40,8 +45,13 @@ import java.util.Objects;
  * <p>In entry mode the automatic scroll is suspended, the editor owns the keyboard and the only way
  * out is a successful confirmation; a storage failure keeps both the candidate and the typed initials
  * so Enter can retry. A non-qualifying terminal result shows the ranking without an editor and
- * without writing anything. The attraction rotation and the start-from-consult navigation belong to
- * COS-125.
+ * without writing anything.
+ *
+ * <p>Outside the editor, this screen is one of the two pages of the arcade attraction loop: it keeps
+ * the shared {@link AttractCycle} paused only while the initials editor is open, lets Y start a game
+ * with the same meaning as the welcome INSERT COIN, and restarts a complete consultation interval
+ * after a successful registration. The composition root materialises the page change at the end of
+ * the frame; the screen never switches itself.
  *
  * <p>The scroll offset lives in a shared {@link HallOfFameScroll}, so closing and reopening the
  * screen during the same application run continues from the current place instead of restarting.
@@ -73,6 +83,10 @@ public final class HallOfFameScreen extends ScreenAdapter {
 
   private final HallOfFameSession session;
   private final HallOfFameScroll scroll;
+  private final AttractCycle attractCycle;
+  private final GameEventPublisher publisher;
+  private final GameId gameId;
+  private final GamePhase phase;
   private final HallOfFameLoadResult loadResult;
   private final OrthographicCamera camera;
   private final Viewport viewport;
@@ -93,12 +107,20 @@ public final class HallOfFameScreen extends ScreenAdapter {
   private String feedback = "";
   private int pendingRevealRow = -1;
   private float cursorBlinkSeconds;
+  private boolean startRequested;
 
-  public HallOfFameScreen(HallOfFameSession session, HallOfFameScroll scroll) {
+  public HallOfFameScreen(HallOfFameSession session, HallOfFameScroll scroll,
+      AttractCycle attractCycle, GameEventPublisher publisher, GameId gameId, GamePhase phase) {
     this.session = Objects.requireNonNull(session, "session");
     this.scroll = Objects.requireNonNull(scroll, "scroll");
+    this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
+    this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this.gameId = Objects.requireNonNull(gameId, "gameId");
+    this.phase = Objects.requireNonNull(phase, "phase");
     this.view = session.view();
     this.loadResult = session.loadResult();
+    // Every visit, including the terminal one, starts a complete attraction interval.
+    attractCycle.enter(AttractCycle.Page.HALL_OF_FAME);
     camera = new OrthographicCamera();
     viewport = new ScreenViewport(camera);
     batch = new SpriteBatch();
@@ -129,8 +151,15 @@ public final class HallOfFameScreen extends ScreenAdapter {
 
     // Input is applied before reading the ranking so a confirmed entry is drawn as consultation in
     // the same frame, with its new row already highlighted.
-    if (view.entryRequested()) {
+    boolean entryMode = view.entryRequested();
+    // The editor owns the keyboard and the attraction loop; a consult starts a game with Y exactly
+    // like the welcome INSERT COIN, at most once per visit.
+    attractCycle.setPaused(entryMode);
+    if (entryMode) {
       handleEntryInput();
+    } else if (!startRequested && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+      startRequested = true;
+      publisher.publish(new StartRequested(gameId, phase));
     }
     List<HallOfFameEntry> entries = view.ranking().entries();
     scroll.sync(entries.size(), visibleRows);
@@ -138,7 +167,7 @@ public final class HallOfFameScreen extends ScreenAdapter {
       scroll.revealRow(pendingRevealRow);
       pendingRevealRow = -1;
     }
-    boolean entryMode = view.entryRequested();
+    entryMode = view.entryRequested();
     if (entryMode) {
       // The attraction cycle and the automatic reading pass never move the editor or its row.
       cursorBlinkSeconds += safeDelta(delta);
@@ -253,6 +282,8 @@ public final class HallOfFameScreen extends ScreenAdapter {
         highlightedEntryId = confirmation.entry().map(HallOfFameEntry::id).orElse(null);
         pendingRevealRow = indexOf(confirmation.ranking().entries(), highlightedEntryId);
         feedback = "";
+        // The new consultation gets a complete interval; the editor time is never reused.
+        attractCycle.restartInterval();
       }
       case ALREADY_CONFIRMED, NOT_ELIGIBLE, NO_PENDING_ENTRY -> {
         view = session.view();

@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.application;
 
 import com.badlogic.gdx.Game;
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
@@ -22,6 +23,12 @@ import java.util.Objects;
  * the {@link ScreenFactory} to build screens wired to the same bus, and applies screen transitions
  * only after the current frame finished rendering, so a screen that requests a change during its
  * own {@code render} is never disposed mid-frame.
+ *
+ * <p>It also owns the {@link AttractCycle} of the arcade rest loop: a start, settings or confirmation
+ * handled by the active screen wins over a timeout that expires in the same frame, and the cycle is
+ * advanced at most once after the pending transition was applied. The cycle is paused while a
+ * mission is active and when LibGDX pauses the application; the screens pause it for their own
+ * modal states.
  */
 public final class CosmicAcesGame extends Game {
 
@@ -34,6 +41,7 @@ public final class CosmicAcesGame extends Game {
 
   private final GameEventBus bus = new GameEventBus();
   private final GameCoordinator coordinator;
+  private final AttractCycle attractCycle = new AttractCycle();
   private final ScreenFactory screenFactory;
   private final List<Subscription> subscriptions = new ArrayList<>();
 
@@ -44,7 +52,7 @@ public final class CosmicAcesGame extends Game {
   public CosmicAcesGame(HallOfFameSession hallOfFameSession) {
     Objects.requireNonNull(hallOfFameSession, "hallOfFameSession");
     this.coordinator = new GameCoordinator(STARTING_LIVES, hallOfFameSession);
-    this.screenFactory = new ScreenFactory(coordinator, bus, hallOfFameSession);
+    this.screenFactory = new ScreenFactory(coordinator, bus, hallOfFameSession, attractCycle);
   }
 
   @Override
@@ -57,7 +65,24 @@ public final class CosmicAcesGame extends Game {
   @Override
   public void render() {
     super.render();
-    applyPendingTransition();
+    // A start, settings change or confirmation handled by the screen wins over a timeout that
+    // expires in this same frame.
+    if (applyPendingTransition()) {
+      return;
+    }
+    applyAttractionTransition();
+  }
+
+  @Override
+  public void pause() {
+    super.pause();
+    attractCycle.pause();
+  }
+
+  @Override
+  public void resume() {
+    super.resume();
+    attractCycle.resume();
   }
 
   @Override
@@ -79,16 +104,49 @@ public final class CosmicAcesGame extends Game {
     subscriptions.add(bus.subscribe(GameAbandoned.class, coordinator::onEvent));
   }
 
-  private void applyPendingTransition() {
+  /**
+   * Applies the single transition queued by the coordinator, if any.
+   *
+   * @return {@code true} when a screen was replaced, so the attraction loop must not also rotate in
+   *     the same frame
+   */
+  private boolean applyPendingTransition() {
     GamePhase next = coordinator.consumePendingTransition();
     if (next == null) {
-      return;
+      return false;
     }
     switch (next) {
       case WELCOME -> showScreen(screenFactory.createWelcomeScreen());
-      case PLAYING_PHASE_ONE -> showScreen(screenFactory.createPhaseOneScreen());
+      case PLAYING_PHASE_ONE -> {
+        attractCycle.pause();
+        showScreen(screenFactory.createPhaseOneScreen());
+      }
       case HALL_OF_FAME -> showScreen(screenFactory.createHallOfFameScreen());
     }
+    return true;
+  }
+
+  /**
+   * Advances the arcade rest loop once after the current frame and materialises the page change. A
+   * return to the welcome page resets a finished game to a fresh lobby; the cycle stays on the Hall
+   * if a qualifying candidate still needs initials.
+   */
+  private void applyAttractionTransition() {
+    GamePhase phase = coordinator.state().phase();
+    if (phase != GamePhase.WELCOME && phase != GamePhase.HALL_OF_FAME) {
+      return;
+    }
+    attractCycle.tick(Gdx.graphics.getDeltaTime()).ifPresent(page -> {
+      if (page == AttractCycle.Page.WELCOME) {
+        if (!coordinator.returnToAttractionLobby()) {
+          attractCycle.enter(AttractCycle.Page.HALL_OF_FAME);
+          return;
+        }
+        showScreen(screenFactory.createWelcomeScreen());
+      } else {
+        showScreen(screenFactory.createHallOfFameScreen());
+      }
+    });
   }
 
   private void showScreen(Screen nextScreen) {

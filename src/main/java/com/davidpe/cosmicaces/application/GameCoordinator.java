@@ -82,8 +82,9 @@ public final class GameCoordinator {
 
   /**
    * Applies one event. {@link StartRequested} begins a new game with a fresh identity and state only
-   * when it comes from the welcome screen currently shown; events that do not belong to the current
-   * game and phase (for example a late start or abandon from a previous screen) are ignored.
+   * when it comes from the welcome lobby or from a Hall of Fame consultation that no longer waits for
+   * initials, always with the identity and phase currently shown; events that do not belong to the
+   * current game and phase (for example a late start or abandon from a previous screen) are ignored.
    */
   public void onEvent(GameEvent event) {
     Objects.requireNonNull(event, "event");
@@ -136,7 +137,39 @@ public final class GameCoordinator {
     return transition;
   }
 
+  /**
+   * Returns the persistent state to the welcome lobby after the Hall of Fame consult has been shown
+   * during the attraction loop. It is not an abandonment: no {@link GameAbandoned} is emitted and no
+   * candidate is discarded while it still needs initials.
+   *
+   * <p>A qualifying candidate keeps the state in {@link GamePhase#HALL_OF_FAME} so the editor stays
+   * reachable; a resolved non-qualifying candidate is dismissed. A state that is already
+   * {@link GamePhase#WELCOME} is left untouched, which keeps an attraction visit from inventing a
+   * new game identity.
+   *
+   * @return {@code true} when the lobby may be shown
+   */
+  public boolean returnToAttractionLobby() {
+    if (state.phase() == GamePhase.WELCOME) {
+      return true;
+    }
+    if (state.phase() != GamePhase.HALL_OF_FAME) {
+      return false;
+    }
+    if (hallOfFameSession != null && hallOfFameSession.view().entryRequested()) {
+      return false;
+    }
+    if (hallOfFameSession != null) {
+      hallOfFameSession.dismissResolvedCandidate();
+    }
+    state = newInstanceState(GamePhase.WELCOME);
+    return true;
+  }
+
   private void startNewGame() {
+    if (hallOfFameSession != null) {
+      hallOfFameSession.dismissResolvedCandidate();
+    }
     state = newInstanceState(GamePhase.PLAYING_PHASE_ONE);
     pendingTransition = GamePhase.PLAYING_PHASE_ONE;
   }
@@ -148,14 +181,22 @@ public final class GameCoordinator {
   }
 
   /**
-   * A start is valid only from the welcome state currently shown: the coordinator must still be in
-   * {@link GamePhase#WELCOME} and the event must carry that same identity and phase. Duplicate or
-   * late starts from a previous lobby are therefore discarded before any new state is created.
+   * A start is valid only from the rest state currently shown and with its exact identity and phase.
+   * The welcome lobby always accepts it; the Hall of Fame consult accepts it only after the terminal
+   * result was resolved and no qualifying candidate is still waiting for initials. Duplicate or late
+   * starts from a previous lobby, and stale events from another screen, are therefore discarded
+   * before any new state is created.
    */
   private boolean acceptsStart(StartRequested event) {
-    return state.phase() == GamePhase.WELCOME
-        && state.gameId().equals(event.gameId())
-        && event.phase() == GamePhase.WELCOME;
+    if (!state.gameId().equals(event.gameId()) || state.phase() != event.phase()) {
+      return false;
+    }
+    return switch (state.phase()) {
+      case WELCOME -> true;
+      case HALL_OF_FAME -> hallOfFameSession == null
+          || !hallOfFameSession.view().entryRequested();
+      default -> false;
+    };
   }
 
   /**
