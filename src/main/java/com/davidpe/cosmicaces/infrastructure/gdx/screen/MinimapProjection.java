@@ -2,13 +2,21 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 
-/** Pure world-to-screen transform for the fixed PhaseOne minimap. */
+/**
+ * Pure world-to-screen transform for the fixed PhaseOne minimap. COS-129 grows the panel to almost
+ * the whole usable height instead of a fixed 232×360 box: the map keeps the world aspect ratio and
+ * is anchored above the bottom HUD band, so the taller panel never covers the flight readings.
+ */
 final class MinimapProjection {
-  private static final float PANEL_MAX_WIDTH = 232f;
-  private static final float PANEL_MAX_HEIGHT = 360f;
-  private static final float PANEL_PADDING = 8f;
+  /** Interior gap between the panel border and the map, kept small to use the height. */
+  private static final float PANEL_PADDING = 4f;
+  /** Left clamp and top breathing room of the panel inside the HUD viewport. */
   private static final float VIEWPORT_MARGIN = 12f;
+  private static final float TOP_MARGIN = 4f;
   private static final float RIGHT_MARGIN = 24f;
+  /** Marker scale reference: the previous fixed panel height; taller maps grow markers up to 1.6×. */
+  private static final float REFERENCE_MAP_HEIGHT = 360f;
+  private static final float MAX_VISUAL_SCALE = 1.6f;
   /**
    * Height of the fixed bottom HUD band: the minimap panel starts above it and the off-screen
    * enemy indicator keeps its interior rectangle above it, so no overlay ever covers the flight
@@ -32,16 +40,12 @@ final class MinimapProjection {
   static MinimapProjection fit(WorldBounds world, float viewportWidth, float viewportHeight) {
     if (world == null || !Float.isFinite(viewportWidth) || !Float.isFinite(viewportHeight)
         || viewportWidth <= RIGHT_MARGIN + VIEWPORT_MARGIN + PANEL_PADDING * 2f
-        || viewportHeight <= BOTTOM_MARGIN + VIEWPORT_MARGIN + PANEL_PADDING * 2f) {
+        || viewportHeight <= BOTTOM_MARGIN + TOP_MARGIN + PANEL_PADDING * 2f) {
       throw new IllegalArgumentException("World and usable viewport dimensions are required");
     }
 
-    float panelMaxWidth = Math.min(PANEL_MAX_WIDTH,
-        viewportWidth - RIGHT_MARGIN - VIEWPORT_MARGIN);
-    float panelMaxHeight = Math.min(PANEL_MAX_HEIGHT,
-        viewportHeight - BOTTOM_MARGIN - VIEWPORT_MARGIN);
-    float mapMaxWidth = panelMaxWidth - PANEL_PADDING * 2f;
-    float mapMaxHeight = panelMaxHeight - PANEL_PADDING * 2f;
+    float mapMaxWidth = viewportWidth - RIGHT_MARGIN - VIEWPORT_MARGIN - PANEL_PADDING * 2f;
+    float mapMaxHeight = viewportHeight - BOTTOM_MARGIN - TOP_MARGIN - PANEL_PADDING * 2f;
     float scale = Math.min(mapMaxWidth / world.width(), mapMaxHeight / world.height());
     float mapWidth = world.width() * scale;
     float mapHeight = world.height() * scale;
@@ -62,6 +66,11 @@ final class MinimapProjection {
 
   Rectangle map() {
     return map;
+  }
+
+  /** Marker size factor for the current map: larger panels get slightly larger symbols. */
+  float visualScale() {
+    return Math.max(1f, Math.min(MAX_VISUAL_SCALE, map.height() / REFERENCE_MAP_HEIGHT));
   }
 
   Point project(float worldX, float worldY) {

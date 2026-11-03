@@ -305,7 +305,15 @@ oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras 
 intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
 enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
-el punto rojo con estela direccional de Vesper Raider.
+el punto rojo con estela direccional de Vesper Raider. Desde COS-129 el panel
+aprovecha casi toda la altura útil sobre la banda HUD inferior (al menos el 85 %
+del viewport de 800×600), conserva la proporción 8192×36000 y recalcula su área en
+cada `resize`; su escala visual crece con el mapa hasta 1,6× para marcadores y
+etiquetas. `FlightMinimap` pinta el panel y el interior con relleno oscuro
+translúcido (`PANEL_ALPHA` 0,55 y `MAP_ALPHA` 0,30), activa el blending solo si
+estaba desactivado y restaura el estado GL y el color del renderer al terminar,
+de modo que el escenario se distingue detrás del overlay sin alterar la opacidad
+del resto de escena, HUD o pantallas.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -1855,6 +1863,7 @@ com.davidpe.cosmicaces
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
             |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            |   6. visualScale() [marcadores 1–1,6× según la altura del mapa] (COS-129)
             +-- VillageLabelLayout: nombres y escalera sin solapes de los cinco pueblos (COS-128).
             |   1. seeds()  2. place()  3. MARKER_MARGIN/LABEL_GAP/EDGE_INSET/LINE_GAP
             +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.

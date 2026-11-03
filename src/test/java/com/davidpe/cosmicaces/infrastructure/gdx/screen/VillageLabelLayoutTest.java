@@ -78,6 +78,36 @@ class VillageLabelLayoutTest {
   }
 
   @Test
+  void tallerNominalMapKeepsAllFiveLabelsInsideAndUnoverlapped() {
+    MinimapProjection projection = MinimapProjection.fit(EXTENDED, 800f, 600f);
+    MinimapProjection.Rectangle map = projection.map();
+    assertTrue(map.height() >= 0.85f * 600f,
+        "the COS-129 map uses almost the whole viewport height");
+
+    List<VillageLabelLayout.Seed> seeds = VillageLabelLayout.seeds(
+        projection, VILLAGES, name -> name.length() * 8f);
+    List<VillageLabelLayout.Label> labels =
+        VillageLabelLayout.place(map, seeds, TEXT_HEIGHT);
+
+    assertEquals(5, labels.size());
+    for (VillageLabelLayout.Label label : labels) {
+      assertTrue(label.x() >= map.x() + VillageLabelLayout.EDGE_INSET - 0.0001f,
+          label.name() + " starts inside the taller map");
+      assertTrue(label.right() <= map.x() + map.width() - VillageLabelLayout.EDGE_INSET
+          + 0.0001f, label.name() + " ends inside the taller map");
+      assertTrue(label.bottomY() >= map.y() + VillageLabelLayout.EDGE_INSET - 0.0001f);
+      assertTrue(label.topY() <= map.y() + map.height() - VillageLabelLayout.EDGE_INSET
+          + 0.0001f);
+    }
+    for (int first = 0; first < labels.size(); first++) {
+      for (int second = first + 1; second < labels.size(); second++) {
+        assertFalse(overlaps(labels.get(first), labels.get(second)),
+            labels.get(first).name() + " must not overlap " + labels.get(second).name());
+      }
+    }
+  }
+
+  @Test
   void villagesAtTheSameHeightGetDistinctVerticalBands() {
     MinimapProjection projection = MinimapProjection.fit(EXTENDED, 800f, 600f);
     List<VillageLabelLayout.Label> labels = VillageLabelLayout.place(

@@ -121,11 +121,19 @@ class OffscreenEnemyIndicatorTest {
     OffscreenEnemyIndicator.Placement moved = OffscreenEnemyIndicator.avoidReservations(
         placement, VIEW_WIDTH, VIEW_HEIGHT, panel);
 
-    // The panel's left free segment is nearer than its right one; the tip stays on the bottom edge.
-    assertEquals(panel.x() - OffscreenEnemyIndicator.RESERVATION_GAP, moved.x(), EPS);
+    // The panel's right free segment is nearer than its left one; the tip stays on the bottom edge.
+    assertEquals(VIEW_WIDTH - OffscreenEnemyIndicator.EDGE_MARGIN, moved.x(), EPS);
     assertEquals(BOTTOM, moved.y(), EPS);
     assertEquals(placement.directionX(), moved.directionX(), EPS);
     assertEquals(placement.directionY(), moved.directionY(), EPS);
+
+    // A tip inside the panel but nearer its left edge slides out to the left segment instead.
+    OffscreenEnemyIndicator.Placement nearLeft = new OffscreenEnemyIndicator.Placement(
+        true, panel.x() + 4f, BOTTOM, 0f, -1f);
+    OffscreenEnemyIndicator.Placement movedLeft = OffscreenEnemyIndicator.avoidReservations(
+        nearLeft, VIEW_WIDTH, VIEW_HEIGHT, panel);
+    assertEquals(panel.x() - OffscreenEnemyIndicator.RESERVATION_GAP, movedLeft.x(), EPS);
+    assertEquals(BOTTOM, movedLeft.y(), EPS);
 
     // A tip outside every reservation is returned untouched.
     OffscreenEnemyIndicator.Placement clear = compute(1000f, 0f, 0f, 0f, 1f, 1f);

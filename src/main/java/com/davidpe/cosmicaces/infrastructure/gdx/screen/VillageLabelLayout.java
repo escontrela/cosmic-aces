@@ -8,14 +8,14 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * Pure geometry for the five village labels of the extended PhaseOne minimap. The map panel is very
- * narrow for a world this tall, so labels are stacked in a collision-free ladder next to their
+ * Pure geometry for the five village labels of the extended PhaseOne minimap. The map panel is tall
+ * and narrow for an 8192×36000 world, so labels are stacked in a collision-free ladder next to their
  * markers instead of being drawn on top of each other. The screen measures the font and draws the
  * text; this class only resolves names by asset id and places label boxes inside the map rectangle.
  */
 final class VillageLabelLayout {
-  /** Same clamp margin used by {@link FlightMinimap#villageMarkers}. */
-  static final float MARKER_MARGIN = 4f;
+  /** Same clamp margin used by {@link FlightMinimap#villageMarkers} for the taller COS-129 map. */
+  static final float MARKER_MARGIN = 6f;
   /** Horizontal gap between a marker and the start of its label. */
   static final float LABEL_GAP = 6f;
   /** Keeps every label box clear of the map border. */

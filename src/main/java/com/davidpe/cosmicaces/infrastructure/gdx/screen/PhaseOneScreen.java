@@ -110,8 +110,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
   /** Warm tone shared by the minimap village markers and their name labels. */
   private static final Color VILLAGE_LABEL_COLOR = new Color(0.94f, 0.82f, 0.56f, 1f);
-  /** Caps the village label font so the five names stay inside the narrow minimap map. */
-  private static final float VILLAGE_LABEL_MAX_SCALE = 0.65f;
+  /** Caps the village label font so the five names stay inside the map; COS-129 raised it with the wider panel. */
+  private static final float VILLAGE_LABEL_MAX_SCALE = 0.8f;
   /** Never shrink the label font below this scale, even on very small viewports. */
   private static final float VILLAGE_LABEL_MIN_SCALE = 0.35f;
   private final GameEventPublisher publisher;

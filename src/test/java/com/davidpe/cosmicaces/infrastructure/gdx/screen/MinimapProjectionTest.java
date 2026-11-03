@@ -39,7 +39,9 @@ class MinimapProjectionTest {
           MinimapProjection.fit(WORLD, size[0], size[1]).panel();
       assertEquals(size[0] - 24f, panel.x() + panel.width(), 0.001f);
       assertTrue(panel.y() >= MinimapProjection.BOTTOM_MARGIN);
-      assertTrue(panel.y() + panel.height() <= size[1] - 12f);
+      assertTrue(panel.y() + panel.height() <= size[1]);
+      assertTrue(panel.y() + panel.height() >= size[1] - 8f,
+          "the taller COS-129 panel reaches almost the top edge");
     }
   }
 
@@ -73,6 +75,60 @@ class MinimapProjectionTest {
         map.x() + map.width() / 2f, map.y());
     assertPoint(projection.project(extended.width() / 2f, extended.height()),
         map.x() + map.width() / 2f, map.y() + map.height());
+  }
+
+  @Test void usesAlmostAllUsableHeightAtEightHundredBySixHundred() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    MinimapProjection projection = MinimapProjection.fit(extended, 800f, 600f);
+    MinimapProjection.Rectangle panel = projection.panel();
+    MinimapProjection.Rectangle map = projection.map();
+    float usableHeight = 600f - MinimapProjection.BOTTOM_MARGIN;
+
+    assertTrue(map.height() >= 0.85f * 600f,
+        "the map covers at least 85% of the nominal 600 px viewport height");
+    assertTrue(map.height() >= 0.85f * usableHeight,
+        "the map also covers at least 85% of the band above the bottom HUD");
+    assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
+    assertEquals(MinimapProjection.BOTTOM_MARGIN, panel.y(), 0.0001f,
+        "the panel starts exactly above the fixed bottom HUD band");
+    assertTrue(panel.y() + panel.height() <= 600f);
+    assertTrue(panel.x() >= 0f);
+    assertTrue(panel.x() + panel.width() <= 800f);
+  }
+
+  @Test void recalculatesTheAlmostFullHeightPanelAcrossViewportSizesAndAspectRatios() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    float[][] viewports = {{800f, 600f}, {1200f, 700f}, {1440f, 900f}, {1920f, 1080f}};
+    float previousHeight = 0f;
+
+    for (float[] size : viewports) {
+      MinimapProjection projection = MinimapProjection.fit(extended, size[0], size[1]);
+      MinimapProjection.Rectangle panel = projection.panel();
+      MinimapProjection.Rectangle map = projection.map();
+
+      assertTrue(map.height() >= 0.85f * size[1],
+          "the map fills at least 85% of " + size[0] + "x" + size[1]);
+      assertTrue(map.height() > previousHeight, "the map grows with the viewport height");
+      assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
+      assertEquals(size[0] - 24f, panel.x() + panel.width(), 0.001f,
+          "the panel stays anchored to the right edge");
+      assertTrue(panel.y() >= MinimapProjection.BOTTOM_MARGIN);
+      assertTrue(panel.y() + panel.height() <= size[1]);
+      previousHeight = map.height();
+    }
+  }
+
+  @Test void visualScaleGrowsWithTheTallerMapAndIsCapped() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    MinimapProjection compact = MinimapProjection.fit(extended, 800f, 448f);
+    MinimapProjection nominal = MinimapProjection.fit(extended, 800f, 600f);
+    MinimapProjection fullHd = MinimapProjection.fit(extended, 1920f, 1080f);
+
+    assertEquals(1f, compact.visualScale(), 0.0001f,
+        "the previous 360-unit map keeps the original marker size");
+    assertTrue(nominal.visualScale() > 1f, "the taller map enlarges its markers");
+    assertTrue(nominal.visualScale() <= 1.6f);
+    assertEquals(1.6f, fullHd.visualScale(), 0.0001f, "the scale stops at the cap");
   }
 
   @Test void rejectsNonFinitePositionsAndHeadings() {

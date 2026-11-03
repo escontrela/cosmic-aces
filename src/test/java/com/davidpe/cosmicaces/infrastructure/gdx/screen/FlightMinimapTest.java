@@ -73,7 +73,8 @@ class FlightMinimapTest {
 
     assertEquals(GuidedMissile.Owner.ASTRA, after.owner());
     assertNotEquals(before.position(), after.position(), "marker follows the moving missile");
-    assertEquals(projection.projectMarker(missile.x(), missile.y(), 5f), after.position());
+    assertEquals(projection.projectMarker(missile.x(), missile.y(),
+        FlightMinimap.markerMargin(projection, 5f)), after.position());
 
     missile.retireAfterMission();
     assertTrue(FlightMinimap.missileMarkers(projection, List.of(missile)).isEmpty());
@@ -89,11 +90,46 @@ class FlightMinimapTest {
     FlightMinimap.AimMarkers markers = FlightMinimap.aimMarkers(
         projection, 5900f, 8100f, target);
 
-    assertEquals(projection.projectMarker(5900f, 8100f, 7f), markers.cursor());
-    assertEquals(projection.projectMarker(6200f, 8400f, 8f), markers.selectedTarget());
+    assertEquals(projection.projectMarker(5900f, 8100f,
+        FlightMinimap.markerMargin(projection, 7f)), markers.cursor());
+    assertEquals(projection.projectMarker(6200f, 8400f,
+        FlightMinimap.markerMargin(projection, 10f)), markers.selectedTarget());
     assertNotEquals(markers.cursor(), markers.selectedTarget(),
         "a drone lock must not be drawn at the free cursor position");
     assertEquals(null, FlightMinimap.aimMarkers(projection, 5900f, 8100f, null).selectedTarget());
+  }
+
+  @Test void translucentPanelAndMapStillLeaveTheScenarioVisible() {
+    assertTrue(FlightMinimap.PANEL_ALPHA > 0f && FlightMinimap.PANEL_ALPHA < 1f,
+        "the panel background must be translucent");
+    assertTrue(FlightMinimap.MAP_ALPHA > 0f && FlightMinimap.MAP_ALPHA < 1f,
+        "the map fill must be translucent");
+    assertTrue(FlightMinimap.PANEL_ALPHA > FlightMinimap.MAP_ALPHA,
+        "the panel frame stays darker than the map interior");
+    assertTrue(FlightMinimap.PANEL_ALPHA >= 0.4f && FlightMinimap.PANEL_ALPHA <= 0.7f,
+        "the panel remains dark enough to read the markers");
+  }
+
+  @Test void markerMarginsGrowWithTheMapAndAlwaysStayInsideIt() {
+    MinimapProjection projection = MinimapProjection.fit(
+        new WorldBounds(8192f, 36000f), 800f, 600f);
+    MinimapProjection.Rectangle map = projection.map();
+
+    float margin = FlightMinimap.markerMargin(projection, 5f);
+
+    assertTrue(margin > 5f, "the larger map enlarges marker clamps");
+    assertEquals(5f * projection.visualScale(), margin, 0.0001f);
+    assertTrue(margin * 2f < Math.min(map.width(), map.height()),
+        "a marker clamped by this margin still fits inside the map");
+  }
+
+  @Test void markerMarginsRejectInvalidProjections() {
+    assertThrows(IllegalArgumentException.class,
+        () -> FlightMinimap.markerMargin(null, 5f));
+    MinimapProjection projection = MinimapProjection.fit(
+        new WorldBounds(8192f, 36000f), 800f, 600f);
+    assertThrows(IllegalArgumentException.class,
+        () -> FlightMinimap.markerMargin(projection, -1f));
   }
 
   @Test
