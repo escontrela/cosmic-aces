@@ -7,6 +7,8 @@ import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScreen;
+import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScroll;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
 import java.util.Objects;
@@ -25,6 +27,7 @@ public final class ScreenFactory {
   private final VideoDisplaySettings videoSettings = new VideoDisplaySettings();
   private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
   private final HallOfFameSession hallOfFameSession;
+  private final HallOfFameScroll hallOfFameScroll = new HallOfFameScroll();
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher,
       HallOfFameSession hallOfFameSession) {
@@ -64,6 +67,17 @@ public final class ScreenFactory {
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
         presentationSettings);
+  }
+
+  /**
+   * Creates the Hall of Fame consultation screen from the loaded session. The immutable view and load
+   * result are read once per visit; the shared scroll keeps the reading position between visits. The
+   * screen is not yet part of the navigation: the attraction rotation (COS-125) and the terminal entry
+   * flow (COS-124) wire it in later subtasks.
+   */
+  public Screen createHallOfFameScreen() {
+    return new HallOfFameScreen(
+        hallOfFameSession.view(), hallOfFameSession.loadResult(), hallOfFameScroll);
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */
