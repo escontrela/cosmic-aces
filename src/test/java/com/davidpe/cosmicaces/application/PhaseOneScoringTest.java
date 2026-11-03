@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
@@ -44,7 +45,7 @@ class PhaseOneScoringTest {
         bus.publish(new PointsEarned(gameId, GamePhase.PLAYING_PHASE_ONE, earned));
       }
       if (controller.isRunFinished()) {
-        bus.publish(new PhaseCompleted(coordinator.snapshot()));
+        bus.publish(new PhaseCompleted(coordinator.snapshot(), PhaseOutcome.LOSE));
       }
     }
 

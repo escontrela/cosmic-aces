@@ -721,7 +721,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
    */
   private void completeRun() {
     flow.showResult();
-    publisher.publish(new PhaseCompleted(phaseSnapshot.get()));
+    // The screen publishes the authoritative snapshot together with the terminal decision resolved
+    // by the controller. The application, not the screen, decides whether the whole game finished.
+    publisher.publish(new PhaseCompleted(phaseSnapshot.get(), controller.missionOutcome()));
   }
 
   /**

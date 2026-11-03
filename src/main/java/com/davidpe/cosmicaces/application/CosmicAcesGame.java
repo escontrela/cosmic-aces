@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.application;
 
 import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Screen;
+import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
@@ -13,6 +14,7 @@ import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventBus;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.Subscription;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * LibGDX composition root that coordinates screens and delegates game rules to the application. It
@@ -31,9 +33,19 @@ public final class CosmicAcesGame extends Game {
   private static final int STARTING_LIVES = 3;
 
   private final GameEventBus bus = new GameEventBus();
-  private final GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES);
-  private final ScreenFactory screenFactory = new ScreenFactory(coordinator, bus);
+  private final GameCoordinator coordinator;
+  private final ScreenFactory screenFactory;
   private final List<Subscription> subscriptions = new ArrayList<>();
+
+  /**
+   * @param hallOfFameSession Hall of Fame session assembled by the boot composition root and loaded
+   *     once by {@link ScreenFactory#loadSettings()}
+   */
+  public CosmicAcesGame(HallOfFameSession hallOfFameSession) {
+    Objects.requireNonNull(hallOfFameSession, "hallOfFameSession");
+    this.coordinator = new GameCoordinator(STARTING_LIVES, hallOfFameSession);
+    this.screenFactory = new ScreenFactory(coordinator, bus, hallOfFameSession);
+  }
 
   @Override
   public void create() {

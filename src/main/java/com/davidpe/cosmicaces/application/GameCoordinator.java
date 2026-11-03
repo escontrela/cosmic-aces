@@ -1,5 +1,6 @@
 package com.davidpe.cosmicaces.application;
 
+import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameEvent;
 import com.davidpe.cosmicaces.domain.game.GameId;
@@ -11,6 +12,7 @@ import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Framework-free coordinator that keeps the single {@link GameState} of a game alive across phase
@@ -30,16 +32,38 @@ public final class GameCoordinator {
   private static final long FIRST_GAME_ID = 1L;
 
   private final int startingLives;
+  private final HallOfFameSession hallOfFameSession;
   private long nextGameId;
   private GameState state;
   private GamePhase pendingTransition;
 
+  /**
+   * Creates a coordinator without Hall of Fame capture. Kept for tests and callers that only need the
+   * persistent points/lives state; the desktop application always injects a loaded session.
+   */
   public GameCoordinator(int startingLives) {
+    this(startingLives, null);
+  }
+
+  /**
+   * Creates a coordinator that captures the terminal result of every finished game in the given Hall
+   * of Fame session.
+   *
+   * @param startingLives lives of a new game
+   * @param hallOfFameSession session loaded before the first event, or {@code null} to disable capture
+   */
+  public GameCoordinator(int startingLives, HallOfFameSession hallOfFameSession) {
     if (startingLives < 0) {
       throw new IllegalArgumentException("Starting lives must not be negative: " + startingLives);
     }
     this.startingLives = startingLives;
+    this.hallOfFameSession = hallOfFameSession;
     this.state = newInstanceState(GamePhase.WELCOME);
+  }
+
+  /** Hall of Fame session used to capture terminal results, when the coordinator was given one. */
+  public Optional<HallOfFameSession> hallOfFameSession() {
+    return Optional.ofNullable(hallOfFameSession);
   }
 
   /** Returns the single state of the game currently in progress. */
@@ -82,7 +106,12 @@ public final class GameCoordinator {
       case PhaseCompleted completed -> {
         if (accepts(completed)) {
           state.completePhase(completed.result());
-          state.changePhase(GamePhase.GAME_OVER);
+          if (completed.outcome().isFinished()) {
+            state.changePhase(GamePhase.GAME_OVER);
+            if (hallOfFameSession != null) {
+              hallOfFameSession.captureTerminalResult(completed.result(), completed.outcome());
+            }
+          }
         }
       }
       case GameAbandoned abandoned -> {

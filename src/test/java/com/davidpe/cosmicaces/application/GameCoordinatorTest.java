@@ -12,6 +12,7 @@ import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
@@ -65,7 +66,8 @@ class GameCoordinatorTest {
     coordinator.onEvent(
         new PhaseCompleted(
             new PhaseResult(
-                state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES - 1)));
+                state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES - 1),
+            PhaseOutcome.WIN));
 
     assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES - 1, coordinator.state().lives());
@@ -82,8 +84,8 @@ class GameCoordinatorTest {
     PhaseResult result =
         new PhaseResult(state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES);
 
-    coordinator.onEvent(new PhaseCompleted(result));
-    coordinator.onEvent(new PhaseCompleted(result));
+    coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
+    coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
 
     assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES, coordinator.state().lives());
@@ -211,7 +213,8 @@ class GameCoordinatorTest {
     coordinator.onEvent(new PointsEarned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120));
     coordinator.onEvent(
         new PhaseCompleted(
-            new PhaseResult(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES)));
+            new PhaseResult(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES),
+            PhaseOutcome.WIN));
     assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
     assertNull(coordinator.consumePendingTransition());
 
@@ -263,7 +266,7 @@ class GameCoordinatorTest {
     assertEquals(0, coordinator.state().lives());
 
     coordinator.onEvent(new PhaseCompleted(
-        new PhaseResult(playing, GamePhase.PLAYING_PHASE_ONE, 120, 0)));
+        new PhaseResult(playing, GamePhase.PLAYING_PHASE_ONE, 120, 0), PhaseOutcome.LOSE));
     assertEquals(0, coordinator.state().lives(), "a defeated phase reports zero lives");
     assertEquals(120, coordinator.state().points());
   }

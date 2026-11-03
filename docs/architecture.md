@@ -9,6 +9,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 |---|---|---|
 | `boot` | Arranque y configuración de escritorio | Launcher, configuración LWJGL3 y futura lectura de configuración de arranque. |
 | `application` | Coordinación global y de cada fase | Transiciones, manejo de eventos y controladores que combinan reglas del dominio. |
+| `application.score` | Sesión de aplicación del Hall of Fame | Carga única del ranking, candidato terminal, vista consulta/entrada y confirmación persistida; sin LibGDX ni I/O por frame. |
 | `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. `WorldBounds` representa las dimensiones finitas y el rango útil para cajas de naves. |
 | `domain.score` | Ranking local del Hall of Fame | Entrada confirmada, orden canónico, elegibilidad y alta del top 50; sin I/O, reloj, LibGDX ni pantallas. |
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
@@ -29,6 +30,38 @@ Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
 concreta. No añadas clases base, interfaces ni paquetes vacíos para anticipar
 funcionalidades todavía sin definir.
+
+### Hall of Fame: sesión de aplicación (COS-122)
+
+`application.score.HallOfFameSession` es la sesión de aplicación del Hall of Fame. Recibe el
+`HallOfFameRepository`, un `Clock` y un generador de ids durables; no importa LibGDX. `load()` lee el
+ranking una sola vez por ejecución y conserva el `HallOfFameLoadResult`, incluido si los datos son
+reemplazables. `view()` es una consulta pura que devuelve `HallOfFameView`: modo `ENTRY` solo si el
+candidato pendiente clasificaría, o `CONSULT` para la tabla; nunca crea una partida ni reinicia
+puntos/vidas. `captureTerminalResult(PhaseResult, PhaseOutcome)` crea como máximo un
+`HallOfFameCandidate` por partida, con los puntos/vidas autoritativos del `PhaseResult`, la fecha del
+reloj y un id durable generado una vez. Solo un `PhaseCompleted` aceptado con `WIN`/`LOSE` captura;
+`IN_PROGRESS`, un abandono, un evento viejo y un duplicado no. Un candidato que clasifica no se
+sustituye por otra partida hasta confirmarse; uno que no clasifica no exige iniciales y puede
+sustituirse.
+
+`HallOfFameConfirmation confirm(String initials)` revalida la elegibilidad, construye el ranking
+nuevo, lo persiste y solo entonces lo publica en la sesión. Un `HallOfFameStorageException` (o un
+`loadResult` no escribible) devuelve `STORAGE_FAILURE`, conserva el ranking anterior y el candidato
+para reintentar con el mismo id y fecha. `REGISTERED` añade el id a las confirmaciones procesadas de
+la sesión, de modo que Enter repetido o un evento duplicado no guardan otra partida aunque el
+registro salga después del top 50. `INVALID_INITIALS`, `NOT_ELIGIBLE`, `NO_PENDING_ENTRY` y
+`ALREADY_CONFIRMED` completan el contrato tipado.
+
+`PhaseCompleted` incluye ahora el `PhaseOutcome` autoritativo. `GameCoordinator` reconcilia
+puntos/vidas con el `PhaseResult`; solo pasa a `GAME_OVER` y captura el candidato cuando el outcome
+es terminal. `PhaseOneScreen.completeRun()` publica el snapshot y `controller.missionOutcome()`.
+`GameCoordinator(int)` sigue existiendo sin sesión para pruebas y usos que solo necesitan el estado;
+el arranque de escritorio construye la sesión en `DesktopLauncher` (boot), la inyecta en
+`CosmicAcesGame` y `ScreenFactory.loadSettings()` la carga una vez. La pantalla y la fase visible del
+Hall, la edición de iniciales y la alternancia de atracción pertenecen a COS-123/124/125; esta sesión
+no activa ninguna transición a una pantalla inexistente. La vuelta a Welcome sigue usando
+`GameAbandoned`, que no borra el candidato pendiente.
 
 LibGDX está permitido en el dominio: las naves y los elementos del escenario
 pueden encapsular su dibujo. El dominio no importa clases de `application`,
