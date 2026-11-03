@@ -20,7 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
+| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes con sus nombres aprobados, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
@@ -184,7 +184,13 @@ una página y carga los cinco PNG de pueblo como texturas opacas 1:1, todas prop
 liberadas al salir. El terreno, los pueblos, las bases y la decoración se dibujan en ese orden antes
 de naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame
 y no se abre el mosaico completo de 128 PNG históricos. El minimapa conserva su marco y marcadores de
-Astra, Vesper, Ghostwing, las dos bases, los cinco pueblos y el Bastion Bomber tras despegar. `WelcomeScreen`
+Astra, Vesper, Ghostwing, las dos bases, los cinco pueblos y el Bastion Bomber tras despegar.
+`LegacyMapMilestoneCatalog` asocia a cada PNG de pueblo su nombre aprobado («Noia», «Muros»,
+«Betanzos», «Fisterra» y «Ribadeo») por id de asset, nunca por posición de lista. `VillageLabelLayout`
+resuelve esos nombres, proyecta cada marcador y calcula una escalera de etiquetas sin solapes dentro
+del rectángulo del mapa, con líneas guía solo cuando la etiqueta se desplaza de su marcador;
+`PhaseOneScreen` mide con su propia fuente HUD, la escala para que los nombres quepan, dibuja el texto
+y restaura escala y color, sin crear recursos por frame. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
 `WelcomeScreen.resize` cambia el viewport; el campo queda visible únicamente en las franjas que
 deja el arte. La antigua composición ASCII se sustituyó por `welcome-background-v1.png` y el logo
@@ -1849,6 +1855,8 @@ com.davidpe.cosmicaces
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
             |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            +-- VillageLabelLayout: nombres y escalera sin solapes de los cinco pueblos (COS-128).
+            |   1. seeds()  2. place()  3. MARKER_MARGIN/LABEL_GAP/EDGE_INSET/LINE_GAP
             +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
                 1. compute()  2. avoidReservations()  3. draw()
 ```

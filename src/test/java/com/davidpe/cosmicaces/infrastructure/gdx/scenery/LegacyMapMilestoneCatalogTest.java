@@ -16,11 +16,31 @@ class LegacyMapMilestoneCatalogTest {
     private static final List<String> EXPECTED_IDS = List.of(
             "map-row-02-col-01", "map-row-02-col-02",
             "map-row-03-col-01", "map-row-03-col-02", "map-row-16-col-02");
+    private static final List<String> EXPECTED_NAMES = List.of(
+            "Noia", "Muros", "Betanzos", "Fisterra", "Ribadeo");
 
     @Test
     void listsTheFiveApprovedVillageCellsInSouthToNorthOrder() {
         assertEquals(EXPECTED_IDS, LegacyMapMilestoneCatalog.assets().stream()
                 .map(LegacyMapMilestoneCatalog.Asset::id).toList());
+    }
+
+    @Test
+    void everyVillageKeepsItsApprovedVisibleName() {
+        assertEquals(EXPECTED_NAMES, LegacyMapMilestoneCatalog.assets().stream()
+                .map(LegacyMapMilestoneCatalog.Asset::name).toList());
+        for (int index = 0; index < EXPECTED_IDS.size(); index++) {
+            assertEquals(EXPECTED_NAMES.get(index),
+                    LegacyMapMilestoneCatalog.nameFor(EXPECTED_IDS.get(index)));
+        }
+    }
+
+    @Test
+    void unknownMilestonesAreRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LegacyMapMilestoneCatalog.asset("map-row-01-col-01"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LegacyMapMilestoneCatalog.nameFor("map-row-01-col-01"));
     }
 
     @Test
@@ -33,12 +53,6 @@ class LegacyMapMilestoneCatalogTest {
             assertEquals(asset.height(), image.getHeight(), asset.id());
             assertFalse(image.getColorModel().hasAlpha(), asset.id() + " is an opaque map patch");
         }
-    }
-
-    @Test
-    void unknownMilestonesAreRejected() {
-        assertThrows(IllegalArgumentException.class,
-                () -> LegacyMapMilestoneCatalog.asset("map-row-01-col-01"));
     }
 
     private static BufferedImage read(String internalPath) throws IOException {

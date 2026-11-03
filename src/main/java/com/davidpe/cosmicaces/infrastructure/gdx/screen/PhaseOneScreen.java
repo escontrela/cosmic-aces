@@ -40,6 +40,7 @@ import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
 import com.davidpe.cosmicaces.domain.player.HeroShipSheet;
 import com.davidpe.cosmicaces.domain.scenery.SceneryField;
+import com.davidpe.cosmicaces.domain.scenery.SceneryPlacement;
 import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
@@ -52,6 +53,7 @@ import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.scenery.LegacyMapMilestoneCatalog;
 import com.davidpe.cosmicaces.infrastructure.gdx.scenery.TerrainSceneryRenderer;
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +108,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
   private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
+  /** Warm tone shared by the minimap village markers and their name labels. */
+  private static final Color VILLAGE_LABEL_COLOR = new Color(0.94f, 0.82f, 0.56f, 1f);
+  /** Caps the village label font so the five names stay inside the narrow minimap map. */
+  private static final float VILLAGE_LABEL_MAX_SCALE = 0.65f;
+  /** Never shrink the label font below this scale, even on very small viewports. */
+  private static final float VILLAGE_LABEL_MIN_SCALE = 0.35f;
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
   private final GameId gameId;
@@ -141,6 +149,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final GlyphLayout panelTitleLayout = new GlyphLayout();
   private final GlyphLayout panelDetailLayout = new GlyphLayout();
   private final GlyphLayout panelPromptLayout = new GlyphLayout();
+  /** Measures village names without owning a second font. */
+  private final GlyphLayout villageLabelLayout = new GlyphLayout();
   /**
    * Objective/playing/result lifecycle and the SPACE arming rule. It replaces the former
    * {@code runFinished} boolean and keeps the mission from advancing or firing outside PLAYING.
@@ -583,6 +593,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
           hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
           controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget,
           controller.guidedMissiles(), controller.phaseOneScenery().villagePlacements());
+      if (minimap.isVisible()) {
+        drawVillageLabels();
+      }
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
@@ -828,6 +841,72 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     OffscreenEnemyIndicator.draw(shapes, placement);
+    shapes.end();
+  }
+
+  /**
+   * Draws the five approved village names inside the minimap map. Names come from the infrastructure
+   * catalogue keyed by asset id; the screen only measures, places and draws with the HUD font it
+   * already owns, restoring its scale and colour afterwards. Called only while the minimap is
+   * actually visible, so labels never outlive their markers.
+   */
+  private void drawVillageLabels() {
+    List<SceneryPlacement> villages = controller.phaseOneScenery().villagePlacements();
+    if (villages.isEmpty()) {
+      return;
+    }
+    MinimapProjection projection = MinimapProjection.fit(PhaseOneGameController.WORLD,
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+    float previousScaleX = hudFont.getData().scaleX;
+    float previousScaleY = hudFont.getData().scaleY;
+    try {
+      hudFont.getData().setScale(1f);
+      float maxWidth = 0f;
+      for (SceneryPlacement placement : villages) {
+        villageLabelLayout.setText(hudFont,
+            LegacyMapMilestoneCatalog.nameFor(placement.assetId()));
+        maxWidth = Math.max(maxWidth, villageLabelLayout.width);
+      }
+      float available = projection.map().width()
+          - 2f * VillageLabelLayout.EDGE_INSET - VillageLabelLayout.LABEL_GAP;
+      float scale = Math.max(VILLAGE_LABEL_MIN_SCALE,
+          Math.min(VILLAGE_LABEL_MAX_SCALE, available / maxWidth));
+      hudFont.getData().setScale(scale);
+      List<VillageLabelLayout.Seed> seeds = VillageLabelLayout.seeds(projection, villages,
+          name -> {
+            villageLabelLayout.setText(hudFont, name);
+            return villageLabelLayout.width;
+          });
+      float textHeight = 0f;
+      for (VillageLabelLayout.Seed seed : seeds) {
+        villageLabelLayout.setText(hudFont, seed.name());
+        textHeight = Math.max(textHeight, villageLabelLayout.height);
+      }
+      List<VillageLabelLayout.Label> labels = VillageLabelLayout.place(
+          projection.map(), seeds, textHeight);
+      drawVillageLeaderLines(labels);
+      batch.begin();
+      hudFont.setColor(VILLAGE_LABEL_COLOR);
+      for (VillageLabelLayout.Label label : labels) {
+        hudFont.draw(batch, label.name(), label.x(), label.topY());
+      }
+      batch.end();
+    } finally {
+      hudFont.getData().setScale(previousScaleX, previousScaleY);
+      hudFont.setColor(Color.WHITE);
+    }
+  }
+
+  /** Thin guides only where the collision-free ladder moved a label away from its marker. */
+  private void drawVillageLeaderLines(List<VillageLabelLayout.Label> labels) {
+    shapes.begin(ShapeRenderer.ShapeType.Line);
+    shapes.setColor(VILLAGE_LABEL_COLOR);
+    for (VillageLabelLayout.Label label : labels) {
+      if (!label.needsLeader()) {
+        continue;
+      }
+      shapes.line(label.markerX() + 3f, label.markerY(), label.x() - 2f, label.centerY());
+    }
     shapes.end();
   }
 
