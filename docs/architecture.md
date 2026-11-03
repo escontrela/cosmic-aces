@@ -23,6 +23,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
+| `infrastructure.persistence` | Persistencia local de datos de juego no gráficos | Ranking del Hall of Fame en JSON versionado, con límites, reemplazo atómico y recuperación segura; sin pantallas. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
@@ -1348,6 +1349,37 @@ empate conserva el registro antiguo. `register(entry)` devuelve
 `ALREADY_REGISTERED`; solo el primer caso publica una instantánea nueva y repetir el mismo id
 nunca duplica. La persistencia y los adaptadores pertenecen a las hijas siguientes.
 
+### Hall of Fame: persistencia local (COS-121)
+
+`application.score.HallOfFameRepository` es el contrato mínimo de persistencia del ranking:
+`load()` devuelve `HallOfFameLoadResult(Status, HallOfFame)` y `save(HallOfFame)` reemplaza la
+instantánea completa. `Status` distingue `LOADED` (documento válido), `EMPTY` (todavía no hay
+archivo), `INVALID_DATA` (JSON corrupto, versión desconocida o filas que incumplen el contrato) y
+`STORAGE_FAILURE` (error de E/S). `writable()` indica si el resultado permite reemplazar los datos.
+`save` lanza `HallOfFameStorageException` si no puede completar el reemplazo; nunca informa éxito
+parcial. El contrato exige `load()` una vez por sesión antes de `save()` y prohíbe leer o escribir
+por frame, cambio de pantalla o pulsación.
+
+`infrastructure.persistence.LocalHallOfFameRepository` implementa el contrato con un JSON versionado
+(`version: 1`) de como máximo 50 filas. Cada fila guarda id durable, iniciales, puntos y
+`finishedAt` ISO-8601 con zona, de modo que el instante y la fecha local del fin sobreviven al
+reinicio. La ruta se recibe por constructor; `defaultFilePath()` propone
+`<user.home>/.cosmic-aces/hall-of-fame-v1.json`, resuelta por `ScreenFactory`. La carga limita el
+archivo a 1 MiB, exige un objeto raíz con versión conocida y un array `entries`, y rechaza ids
+duplicados, iniciales inválidas, puntos negativos o fuera de `int`, fechas inválidas y más de 50
+filas. La validación es todo-o-nada: una fila inválida invalida el documento completo y no se
+descartan filas en silencio. Las filas válidas se normalizan con `HallOfFame.of`.
+
+La escritura usa un archivo temporal hermano, `force(true)`, cierre completo y
+`Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`; si el filesystem no soporta el movimiento atómico
+se usa un movimiento de reemplazo sobre el mismo directorio. Un fallo deja intacta la instantánea
+anterior y elimina el temporal. Si `load()` devuelve `INVALID_DATA` o `STORAGE_FAILURE`, el adaptador
+se niega a sobrescribir el archivo hasta que una carga válida lo permita. `ScreenFactory` construye
+el adaptador y carga una vez por sesión en `loadSettings()`; expone `hallOfFameRepository()` y
+`hallOfFameLoadResult()` para las pantallas y la sesión terminal de las hijas siguientes. Los tests
+y el smoke inyectan rutas bajo `target/` (o redirigen `user.home`), nunca el archivo real del
+jugador.
+
 ## Clases actuales y métodos principales
 
 Los métodos están enumerados por clase. Se omiten constructores y getters
@@ -1394,6 +1426,12 @@ com.davidpe.cosmicaces
 |   +-- PhaseOneScenery: mapa, decoración y reserva de base preparados una vez por ejecución.
 |       1. config()  2. terrainMap()  3. sceneryField()  4. operationsBasePlacement()
 |       5. operationsBaseSpawnCenterX()  6. operationsBaseSpawnCenterY()
+|   +-- score
+|   |   +-- HallOfFameRepository: contrato de carga y reemplazo del ranking persistido.
+|   |   |   1. load()  2. save()
+|   |   +-- HallOfFameLoadResult(status, ranking): resultado explícito de la carga.
+|   |   |   1. empty()  2. loaded()  3. invalidData()  4. storageFailure()  5. writable()
+|   |   +-- HallOfFameStorageException: fallo recuperable de escritura.
 |
 +-- domain
 |   +-- game
@@ -1566,6 +1604,10 @@ com.davidpe.cosmicaces
 |       +-- WorldRect: rectángulo mundial inmutable, expansión de reserva e intersección.
 |
 +-- infrastructure
+    +-- persistence
+    |   +-- LocalHallOfFameRepository implements application.score.HallOfFameRepository: JSON v1
+    |       local con límites, reemplazo atómico y protección ante carga fallida.
+    |       1. load()  2. save()  3. defaultFilePath()  4. file()
     +-- gdx
         +-- scenery
         |   +-- TerrainAtlasCatalog: ids lógicos, dimensiones y ruta del atlas de una página.
@@ -1574,8 +1616,9 @@ com.davidpe.cosmicaces
         |   |   1. plan(WorldRect)
         |   +-- TerrainSceneryRenderer: repetición del césped, base y sprites visibles con SpriteBatch.
         |       1. drawGround()  2. drawOperationsBase()  3. drawScenery()  4. pageCount()  5. estimatedBytes()  6. dispose()
-        +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
+        +-- ScreenFactory: construye pantallas, carga ajustes y ranking persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
+        |   4. hallOfFameRepository()  5. hallOfFameLoadResult()
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
         |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
         |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
@@ -1676,7 +1719,8 @@ PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la mi
 PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al terminar, GameCoordinator
 cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el panel WIN/LOSE hasta que una
 pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe la pantalla de Hall of Fame;
-su ranking puro ya está modelado en `domain.score` (COS-120) y la persistencia y la presentación se
+su ranking puro ya está modelado en `domain.score` (COS-120) y la persistencia local está disponible
+en `application.score` e `infrastructure.persistence` (COS-121). La presentación y el registro se
 añaden en las hijas siguientes.
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.

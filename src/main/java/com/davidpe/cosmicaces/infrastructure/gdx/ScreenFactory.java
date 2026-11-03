@@ -3,11 +3,14 @@ package com.davidpe.cosmicaces.infrastructure.gdx;
 import com.badlogic.gdx.Screen;
 import com.davidpe.cosmicaces.application.GameCoordinator;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.application.score.HallOfFameLoadResult;
+import com.davidpe.cosmicaces.application.score.HallOfFameRepository;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
+import com.davidpe.cosmicaces.infrastructure.persistence.LocalHallOfFameRepository;
 import java.util.Objects;
 
 /**
@@ -23,18 +26,42 @@ public final class ScreenFactory {
   private final GameSettingsStore settingsStore = new GameSettingsStore();
   private final VideoDisplaySettings videoSettings = new VideoDisplaySettings();
   private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
+  private final HallOfFameRepository hallOfFameRepository;
+  private HallOfFameLoadResult hallOfFameLoadResult = HallOfFameLoadResult.empty();
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher) {
-    this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
-    this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this(coordinator, publisher,
+        new LocalHallOfFameRepository(LocalHallOfFameRepository.defaultFilePath()));
   }
 
-  /** Loads file-backed preferences after LibGDX creates its application context. */
+  ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher,
+      HallOfFameRepository hallOfFameRepository) {
+    this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
+    this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this.hallOfFameRepository =
+        Objects.requireNonNull(hallOfFameRepository, "hallOfFameRepository");
+  }
+
+  /**
+   * Loads file-backed preferences and the Hall of Fame once, after LibGDX creates its application
+   * context. The ranking is not read again per frame, screen change or keystroke.
+   */
   public void loadSettings() {
     settingsStore.initialize();
     presentationSettings.loadFrom(settingsStore);
     videoSettings.useSettingsStore(settingsStore);
     videoSettings.restoreSavedPreference();
+    hallOfFameLoadResult = hallOfFameRepository.load();
+  }
+
+  /** Ranking repository wired for this session; screens must not read or write it per frame. */
+  public HallOfFameRepository hallOfFameRepository() {
+    return hallOfFameRepository;
+  }
+
+  /** Snapshot loaded once for this session, including whether the persisted data was usable. */
+  public HallOfFameLoadResult hallOfFameLoadResult() {
+    return hallOfFameLoadResult;
   }
 
   /** Creates the welcome screen for the current welcome state. */
