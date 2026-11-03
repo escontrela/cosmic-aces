@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.weapon.GunTuning;
+import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -12,6 +13,16 @@ import org.junit.jupiter.api.Test;
  * or native backend is needed.
  */
 class PhaseOneAudioTest {
+
+  @Test
+  void guidedMissileLaunchCueIsPackagedAsAnInternalResource() {
+    try (InputStream sound = Thread.currentThread().getContextClassLoader()
+        .getResourceAsStream(PhaseOneAudio.MISSILE_LAUNCH_PATH)) {
+      assertTrue(sound != null, "the configured missile cue must be on the runtime classpath");
+    } catch (java.io.IOException failure) {
+      throw new AssertionError("could not close the missile cue resource", failure);
+    }
+  }
 
   @Test
   void burstCountIsThePositiveDeltaBetweenCounterSamples() {

@@ -1,5 +1,7 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
+import com.davidpe.cosmicaces.domain.player.FlightControls;
+
 /**
  * Pure interaction lifecycle of {@link PhaseOneScreen}: the objective panel ({@code INTRO}), the
  * running mission ({@code PLAYING}) and the frozen result panel ({@code RESULT}).
@@ -12,6 +14,8 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
  */
 final class PhaseOneScreenFlow {
 
+  record AimDirection(float horizontal, float vertical) {}
+
   /** Screen stage of the mission lifecycle. */
   enum Stage {
     INTRO,
@@ -22,6 +26,8 @@ final class PhaseOneScreenFlow {
   private Stage stage = Stage.INTRO;
   /** True until a press is consumed; a physical release re-arms the next press. */
   private boolean spaceArmed = true;
+  /** Weapon mode is presentation/input state; ammunition and aiming remain in the controller. */
+  private boolean missileArmed;
 
   Stage stage() {
     return stage;
@@ -37,6 +43,63 @@ final class PhaseOneScreenFlow {
 
   boolean isResult() {
     return stage == Stage.RESULT;
+  }
+
+  boolean isMissileArmed() {
+    return missileArmed;
+  }
+
+  /** Enters missile mode once, and only during active play. */
+  boolean armMissile() {
+    if (stage != Stage.PLAYING || missileArmed) return false;
+    missileArmed = true;
+    return true;
+  }
+
+  /** A missile uses one fresh SPACE edge; holding the key cannot launch another. */
+  boolean consumeMissileLaunch(boolean spaceJustPressed) {
+    if (stage != Stage.PLAYING || !missileArmed || !spaceJustPressed || !spaceArmed) {
+      return false;
+    }
+    spaceArmed = false;
+    return true;
+  }
+
+  /** Returns to cannon mode after a successful launch while consuming its SPACE press. */
+  void missileLaunched() {
+    if (stage != Stage.PLAYING || !missileArmed) return;
+    missileArmed = false;
+    // The launch press must be released before it can produce a cannon burst.
+    spaceArmed = false;
+  }
+
+  /** Returns true when ESC should cancel missile mode instead of leaving the phase. */
+  boolean consumeMissileEscape() {
+    if (stage != Stage.PLAYING || !missileArmed) return false;
+    missileArmed = false;
+    // A SPACE key held across the weapon switch must not fire the cannon.
+    spaceArmed = false;
+    return true;
+  }
+
+  /** Death, respawn or a result must not leave an armed weapon or a held trigger behind. */
+  void resetWeaponMode() {
+    missileArmed = false;
+    spaceArmed = false;
+  }
+
+  /** Maps the held arrows to a free world-axis aim direction only in missile mode. */
+  AimDirection aimDirection(boolean left, boolean right, boolean up, boolean down) {
+    if (!missileArmed || stage != Stage.PLAYING) return new AimDirection(0f, 0f);
+    return new AimDirection((right ? 1f : 0f) - (left ? 1f : 0f),
+        (up ? 1f : 0f) - (down ? 1f : 0f));
+  }
+
+  /** Missile mode preserves straight cruise and consumes neither steering nor the Ultra key. */
+  FlightControls flightControls(boolean left, boolean right, boolean up, boolean down,
+      boolean activateUltra) {
+    if (stage != Stage.PLAYING || missileArmed) return FlightControls.neutral();
+    return new FlightControls(left, right, up, down, activateUltra);
   }
 
   /**
@@ -67,7 +130,7 @@ final class PhaseOneScreenFlow {
    * been released since the last consumed press, so a held trigger from the objective never emits.
    */
   boolean fireTrigger(boolean spaceDown) {
-    return stage == Stage.PLAYING && spaceDown && spaceArmed;
+    return stage == Stage.PLAYING && !missileArmed && spaceDown && spaceArmed;
   }
 
   /**
@@ -76,6 +139,7 @@ final class PhaseOneScreenFlow {
    */
   void showResult() {
     stage = Stage.RESULT;
+    missileArmed = false;
     spaceArmed = false;
   }
 

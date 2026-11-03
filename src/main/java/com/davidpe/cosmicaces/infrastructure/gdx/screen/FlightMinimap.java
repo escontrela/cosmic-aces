@@ -8,6 +8,8 @@ import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
+import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import java.util.List;
 
 /**
@@ -29,20 +31,45 @@ final class FlightMinimap {
   private static final Color BOMBER_COLOR = new Color(1f, 0.24f, 0.12f, 1f);
   private static final Color BOMBER_CORE_COLOR = new Color(1f, 0.91f, 0.62f, 1f);
   private static final Color ESCORT_COLOR = new Color(1f, 0.36f, 0.28f, 1f);
+  private static final Color AIM_COLOR = new Color(0.30f, 0.96f, 1f, 1f);
+  private static final Color LOCK_COLOR = new Color(1f, 0.92f, 0.30f, 1f);
+  private static final Color ASTRA_MISSILE_COLOR = new Color(0.28f, 1f, 0.56f, 1f);
+  private static final Color ENEMY_MISSILE_COLOR = new Color(1f, 0.28f, 0.92f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
   private static final float ASTRA_BASE_LENGTH = 5f;
   private static final float ASTRA_HALF_WIDTH = 4f;
 
-  private boolean visible;
+  private boolean preferredVisible;
+  private boolean targeting;
+  private boolean missileTracking;
+
+  record AimMarkers(MinimapProjection.Point cursor, MinimapProjection.Point selectedTarget) {}
+  record MissileMarker(MinimapProjection.Point position, GuidedMissile.Owner owner) {}
 
   boolean isVisible() {
-    return visible;
+    return preferredVisible || targeting || missileTracking;
   }
 
   void toggle() {
-    visible = !visible;
+    preferredVisible = !preferredVisible;
+  }
+
+  void setTargeting(boolean targeting) {
+    this.targeting = targeting;
+  }
+
+  boolean isTargeting() {
+    return targeting;
+  }
+
+  void setMissileTracking(boolean missileTracking) {
+    this.missileTracking = missileTracking;
+  }
+
+  boolean hasMissileTracking() {
+    return missileTracking;
   }
 
   void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
@@ -51,15 +78,29 @@ final class FlightMinimap {
       float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
       float viewportWidth, float viewportHeight) {
     draw(shapes, world, astra, raider, ghostwingGroups, bomber, List.of(), elapsedSeconds,
-        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth, viewportHeight);
+        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth,
+        viewportHeight, false, 0f, 0f, null, List.of());
   }
 
   void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
       VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
       BastionBomber bomber, List<BastionEscort> escorts, float elapsedSeconds,
       float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
-      float viewportWidth, float viewportHeight) {
-    if (!visible) return;
+      float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
+      MissileTarget selectedTarget) {
+    draw(shapes, world, astra, raider, ghostwingGroups, bomber, escorts, elapsedSeconds,
+        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth,
+        viewportHeight, aiming, aimX, aimY, selectedTarget, List.of());
+  }
+
+  void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
+      VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
+      BastionBomber bomber, List<BastionEscort> escorts, float elapsedSeconds,
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
+      float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
+      MissileTarget selectedTarget, List<GuidedMissile> guidedMissiles) {
+    if (!isVisible()) return;
+    Color previousColor = shapes.getColor().cpy();
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
     MinimapProjection.Rectangle panel = projection.panel();
     MinimapProjection.Rectangle map = projection.map();
@@ -77,6 +118,7 @@ final class FlightMinimap {
     drawBaseMarker(shapes, projection, baseCenterX, baseCenterY);
     if (raider != null) drawRaiderTrail(shapes, projection, raider);
     drawGroupMarkers(shapes, projection, ghostwingGroups);
+    if (aiming) drawAimMarker(shapes, projection, aimX, aimY, selectedTarget);
     shapes.end();
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
@@ -101,7 +143,65 @@ final class FlightMinimap {
         shapes.circle(point.x(), point.y(), 3.5f, 12);
       }
     }
+    drawMissileMarkers(shapes, projection, guidedMissiles);
     shapes.end();
+    shapes.setColor(previousColor);
+  }
+
+  private static void drawMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,
+      List<GuidedMissile> missiles) {
+    for (MissileMarker marker : missileMarkers(projection, missiles)) {
+      MinimapProjection.Point point = marker.position();
+      shapes.setColor(marker.owner() == GuidedMissile.Owner.ASTRA
+          ? ASTRA_MISSILE_COLOR : ENEMY_MISSILE_COLOR);
+      shapes.circle(point.x(), point.y(), 5f, 12);
+      shapes.setColor(Color.WHITE);
+      shapes.circle(point.x(), point.y(), 1.8f, 8);
+    }
+  }
+
+  /** Current projected positions; recalculated each draw so the dots follow live missile motion. */
+  static List<MissileMarker> missileMarkers(MinimapProjection projection,
+      List<GuidedMissile> missiles) {
+    if (projection == null || missiles == null) {
+      throw new IllegalArgumentException("Projection and missiles are required");
+    }
+    return missiles.stream().filter(GuidedMissile::isActive)
+        .map(missile -> new MissileMarker(
+            projection.projectMarker(missile.x(), missile.y(), 5f), missile.owner()))
+        .toList();
+  }
+
+  /** The cursor and selected target have deliberately different shapes and colors. */
+  private static void drawAimMarker(ShapeRenderer shapes, MinimapProjection projection,
+      float aimX, float aimY, MissileTarget selectedTarget) {
+    AimMarkers markers = aimMarkers(projection, aimX, aimY, selectedTarget);
+    MinimapProjection.Point cursor = markers.cursor();
+    shapes.setColor(AIM_COLOR);
+    float[] cursorVertices = diamondVertices(cursor, 5f);
+    shapes.line(cursorVertices[0], cursorVertices[1], cursorVertices[2], cursorVertices[3]);
+    shapes.line(cursorVertices[2], cursorVertices[3], cursorVertices[4], cursorVertices[5]);
+    shapes.line(cursorVertices[4], cursorVertices[5], cursorVertices[6], cursorVertices[7]);
+    shapes.line(cursorVertices[6], cursorVertices[7], cursorVertices[0], cursorVertices[1]);
+    if (markers.selectedTarget() == null) return;
+    MinimapProjection.Point locked = markers.selectedTarget();
+    shapes.setColor(LOCK_COLOR);
+    shapes.circle(locked.x(), locked.y(), 7f, 16);
+    shapes.line(locked.x() - 10f, locked.y(), locked.x() - 5f, locked.y());
+    shapes.line(locked.x() + 5f, locked.y(), locked.x() + 10f, locked.y());
+    shapes.line(locked.x(), locked.y() - 10f, locked.x(), locked.y() - 5f);
+    shapes.line(locked.x(), locked.y() + 5f, locked.x(), locked.y() + 10f);
+  }
+
+  static AimMarkers aimMarkers(MinimapProjection projection, float aimX, float aimY,
+      MissileTarget selectedTarget) {
+    if (projection == null || !Float.isFinite(aimX) || !Float.isFinite(aimY)) {
+      throw new IllegalArgumentException("Projection and finite aim coordinates are required");
+    }
+    MinimapProjection.Point cursor = projection.projectMarker(aimX, aimY, 7f);
+    MinimapProjection.Point target = selectedTarget == null ? null
+        : projection.projectMarker(selectedTarget.x(), selectedTarget.y(), 8f);
+    return new AimMarkers(cursor, target);
   }
 
   static boolean bomberBlinkVisible(float elapsedSeconds) {

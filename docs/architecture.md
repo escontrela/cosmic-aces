@@ -13,7 +13,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
-| `domain.weapon` | Elementos de las armas | Modelo de proyectiles, cadencia, dibujo reutilizable de ráfagas y metadatos de láminas de proyectiles (`GuidedMissileSheet`). |
+| `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos, metadatos (`GuidedMissileSheet`) y su layout gráfico puro (`GuidedMissileSpriteLayout`). |
 | `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
@@ -21,7 +21,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo y dibujo de instancias; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
-| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase. El dominio y `PhaseOneGameController` no importan clases de audio. |
+| `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
@@ -88,9 +88,9 @@ LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.
 contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
-Vídeo, Cámara, Encuadre, Nave y Velocidades de Astra son overlays de infraestructura y no cambian la transición de Y ni el ESC
+Vídeo, Cámara, Encuadre, Nave, Velocidades de Astra y Armamento son overlays de infraestructura y no cambian la transición de Y ni el ESC
 de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
-`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra` y `Cámara` con almacén de
+`Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra`, `Armamento` y `Cámara` con almacén de
 preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
 que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
 y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
@@ -172,14 +172,22 @@ orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
 lecturas. Marca el centro aliado con un punto cian y el enemigo con una X roja,
-además de Astra, Vesper y Ghostwing. `GoForwardPrompt`, propiedad de `PhaseOneScreen`, crea y
-libera una textura procedural con aro azul degradado y dispone “GO FORWARD” en
-un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier
-tecla o clic lo oculta. Durante el combate, `PhaseOneScreen` oculta el minimapa mientras un
-Vesper activo intersecta el viewport, usando la misma comprobación de cámara
-rotada y zoom que decide dibujar al enemigo. Al salir del viewport o quedar
-destruido, el mapa recupera la preferencia elegida con M; la ocultación temporal
-no modifica esa preferencia. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
+además de Astra, Vesper y Ghostwing. Durante el apuntado de misiles, la pantalla fuerza la
+visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al salir del modo;
+M no puede ocultar la única superficie de selección. El rombo cian muestra la mira libre y un aro
+amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
+la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
+la cámara actual, sin moverla. `FlightHud` presenta AIM-120 AMRAAM, munición, objetivo fijado o su
+ausencia y la ayuda de controles dentro de la banda inferior. Mientras haya misiles guiados activos,
+`PhaseOneScreen` fuerza temporalmente la visibilidad del minimapa incluso fuera del modo de apuntado;
+`FlightMinimap` proyecta su posición actual por frame como un punto brillante, verde para Astra y
+magenta para los misiles enemigos. La preferencia M se conserva y se restaura al retirarse todos los
+misiles. `GoForwardPrompt`, propiedad de
+`PhaseOneScreen`, crea y libera una textura procedural con aro azul degradado y dispone “GO FORWARD”
+en un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier tecla o clic lo
+oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras un Vesper activo
+intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
+enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
 el punto rojo con estela direccional de Vesper Raider.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
@@ -254,6 +262,45 @@ constructor de cuatro argumentos; las firmas anteriores se conservan) y expone
 llama a `advanceGeran4` después de `flightCamera.update(...)` y antes de las armas,
 y considera dogfight la coincidencia visible con Vesper o con un escolta caza
 activo que ataca a Astra.
+
+### Misiles guiados y comprobación visual del PO (COS-106)
+
+`PhaseOneGameController` es dueño del inventario por vida (`MissileLoadout`), la
+mira (`MissileAim`), los objetivos vivos (`MissileTarget`) y los proyectiles
+`GuidedMissile`. `armAstraMissile`, `moveAstraMissileAim` y
+`selectedAstraMissileTarget` coordinan el modo de apuntado; `launchAstraMissile`
+valida objetivo y munición antes de crear el misil. `advanceWeapons` avanza
+proyectiles y resuelve impactos dentro del tiempo activo de la fase. Los misiles
+de escolta se programan desde `BastionEscort` y comparten el mismo modelo de
+proyectil y la resolución de combate. `PhaseOneScreenFlow` mantiene los estados
+INTRO/PLAYING/RESULT y consume los flancos de SPACE; `PhaseOneScreen` convierte
+F, flechas, SPACE y ESC en llamadas al controlador, y presenta HUD/minimapa.
+`GuidedMissileSheet` describe el atlas y `GuidedMissileSpriteLayout` calcula el
+recorte/orientación sin poseer texturas. La pantalla comparte una textura del
+atlas para ambos bandos y la libera al disponer sus recursos; no se carga desde
+el bucle de render. `PhaseOneAudio` carga `sound-misile-fire-burst.wav` como un
+`Sound` compartido de la pantalla y lo libera en `dispose()`; la pantalla lo
+reproduce solo si `launchAstraMissile()` confirma el lanzamiento y consumió
+munición. La mira sin objetivo, el agotamiento de munición y las pulsaciones
+rechazadas permanecen silenciosas.
+
+Guion de QA visual manual del PO para COS-106:
+
+1. Abrir Ajustes → Armamento, comprobar los valores iniciales 2 misiles y
+   1500 u/s, ajustar ambos extremos, guardar, volver a entrar y confirmar persistencia.
+2. Iniciar PhaseOne en `FOLLOW_ASTRA` y `NORTH_UP`; comprobar el HUD, el
+   minimapa, la retícula y el aro del objetivo tras resize y en HiDPI.
+3. Con Astra en vuelo, pulsar F, fijar objetivos dentro y fuera del viewport y
+   lanzar con SPACE. Comprobar salida bajo la nave, breve separación, aceleración,
+   humo corto, giro suave y escala respecto a Astra y Vesper.
+4. Pulsar ESC después del lanzamiento: confirmar retorno al cañón sin recuperar
+   munición. Mantener SPACE en los cambios de modo y verificar que una pulsación
+   sostenida no dispara de nuevo.
+5. Revisar explosión de enemigo normal, daño escalonado del Bastion y daño a
+   Astra; comprobar que el contacto entre naves no reduce la vida enemiga.
+6. Verificar que solo los dos escoltas del Bastion usan misiles y que HUD,
+   efectos, munición y modo de arma se limpian tras muerte, reaparición y cambio
+   de pantalla.
 
 ### Combate y presentación del UAV Geran-4 (COS-95)
 
@@ -449,7 +496,13 @@ intermitente con intervalos de 0,3 s.
 `BastionEscort` mantiene dos encuentros Vesper adicionales: se despliegan a izquierda y derecha
 cuando el bombardero despega y conservan esos puestos mientras Astra está fuera de 1800 u. Al
 detectar a Astra pasan al mismo encuentro de aproximación, pasadas y disparo que el Raider normal.
-El controlador resuelve por separado su energía, impactos, cañones, puntos y muertes; la pantalla
+Cada escolta posee además su dotación configurada (una por defecto), un objetivo de fijación y un
+reloj independiente: `advanceMissileLock(delta, target)` exige 2 s continuos dentro de 1800 u y
+`consumeLockedMissile(reference)` consume una sola vez la referencia exacta de la vida de Astra.
+Salir del radio, perder el objetivo o destruir la escolta reinicia la fijación. El controlador genera
+un misil de bando ENEMY desde la escolta concreta y lo añade al mismo flujo de guiado, colisiones y
+daño; no habilita misiles para el Raider suelto, el Bastion ni los drones. El controlador resuelve por
+separado su energía, impactos, cañones, puntos y muertes; la pantalla
 reutiliza las texturas compartidas de Vesper y solo emite disparos cuando escolta y Astra coinciden
 en cámara. La aparición inicial del Raider principal permanece independiente.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
@@ -578,6 +631,8 @@ muerte; `advance(dt)` avanza el reloj de muerte o de inmunidad; `respawn()` rein
 energía, contador residual y generación de vida. `canAct()` = vivo o inmune;
 `canBeHit()` = solo activo. El controlador decide cuándo destruir (energía cero o
 contacto de cascos) para atribuir una única vez el bonus de destrucción.
+`receiveMissileDamage(points)` aplica daño directo positivo solo si `canBeHit()`, limita energía a cero y
+conserva el residual de cañón.
 
 `PhaseOneGameController` posee `astraCombat()` y `raiderCombat()`. Cada frame dentro
 del recorrido llama a `advanceCombat(delta)`: avanza los dos relojes, reapariciones y
@@ -737,7 +792,11 @@ El panel WIN/LOSE visible corresponde al hijo de flujo de pantalla.
 pantalla: `Stage` = `INTRO` (panel de objetivo), `PLAYING` (misión activa) y `RESULT` (panel
 congelado). También posee el latch de ESPACIO: una pulsación solo actúa después de que la tecla se
 haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara y la que dispara el
-golpe final no confirma el panel. Sustituye al antiguo `boolean runFinished`. `ScreenFactory` ya no
+golpe final no confirma el panel. Gestiona además el modo de arma: F lo activa solo durante PLAYING;
+en ese modo ESPACIO acepta una sola pulsación nueva, las flechas producen dirección de mira y los
+controles de vuelo quedan neutros (incluido P/Ultra). ESC consume la entrada y vuelve al cañón; en
+modo cañón conserva el abandono de fase. Muerte, nueva vida y resultado limpian el modo y exigen
+liberar ESPACIO antes de una nueva ráfaga. `ScreenFactory` ya no
 llama a `controller.start()` al construir la pantalla; el inicio ocurre en `PhaseOneScreen` al
 consumir la primera pulsación de ESPACIO, y ese mismo frame simula 0 segundos y no emite disparos.
 
@@ -1003,12 +1062,80 @@ ni velocidad. Se dibuja una vez por proyectil de cada cañón; la colocación de
 dos cañones, emisión, movimiento, cadencia y retirada corresponden a COS-27.
 
 `domain.weapon.GuidedMissileSheet` describe `assets/images/projectiles/guided-missile-sheet-v1.png`,
-un atlas de 1280×1280 con celdas de 160×160. `slice(faction, heading, stage)` selecciona una región
-de 8 orientaciones (columnas, norte y sentido horario) y 4 etapas de combustión (filas por bando:
-primero Astra y después enemigo). `region(texture, faction, heading, stage)` crea la `TextureRegion`
-equivalente y valida las dimensiones del atlas. El llamador —normalmente la pantalla o el renderer—
-es dueño de la `Texture` y debe liberarla; esta clase solo describe y recorta el recurso, sin añadir
-todavía comportamiento de movimiento, guiado, impactos ni carga por frame.
+un atlas de 1280×1280 con una cuadrícula base de 160×160. `slice(faction, heading, stage)` selecciona
+una región de 8 orientaciones (columnas, norte y sentido horario) y 4 etapas de combustión (filas por
+bando: primero Astra y después enemigo). La estela de Astra/norte/ignición cruza seis píxeles a la fila
+siguiente: su recorte termina en y=166 y el de combustión empieza allí, para evitar contaminación entre
+fases. Los demás recortes conservan su celda de 160×160. `bodyAnchor(...)` devuelve un pivote medido
+sobre el cuerpo, no sobre el humo, en píxeles locales con origen inferior izquierdo; el renderer debe
+colocar ese pivote en la posición mundial del misil y rotar alrededor de él. Esto compensa el cambio de
+posición del cuerpo entre filas. El rumbo de las columnas crece en sentido horario desde el norte;
+al dibujar con una rotación matemática LibGDX debe convertirse explícitamente a sentido antihorario.
+
+`domain.weapon.GuidedMissileVisuals` crea una `Texture` y prepara una sola vez 64 `TextureRegion`;
+`region(faction, heading, stage)` devuelve una región prestada que el consumidor no debe modificar.
+El llamador —en PhaseOne, la pantalla— es dueño de los visuales y debe llamar a `dispose()`; el
+constructor libera la textura si falla la preparación y `dispose()` es idempotente. No hay carga por
+frame ni recursos estáticos. `GuidedMissileSpriteLayout` escoge la orientación atlas más cercana,
+convierte a rotación antihoraria solo el residuo del rumbo y calcula el pivote, las dimensiones y un
+radio conservador de culling. Escala el cuerpo medido al 30% del largo del fuselaje de Astra,
+independiente del espacio transparente de la celda. `GuidedMissileVisuals.draw` usa el pivote medido
+para mantener el centro del cuerpo en la posición mundial en las cuatro etapas. `PhaseOneScreen`
+carga/libera una sola instancia compartida, dibuja SEPARATING debajo de las aeronaves y los misiles
+en aceleración/guiado por encima; el culling solo omite dibujo y no detiene simulación ni guiado.
+
+`domain.weapon.MissileConfig` captura los parámetros inmutables de misiles de una partida: dos por vida
+para Astra (rango 0–10), uno por escolta, seis segundos de combustible, velocidad máxima de 1500 u/s y
+giro máximo de 180°/s por defecto. También centraliza los parámetros técnicos de separación, aceleración,
+mira y fijación; `withAstraMissilesPerLife` y `withMaxSpeed` crean una configuración nueva sin alterar
+partidas existentes. La velocidad máxima común se puede ajustar entre 1100 y 3000 u/s para ambos bandos.
+`MissileLoadout` mantiene el arma seleccionada y la munición restante: `armMissile`/`armCannon` no
+recargan; `consumeForLaunch(validTarget)` consume una unidad solo si el misil está armado y el blanco es
+válido; `restoreForNewLife` repone capacidad y selecciona cañón. `PhaseOneGameController` recibe la
+configuración al construirse, expone lecturas y comandos, cancela el modo misil al morir o terminar y
+repone únicamente en `handleRespawns` después de una reaparición real. La emisión física, la validación
+de la identidad del objetivo y la operación atómica de crear el misil quedan para las subtareas posteriores.
+
+`MissileAim` mantiene una mira libre en coordenadas del mundo, normaliza diagonales y respeta los límites
+de `WorldBounds`. `select` fija la aeronave viva más cercana dentro del radio configurado y resuelve
+empates por tipo, identificador y generación. `MissileTarget` es una instantánea con referencia, centro,
+velocidad, radio, nombre y clasificación de jefe; no contiene texturas ni cámara. El controlador enumera
+Vesper, escoltas desplegados, Ghostwing individuales, Geran-4 individuales y Bastion; `missileTarget`
+resuelve la identidad exacta y no confunde una vida reaparecida con la anterior. La selección se calcula
+con los objetivos vivos actuales, incluidos los que están fuera del viewport; al desaparecer un objetivo
+su referencia deja de resolverse. `armAstraMissile` inicia la mira en el centro de Astra una sola vez,
+`moveAstraMissileAim` recibe dirección y delta ya traducidos por infraestructura, y `armAstraCannon`
+la cancela. `PhaseOneScreen` traduce F/flechas/ESPACIO/ESC, conserva la preferencia del minimapa M y
+solicita el dibujo de la mira, mientras el controlador crea y avanza los misiles desde sus coordenadas.
+
+`WelcomeScreen` ofrece Ajustes → Armamento con ↑/↓ para elegir entre misiles por vida y velocidad máxima,
+y ←/→ para ajustar. La dotación usa paso 1, rango 0–10 e inicial 2; la velocidad compartida por Astra y
+escoltas usa paso 100 u/s, rango 1100–3000 e inicial 1500. `GameSettingsStore` persiste esos enteros en
+`astra.missiles.perLife` y `weapon.guidedMissile.maxSpeed`, conserva las demás preferencias y usa los
+valores iniciales si alguno está ausente, tiene tipo incorrecto o queda fuera de rango.
+`ScreenFactory.createPhaseOneController` captura ambas preferencias al crear cada partida y construye un
+`MissileConfig` nuevo; cambiar ajustes después afecta solo a partidas posteriores. Sin `GameSettingsStore`,
+el constructor alternativo de bienvenida mantiene el menú reducido y no presenta la sección Armamento.
+
+`domain.weapon.GuidedMissile` modela un único proyectil con propietario, referencia exacta de objetivo,
+posición y rumbo mundial. `advance(delta, target)` conserva la etapa de separación, acelera con una rampa
+lineal hasta el máximo configurado y después guía con giro acotado e intercepción de velocidad constante;
+divide el delta en subpasos y devuelve los segmentos recorridos para que el controlador de combate pueda
+resolver impactos barridos. El combustible cuenta desde el lanzamiento; objetivo ausente o de otra vida
+retira el misil sin cambiarlo por otro. `consumeOnImpact()` deja el misil terminal para que la capa de
+combate aplique daño una sola vez. `MissileTarget.Kind.ASTRA` permite representar a Astra como blanco de
+los misiles enemigos; la selección de Astra sigue consultando únicamente la lista de enemigos. El modelo
+expone además `faction()`, `heading()` y `combustionStage()` para reutilizar el atlas; no crea recursos ni
+decide daño, input o dibujo.
+
+`PhaseOneGameController.advanceGuidedMissiles()` integra los segmentos devueltos por el modelo con
+`CollisionDetector.sweep` y movimiento relativo del objetivo, en subpasos de 1/120 s. Revalida la
+referencia y generación de vida justo antes de aplicar el impacto. Un misil de Astra destruye enemigos
+normales y aplica 60 puntos de daño directo a Bastion; uno enemigo aplica 50 puntos a Astra. El daño
+directo de `ShipCombatState.receiveMissileDamage()` respeta `canBeHit()`, llega como máximo a cero y no
+altera el contador residual de impactos de cañón. Las transiciones idempotentes de destrucción evitan
+daño o recompensa duplicados; el controlador retira los misiles restantes cuando termina la misión y no
+procesa impactos fuera del tiempo activo del recorrido.
 
 `domain.weapon.GunProjectile` es un proyectil puramente visual: copia en su
 constructor su origen mundial y un vector de rumbo que normaliza una sola vez,
@@ -1278,10 +1405,10 @@ com.davidpe.cosmicaces
 |   |   |   6. currentRegion() [abstracto protegido]
 |   |   |   +-- SpritePlacement(scale, offsetX, offsetY): registro de la pose.
 |   |   +-- ShipCombatState: energía, impactos, vidas e inmunidad de una nave.
-|   |   |   1. receiveProjectileHit()  2. destroy()  3. advance()
-|   |   |   4. readyToRespawn()  5. respawn()  6. energyPercent()
-|   |   |   7. canAct()  8. canBeHit()  9. secondsSinceDeath()
-|   |   |   10. invulnerabilityRemaining()  11. lifeGeneration()
+|   |   |   1. receiveProjectileHit()  2. receiveMissileDamage()  3. destroy()  4. advance()
+|   |   |   5. readyToRespawn()  6. respawn()  7. energyPercent()
+|   |   |   8. canAct()  9. canBeHit()  10. secondsSinceDeath()
+|   |   |   11. invulnerabilityRemaining()  12. lifeGeneration()
 |   |   +-- MovementIntent: direccion deseada para cualquier nave.
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
@@ -1306,8 +1433,10 @@ com.davidpe.cosmicaces
 |   |   |   1. advance()  2. flightState()  3. hasTakenOff()  4. frameIndex()
 |   |   |   5. headingDegrees()  6. centerX()  7. centerY()  8. setVisuals()
 |   |   |   +-- Visuals: textura compartida y cinco regiones; dispose() la libera.
-|   |   +-- BastionEscort: Vesper adicional que conserva formación y activa su encuentro al detectar Astra.
-|   |   |   1. deploy()  2. advance()  3. isAttacking()  4. combat()  5. gun()  6. destroy()
+|   |   +-- BastionEscort: Vesper adicional que conserva formación, activa su encuentro al detectar Astra,
+|   |   |   y mantiene fijación/dotación de misil independiente.
+|   |   |   1. deploy()  2. advance()  3. advanceMissileLock()  4. consumeLockedMissile()
+|   |   |   5. isAttacking()  6. combat()  7. gun()  8. missilesRemaining()  9. destroy()
 |   |   +-- Geran4UavSheet: ruta, tamaño y tres recortes de hélice del PNG Geran-4.
 |   |   |   1. internalPath()  2. frameSlices()  3. frameSlice()
 |   |   +-- Geran4Uav extends Ship: UAV sin armas con rumbo fijo y hélice de tres fases.
@@ -1457,9 +1586,11 @@ com.davidpe.cosmicaces
             |   15. drawObjectivePanel()  16. drawResultPanel()  17. drawOverlayPanel()
             |   18. objectiveDetailLines() [copy puro]
             |   19. overlayPanelHeight() / overlayPanelY() [geometría pura de ambos paneles]
-            +-- PhaseOneScreenFlow: ciclo INTRO/PLAYING/RESULT y latch de ESPACIO, sin LibGDX.
-            |   1. observeSpace()  2. consumeStartPress()  3. fireTrigger()
-            |   4. showResult()  5. consumeResultConfirm()  6. stage() [Stage = INTRO | PLAYING | RESULT]
+            +-- PhaseOneScreenFlow: ciclo de pantalla y selección input cañón/misil, sin LibGDX.
+            |   1. observeSpace()  2. consumeStartPress()  3. armMissile()
+            |   4. consumeMissileLaunch()  5. consumeMissileEscape()  6. fireTrigger()
+            |   7. aimDirection()  8. flightControls()  9. resetWeaponMode()
+            |   10. showResult()  11. consumeResultConfirm()  12. stage()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
@@ -1490,10 +1621,10 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, bases, Astra, Vesper, Bastion y grupos Ghostwing.
-                1. toggle()  2. isVisible()  3. draw()
-                4. bomberBlinkVisible()  5. diamondVertices() [geom. pura del rombo]
-                6. GROUP_MARKER_HALF
+            +-- FlightMinimap: overlay opcional del mundo, selección de misil y marcadores de objetivo.
+                1. toggle()  2. isVisible()  3. setTargeting()  4. draw()
+                5. aimMarkers() [proyección pura del cursor/objetivo]  6. bomberBlinkVisible()
+                7. diamondVertices() [geom. pura del rombo]  8. GROUP_MARKER_HALF
             +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
                 1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.

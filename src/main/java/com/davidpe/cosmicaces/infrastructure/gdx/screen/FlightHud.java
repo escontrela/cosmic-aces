@@ -12,6 +12,7 @@ final class FlightHud {
   private static final Color SHADOW = new Color(0f, 0f, 0f, 0.85f);
   private static final Color HEADING_COLOR = new Color(0.44f, 0.86f, 0.96f, 1f);
   private static final Color ENERGY_COLOR = new Color(0.52f, 0.95f, 0.62f, 1f);
+  private static final Color LOCK_COLOR = new Color(1f, 0.92f, 0.30f, 1f);
   private static final float EDGE_MARGIN = 24f;
   private static final float SCORE_VALUE_GAP = 12f;
   private static final float SCORE_TOP_MARGIN = 24f;
@@ -19,6 +20,10 @@ final class FlightHud {
   private final GlyphLayout scoreValueLayout = new GlyphLayout();
   private final GlyphLayout weaponLayout = new GlyphLayout();
   private final GlyphLayout energyLayout = new GlyphLayout();
+  private final GlyphLayout missileNameLayout = new GlyphLayout();
+  private final GlyphLayout missileAmmoLayout = new GlyphLayout();
+  private final GlyphLayout missileTargetLayout = new GlyphLayout();
+  private final GlyphLayout missileHelpLayout = new GlyphLayout();
 
   static String headingLabel(float yawDegrees) {
     int index = headingIndex(yawDegrees);
@@ -41,6 +46,15 @@ final class FlightHud {
     return "ENERGIA " + clamped + "%";
   }
 
+  static String missileAmmoLabel(int remaining, int capacity) {
+    if (remaining <= 0) return "Sin misiles";
+    return "MISILES " + remaining + "/" + Math.max(0, capacity);
+  }
+
+  static String missileTargetLabel(String targetName) {
+    return targetName == null || targetName.isBlank() ? "Sin objetivo" : "OBJETIVO " + targetName;
+  }
+
   static float rightAlignedX(float viewportWidth, float contentWidth) {
     return Math.max(EDGE_MARGIN, viewportWidth - EDGE_MARGIN - contentWidth);
   }
@@ -50,7 +64,9 @@ final class FlightHud {
   }
 
   void draw(SpriteBatch batch, BitmapFont font, float yawDegrees, float speed,
-      boolean isFiring, int energyPercent, float viewportWidth) {
+      boolean isFiring, int energyPercent, float viewportWidth, boolean missileArmed,
+      int missilesRemaining, int missileCapacity, String missileTarget) {
+    Color originalFontColor = font.getColor().cpy();
     String heading = headingLabel(yawDegrees) + " " + threeDigits(headingDegrees(yawDegrees));
     String velocity = Math.round(speed) + " km/h";
     GlyphLayout velocityLayout = new GlyphLayout(font, velocity);
@@ -63,13 +79,48 @@ final class FlightHud {
     font.setColor(Color.WHITE);
     font.draw(batch, velocity, velocityX, 35f);
     drawEnergy(batch, font, energyPercent);
-    drawWeapon(batch, font, isFiring, viewportWidth);
+    if (missileArmed) {
+      drawMissileStatus(batch, font, missilesRemaining, missileCapacity, missileTarget,
+          viewportWidth);
+    } else {
+      drawWeapon(batch, font, isFiring, viewportWidth);
+    }
     batch.end();
+    font.setColor(originalFontColor);
+  }
+
+  /** Missile selection stays in the fixed bottom band, clear of the minimap on the right. */
+  private void drawMissileStatus(SpriteBatch batch, BitmapFont font, int remaining,
+      int capacity, String target, float viewportWidth) {
+    String name = "AIM-120 AMRAAM";
+    String ammo = missileAmmoLabel(remaining, capacity);
+    String targetLabel = missileTargetLabel(target);
+    String help = "ESPACIO lanzar  ·  ESC ráfagas";
+    missileNameLayout.setText(font, name);
+    missileAmmoLayout.setText(font, ammo);
+    missileTargetLayout.setText(font, targetLabel);
+    missileHelpLayout.setText(font, help);
+    float nameX = centeredX(viewportWidth, missileNameLayout.width);
+    float ammoX = centeredX(viewportWidth, missileAmmoLayout.width);
+    float helpX = centeredX(viewportWidth, missileHelpLayout.width);
+    drawShadow(font, batch, name, nameX, 111f);
+    drawShadow(font, batch, ammo, ammoX, 94f);
+    drawShadow(font, batch, targetLabel, EDGE_MARGIN, 77f);
+    drawShadow(font, batch, help, helpX, 60f);
+    font.setColor(LOCK_COLOR);
+    font.draw(batch, missileNameLayout, nameX, 111f);
+    font.setColor(remaining <= 0 ? Color.ORANGE : Color.WHITE);
+    font.draw(batch, missileAmmoLayout, ammoX, 94f);
+    font.setColor(target == null || target.isBlank() ? Color.ORANGE : LOCK_COLOR);
+    font.draw(batch, missileTargetLayout, EDGE_MARGIN, 77f);
+    font.setColor(HEADING_COLOR);
+    font.draw(batch, missileHelpLayout, helpX, 60f);
   }
 
   /** Draws a separated label and value in the top-right, clear of the bottom-right speed. */
   void drawScore(SpriteBatch batch, BitmapFont font, int points, float viewportWidth,
       float viewportHeight) {
+    Color originalFontColor = font.getColor().cpy();
     String label = "SCORE";
     String value = Integer.toString(points);
     scoreLabelLayout.setText(font, label);
@@ -85,6 +136,7 @@ final class FlightHud {
     font.draw(batch, scoreLabelLayout, labelX, y);
     font.draw(batch, scoreValueLayout, valueX, y);
     batch.end();
+    font.setColor(originalFontColor);
   }
 
   /** M61 Vulcan label in a free bottom row, centered so it never touches heading, speed or score. */

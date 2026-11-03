@@ -43,6 +43,11 @@ import com.davidpe.cosmicaces.domain.scenery.SceneryField;
 import com.davidpe.cosmicaces.domain.scenery.WorldRect;
 import com.davidpe.cosmicaces.domain.weapon.GunBurstVisual;
 import com.davidpe.cosmicaces.domain.weapon.GunProjectile;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSheet;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSpriteLayout;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileVisuals;
+import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
@@ -100,6 +105,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private static final float EXPLOSION_PEAK_FACTOR = 1.8f;
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
+  private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
   private final GameEventPublisher publisher;
   private final PhaseOneGameController controller;
   private final GameId gameId;
@@ -125,6 +131,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final BastionBomber.Visuals bastionBomberVisuals;
   private final GhostwingDrone.Visuals ghostwingVisuals;
   private final Geran4Uav.Visuals geran4Visuals;
+  private final GuidedMissileVisuals guidedMissileVisuals;
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final AstraLightEffect astraLightEffect;
@@ -195,6 +202,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     BastionBomber.Visuals loadedBastionBomber = null;
     GhostwingDrone.Visuals loadedGhostwing = null;
     Geran4Uav.Visuals loadedGeran4 = null;
+    GuidedMissileVisuals loadedGuidedMissiles = null;
     ShipExplosionVisuals loadedExplosion = null;
     ShipHitFlashRenderer loadedHitFlash = null;
     AstraLightEffect loadedAstraLight = null;
@@ -211,6 +219,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       loadedBastionBomber = new BastionBomber.Visuals();
       loadedGhostwing = new GhostwingDrone.Visuals();
       loadedGeran4 = new Geran4Uav.Visuals();
+      loadedGuidedMissiles = new GuidedMissileVisuals();
       loadedExplosion = new ShipExplosionVisuals();
       loadedHitFlash = new ShipHitFlashRenderer();
       loadedAstraLight = new AstraLightEffect();
@@ -254,6 +263,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (loadedGeran4 != null) {
         loadedGeran4.dispose();
       }
+      if (loadedGuidedMissiles != null) {
+        loadedGuidedMissiles.dispose();
+      }
       if (loadedAstra != null) {
         loadedAstra.dispose();
       }
@@ -280,6 +292,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     bastionBomberVisuals = loadedBastionBomber;
     ghostwingVisuals = loadedGhostwing;
     geran4Visuals = loadedGeran4;
+    guidedMissileVisuals = loadedGuidedMissiles;
     explosionVisuals = loadedExplosion;
     hitFlashRenderer = loadedHitFlash;
     astraLightEffect = loadedAstraLight;
@@ -296,9 +309,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
+    boolean canceledMissileModeThisFrame = false;
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-      publisher.publish(new GameAbandoned(gameId, phase));
-      return;
+      if (flow.consumeMissileEscape()) {
+        controller.armAstraCannon();
+        canceledMissileModeThisFrame = true;
+      } else {
+        publisher.publish(new GameAbandoned(gameId, phase));
+        return;
+      }
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
       minimap.toggle();
@@ -321,6 +340,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
       publisher.publish(new GameAbandoned(gameId, phase));
       return;
     }
+    boolean armedMissileThisFrame = false;
+    if (!canceledMissileModeThisFrame && flow.isPlaying() && !startedThisFrame
+        && Gdx.input.isKeyJustPressed(Input.Keys.F) && !flow.isMissileArmed()
+        && controller.armAstraMissile()) {
+      armedMissileThisFrame = flow.armMissile();
+    }
+    boolean missileLaunchRequested = !canceledMissileModeThisFrame && !armedMissileThisFrame
+        && flow.consumeMissileLaunch(spaceJustPressed);
     // Only an already-running mission advances, and never on the frame that consumed the start press.
     boolean simulate = flow.isPlaying() && !startedThisFrame;
     // The still-active slice of this frame: it bounds the clock and every simulation step to the
@@ -341,10 +368,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
       controller.advanceGhostwing(activeSeconds);
       // Combat timers, hull-to-hull contact and respawn placements run once per frame inside the
       // run; they never advance once the phase has finished.
+      boolean astraWasActiveBeforeCombat = controller.isAstraActive();
       earned += controller.advanceCombat(activeSeconds, astraLives);
+      if (astraWasActiveBeforeCombat && !controller.isAstraActive()) {
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
+      }
       int lifeGeneration = controller.astraCombat().lifeGeneration();
       if (lifeGeneration != observedAstraLifeGeneration) {
         observedAstraLifeGeneration = lifeGeneration;
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
         goForwardPromptVisible = true;
       }
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
@@ -385,6 +419,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       long astraBurstsBefore = controller.astraGun().emissionCount();
       long raiderBurstsBefore = controller.raiderGun().emissionCount();
       long escortBurstsBefore = escortEmissionCount();
+      boolean astraWasActiveBeforeWeapons = controller.isAstraActive();
+      if (missileLaunchRequested && controller.launchAstraMissile()) {
+        audio.playMissileLaunch();
+        flow.missileLaunched();
+        controller.armAstraCannon();
+      }
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
           flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
@@ -401,6 +441,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // A raider projectile can also destroy Astra inside advanceWeapons; publish that loss too
       // before the mission decision and the HUD read the authoritative snapshot.
       publishAstraLifeLosses();
+      if (astraWasActiveBeforeWeapons && !controller.isAstraActive()) {
+        flow.resetWeaponMode();
+        controller.armAstraCannon();
+      }
       // Decide the single mission outcome only after every movement, contact and projectile of the
       // active slice has been resolved and its points and lives are already published. The priority
       // lives in PhaseOneMission: 0 lives loses before the third kill, then the goal, then the clock.
@@ -436,6 +480,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (escort.isActive()) escort.raider().setMuzzleFlashVisible(escort.gun().flashVisible());
     }
     batch.begin();
+    drawGuidedMissiles(batch, true);
     if (goForwardPromptVisible && controller.isAstraActive()) {
       goForwardPrompt.draw(batch, hudFont,
           controller.astra().x() + controller.astra().drawWidth() / 2f,
@@ -489,6 +534,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // propeller frame from its own clock, culled against the camera that draws this frame.
     drawGeran4Uavs(batch);
     drawExplosions(batch);
+    drawGuidedMissiles(batch, false);
     batch.end();
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
     // projectile with its frozen shot-time position and forward vector. Never re-read the current
@@ -510,8 +556,12 @@ public final class PhaseOneScreen extends ScreenAdapter {
       }
     }
     shapes.end();
+    drawMissileAimReticle();
     batch.setProjectionMatrix(hudCamera.combined);
     shapes.setProjectionMatrix(hudCamera.combined);
+    minimap.setTargeting(flow.isMissileArmed());
+    minimap.setMissileTracking(
+        controller.guidedMissiles().stream().anyMatch(GuidedMissile::isActive));
     // Off-screen Vesper indicator: drawn first so the minimap overlay never covers it, and only
     // while a live raider stays outside the real camera view (destroyed, awaiting respawn, not yet
     // appeared or a finished run produce no placement). The triangle stays above the fixed bottom
@@ -519,7 +569,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     drawOffscreenIndicator();
     // Combat temporarily suppresses the overlay without changing the player's M preference.
     // Use the same current-camera visibility decision as the enemy drawing above.
-    if (!enemyInViewport) {
+    if (!enemyInViewport || minimap.isTargeting() || minimap.hasMissileTracking()) {
+      MissileTarget selectedTarget = controller.selectedAstraMissileTarget().orElse(null);
       minimap.draw(shapes, PhaseOneGameController.WORLD, controller.astra(),
           controller.isRaiderActive() ? controller.activeRaider() : null,
           ghostwingGroupPoints(),
@@ -530,11 +581,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
           (float) controller.phaseOneScenery().operationsBasePlacement().bounds().centerY(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerX(),
           (float) controller.phaseOneScenery().enemyBasePlacement().bounds().centerY(),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
+          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
+          controller.astraMissileAimX(), controller.astraMissileAimY(), selectedTarget,
+          controller.guidedMissiles());
     }
     hud.draw(batch, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
-        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth());
+        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth(), flow.isMissileArmed(),
+        controller.astraMissilesRemaining(), controller.astraMissileCapacity(),
+        missileTargetLabel());
     PhaseResult snapshot = phaseSnapshot.get();
     hud.drawScore(batch, hudFont, snapshot.points(),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
@@ -544,6 +599,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
     missionHud.draw(batch, hudFont, MissionHud.Readout.from(controller, snapshot),
         raiderVisuals.region(VesperRaiderSheet.Pose.NEUTRAL, false),
         astraVisuals.region(HeroShipSheet.Pose.NEUTRAL, false, false),
+        guidedMissileVisuals.region(GuidedMissileSheet.Faction.ASTRA,
+            GuidedMissileSheet.Heading.NORTH, GuidedMissileSheet.CombustionStage.SPENT),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     // The enemy combat status reuses the single engagement read above and the energy already
     // resolved by this frame's impacts, so name and percentage always match the encounter actually
@@ -607,6 +664,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     bastionBomberVisuals.dispose();
     ghostwingVisuals.dispose();
     geran4Visuals.dispose();
+    guidedMissileVisuals.dispose();
     explosionVisuals.dispose();
     hitFlashRenderer.dispose();
     astraLightEffect.dispose();
@@ -684,8 +742,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
     boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
     boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
-    return controller.advanceFlight(new FlightControls(left, right, up, down,
-        Gdx.input.isKeyJustPressed(Input.Keys.P)), delta, coincident);
+    PhaseOneScreenFlow.AimDirection aim = flow.aimDirection(left, right, up, down);
+    controller.moveAstraMissileAim(aim.horizontal(), aim.vertical(), delta);
+    FlightControls controls = flow.flightControls(left, right, up, down,
+        Gdx.input.isKeyJustPressed(Input.Keys.P));
+    return controller.advanceFlight(controls, delta, coincident);
   }
 
   /**
@@ -786,6 +847,56 @@ public final class PhaseOneScreen extends ScreenAdapter {
     return CameraVisibility.shipVisible(centerX, centerY, halfBox,
         camera.position.x, camera.position.y, camera.up.x, camera.up.y,
         viewport.getWorldWidth(), viewport.getWorldHeight(), camera.zoom);
+  }
+
+  /**
+   * Draws only the requested depth layer. The short separating phase sits behind the aircraft;
+   * acceleration and guidance draw above the ships. Culling affects drawing only, never simulation.
+   */
+  private void drawGuidedMissiles(SpriteBatch batch, boolean separatingLayer) {
+    float astraFuselageLength = controller.astra().drawHeight();
+    for (GuidedMissile missile : controller.guidedMissiles()) {
+      if (!missile.isActive()
+          || (missile.stage() == GuidedMissile.FlightStage.SEPARATING) != separatingLayer) {
+        continue;
+      }
+      GuidedMissileSpriteLayout.Layout layout =
+          GuidedMissileSpriteLayout.forMissile(missile, astraFuselageLength);
+      if (shipVisible(missile.x(), missile.y(), layout.cullingRadius())) {
+        guidedMissileVisuals.draw(batch, missile, layout);
+      }
+    }
+  }
+
+  /** Draws the free-aim cursor in world space only while it intersects the active camera view. */
+  private void drawMissileAimReticle() {
+    if (!flow.isMissileArmed() || !controller.isAstraMissileAimActive()) return;
+    float x = controller.astraMissileAimX();
+    float y = controller.astraMissileAimY();
+    if (!shipVisible(x, y, 0f)) return;
+    Color previous = shapes.getColor().cpy();
+    shapes.setProjectionMatrix(camera.combined);
+    shapes.setColor(AIM_RETICLE_COLOR);
+    shapes.begin(ShapeRenderer.ShapeType.Line);
+    shapes.circle(x, y, 24f, 24);
+    shapes.line(x - 34f, y, x - 12f, y);
+    shapes.line(x + 12f, y, x + 34f, y);
+    shapes.line(x, y - 34f, x, y - 12f);
+    shapes.line(x, y + 12f, x, y + 34f);
+    shapes.end();
+    shapes.setColor(previous);
+  }
+
+  /** Target identity is read from the same live selection used by the missile controller. */
+  private String missileTargetLabel() {
+    MissileTarget target = controller.selectedAstraMissileTarget().orElse(null);
+    if (target == null) return null;
+    long entityId = target.reference().entityId();
+    return switch (target.reference().kind()) {
+      case GHOSTWING, GERAN4 -> target.name() + " #" + entityId;
+      case ESCORT -> target.name() + " " + (entityId < 0 ? "IZQ" : "DER");
+      default -> target.name();
+    };
   }
 
   /** Immutable camera geometry for the Geran-4 placement rule, taken from the frame being drawn. */

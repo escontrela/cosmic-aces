@@ -20,6 +20,8 @@ public record Geran4Death(long droneId, float centerX, float centerY, Cause caus
   public enum Cause {
     /** The UAV was destroyed by a single Astra projectile impact. Awards the +100 bonus. */
     SHOT,
+    /** The UAV was destroyed by Astra's guided missile. Awards the +100 bonus. */
+    MISSILE,
     /** The UAV collided with Astra's hull; both explode and no points are awarded. */
     COLLISION
   }

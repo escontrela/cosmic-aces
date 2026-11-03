@@ -39,7 +39,7 @@ public final class BastionBomber extends Ship {
       float targetRunwayCenterX, float targetRunwayCenterY,
       float orbitCenterX, float orbitCenterY) {
     super(FLIGHT_SPEED, runwayCenterX - DRAW_WIDTH / 2f, runwayCenterY - DRAW_HEIGHT / 2f,
-        DRAW_WIDTH, DRAW_HEIGHT, 416f, 506f);
+        DRAW_WIDTH, DRAW_HEIGHT, 419f, 542f);
     float[] coordinates = {runwayCenterX, runwayCenterY, targetRunwayCenterX,
         targetRunwayCenterY, orbitCenterX, orbitCenterY};
     for (float coordinate : coordinates) {
@@ -196,10 +196,8 @@ public final class BastionBomber extends Ship {
       texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
       for (int index = 0; index < frames.length; index++) {
         BastionBomberSheet.Slice slice = BastionBomberSheet.frameSlice(index);
-        // Sheet measurements use image coordinates (origin at top-left); TextureRegion uses
-        // texture coordinates with the origin at bottom-left.
-        int textureY = BastionBomberSheet.HEIGHT - slice.y() - slice.height();
-        frames[index] = new TextureRegion(texture, slice.x(), textureY,
+        // TextureRegion's pixel constructor uses the same top-left origin as the sheet metadata.
+        frames[index] = new TextureRegion(texture, slice.x(), slice.y(),
             slice.width(), slice.height());
       }
     }

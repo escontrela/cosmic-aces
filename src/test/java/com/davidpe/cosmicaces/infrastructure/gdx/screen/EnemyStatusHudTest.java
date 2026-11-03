@@ -120,7 +120,7 @@ class EnemyStatusHudTest {
       float width = size[0];
       float height = size[1];
       MissionHud.Layout mission =
-          MissionHud.layout(width, height, killsWidth, livesWidth, clockWidth);
+          MissionHud.layout(width, height, killsWidth, livesWidth, 16f, clockWidth);
       EnemyStatusHud.Layout enemy =
           EnemyStatusHud.layout(width, height, titleWidth, valueWidth);
 

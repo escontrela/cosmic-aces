@@ -4,6 +4,7 @@ import com.badlogic.gdx.Screen;
 import com.davidpe.cosmicaces.application.GameCoordinator;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import com.davidpe.cosmicaces.domain.game.GameState;
+import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
@@ -51,9 +52,16 @@ public final class ScreenFactory {
    */
   public Screen createPhaseOneScreen() {
     GameState state = coordinator.state();
-    PhaseOneGameController controller = new PhaseOneGameController(settingsStore.flightSpeeds());
+    PhaseOneGameController controller = createPhaseOneController(settingsStore);
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
         presentationSettings);
+  }
+
+  /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */
+  static PhaseOneGameController createPhaseOneController(GameSettingsStore store) {
+    return new PhaseOneGameController(store.flightSpeeds(),
+        MissileConfig.DEFAULTS.withAstraMissilesPerLife(store.astraMissilesPerLife())
+            .withMaxSpeed(store.guidedMissileMaxSpeed()));
   }
 }

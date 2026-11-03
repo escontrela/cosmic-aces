@@ -7,15 +7,15 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
+import com.davidpe.cosmicaces.domain.weapon.GuidedMissileSheet;
 import java.util.Locale;
 
 /**
  * Fixed-screen mission readings of PhaseOne, drawn under the existing HUD projection: the Vesper
- * Raider destruction counter ({@code 0/3 … 3/3}), Astra's remaining lives ({@code 3 … 0}) and the
- * {@code 10:00 … 00:00} mission countdown. It owns no native resource: the small ship icons are the
- * borrowed neutral regions of the {@link com.davidpe.cosmicaces.domain.player.Astra.Visuals} and
- * {@link com.davidpe.cosmicaces.domain.enemy.VesperRaider.Visuals} owned by {@link PhaseOneScreen},
- * so nothing here loads or disposes a texture.
+ * Raider destruction counter ({@code 0/3 … 3/3}), Astra's remaining lives, missile inventory, and
+ * the {@code 10:00 … 00:00} mission countdown. It owns no native resource: the small ship and missile
+ * icons are borrowed regions from assets owned by {@link PhaseOneScreen}, so nothing here loads or
+ * disposes a texture.
  *
  * <p>All values come from the authoritative run state ({@link Readout}): kills and the clock from
  * the phase controller, lives from the coordinator snapshot. Nothing is derived from score or
@@ -32,6 +32,7 @@ final class MissionHud {
   private static final Color KILLS_COLOR = new Color(1f, 0.72f, 0.12f, 1f);
   private static final Color LIVES_COLOR = new Color(0.52f, 0.95f, 0.62f, 1f);
   private static final Color CLOCK_COLOR = new Color(0.44f, 0.86f, 0.96f, 1f);
+  private static final Color MISSILE_COLOR = new Color(1f, 0.68f, 0.28f, 1f);
 
   /** Shared top-left margin, matching the existing flight readings. */
   static final float EDGE_MARGIN = 24f;
@@ -43,6 +44,8 @@ final class MissionHud {
   static final float ICON_TEXT_GAP = 6f;
   /** Vertical distance between the Vesper counter line and the Astra lives line. */
   static final float ROW_GAP = 32f;
+  /** Vertical distance from the lives line to the missile inventory line. */
+  static final float MISSILE_ROW_GAP = 32f;
   /** Raises the icon a little above its text baseline so it reads centered on the line. */
   static final float ICON_BASELINE_LIFT = 6f;
   /** Minimum clearance between the counters and the centered clock before the clock is pushed. */
@@ -55,20 +58,23 @@ final class MissionHud {
 
   private final GlyphLayout killsLayout = new GlyphLayout();
   private final GlyphLayout livesLayout = new GlyphLayout();
+  private final GlyphLayout missilesLayout = new GlyphLayout();
   private final GlyphLayout clockLayout = new GlyphLayout();
 
   /**
-   * Read-only snapshot of the mission readings for one frame: the Vesper kills against the goal,
-   * Astra's authoritative remaining lives and the remaining mission seconds. It carries no mutable
-   * authority; kills and lives are clamped to a displayable range so a stale or anomalous value can
-   * never draw a negative or an over-goal counter.
+   * Read-only snapshot of the mission readings for one frame: Vesper kills against the goal, Astra's
+   * authoritative remaining lives and missiles, and the remaining mission seconds. It carries no
+   * mutable authority; counters are clamped to their displayable ranges.
    */
-  record Readout(int vesperKills, int vesperKillGoal, int astraLives, float remainingSeconds) {
+  record Readout(int vesperKills, int vesperKillGoal, int astraLives,
+      int missilesRemaining, int missileCapacity, float remainingSeconds) {
 
     Readout {
       vesperKillGoal = Math.max(0, vesperKillGoal);
       vesperKills = Math.max(0, Math.min(vesperKills, vesperKillGoal));
       astraLives = Math.max(0, astraLives);
+      missileCapacity = Math.max(0, missileCapacity);
+      missilesRemaining = Math.max(0, Math.min(missilesRemaining, missileCapacity));
     }
 
     /**
@@ -81,6 +87,7 @@ final class MissionHud {
         throw new IllegalArgumentException("Controller and snapshot are required");
       }
       return new Readout(controller.vesperKills(), controller.vesperKillGoal(), snapshot.lives(),
+          controller.astraMissilesRemaining(), controller.astraMissileCapacity(),
           controller.remainingRunSeconds());
     }
 
@@ -92,6 +99,11 @@ final class MissionHud {
     /** Astra's remaining lives as a plain number, {@code 3 … 0}. */
     String livesLabel() {
       return Integer.toString(astraLives);
+    }
+
+    /** The missiles currently ready to fire, for example {@code 2}. */
+    String missilesLabel() {
+      return Integer.toString(missilesRemaining);
     }
 
     /** The remaining mission time as {@code MM:SS}. */
@@ -126,15 +138,19 @@ final class MissionHud {
       float vesperTextX, float vesperTextY,
       float astraIconX, float astraIconY,
       float astraTextX, float astraTextY,
+      float missileIconX, float missileIconY,
+      float missileTextX, float missileTextY,
       float clockX, float clockY) {}
 
   static Layout layout(float viewportWidth, float viewportHeight,
-      float killsWidth, float livesWidth, float clockWidth) {
+      float killsWidth, float livesWidth, float missilesWidth, float clockWidth) {
     float iconX = EDGE_MARGIN;
     float textX = iconX + ICON_BOX + ICON_TEXT_GAP;
     float vesperBaseline = viewportHeight - TOP_MARGIN;
     float astraBaseline = vesperBaseline - ROW_GAP;
-    float countersRight = Math.max(textX + killsWidth, textX + livesWidth);
+    float missileBaseline = astraBaseline - MISSILE_ROW_GAP;
+    float countersRight = Math.max(Math.max(textX + killsWidth, textX + livesWidth),
+        textX + missilesWidth);
     float centeredClock = (viewportWidth - clockWidth) / 2f;
     float maxClockX = Math.max(EDGE_MARGIN, viewportWidth - EDGE_MARGIN - clockWidth);
     float clockX = Math.max(countersRight + MIN_GROUP_GAP, Math.max(EDGE_MARGIN, centeredClock));
@@ -144,6 +160,8 @@ final class MissionHud {
         textX, vesperBaseline,
         iconX, astraBaseline - ICON_BOX + ICON_BASELINE_LIFT,
         textX, astraBaseline,
+        iconX, missileBaseline - ICON_BOX + ICON_BASELINE_LIFT,
+        textX, missileBaseline,
         clockX, vesperBaseline);
   }
 
@@ -154,28 +172,35 @@ final class MissionHud {
    * returning.
    */
   void draw(SpriteBatch batch, BitmapFont font, Readout readout,
-      TextureRegion vesperIcon, TextureRegion astraIcon,
+      TextureRegion vesperIcon, TextureRegion astraIcon, TextureRegion missileIcon,
       float viewportWidth, float viewportHeight) {
     String kills = readout.killsLabel();
     String lives = readout.livesLabel();
+    String missiles = readout.missilesLabel();
     String clock = readout.clockLabel();
     killsLayout.setText(font, kills);
     livesLayout.setText(font, lives);
+    missilesLayout.setText(font, missiles);
     clockLayout.setText(font, clock);
     Layout layout = layout(viewportWidth, viewportHeight,
-        killsLayout.width, livesLayout.width, clockLayout.width);
+        killsLayout.width, livesLayout.width, missilesLayout.width, clockLayout.width);
     batch.begin();
     batch.setColor(Color.WHITE);
     drawIcon(batch, vesperIcon, layout.vesperIconX(), layout.vesperIconY(), layout.iconBox(),
         VESPER_ICON_ROTATION);
     drawIcon(batch, astraIcon, layout.astraIconX(), layout.astraIconY(), layout.iconBox(), 0f);
+    drawIcon(batch, missileIcon, layout.missileIconX(), layout.missileIconY(),
+        layout.iconBox(), 0f);
     drawShadow(font, batch, kills, layout.vesperTextX(), layout.vesperTextY());
     drawShadow(font, batch, lives, layout.astraTextX(), layout.astraTextY());
+    drawShadow(font, batch, missiles, layout.missileTextX(), layout.missileTextY());
     drawShadow(font, batch, clock, layout.clockX(), layout.clockY());
     font.setColor(KILLS_COLOR);
     font.draw(batch, killsLayout, layout.vesperTextX(), layout.vesperTextY());
     font.setColor(LIVES_COLOR);
     font.draw(batch, livesLayout, layout.astraTextX(), layout.astraTextY());
+    font.setColor(MISSILE_COLOR);
+    font.draw(batch, missilesLayout, layout.missileTextX(), layout.missileTextY());
     font.setColor(CLOCK_COLOR);
     font.draw(batch, clockLayout, layout.clockX(), layout.clockY());
     font.setColor(Color.WHITE);
