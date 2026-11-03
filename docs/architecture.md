@@ -80,8 +80,12 @@ naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga
 la pantalla no abre los 128 PNG históricos. El minimapa conserva su marco y marcadores de Astra,
 Vesper, Ghostwing, las dos bases y el Bastion Bomber tras despegar. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
-`WelcomeScreen.resize` cambia el viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
-dimensiones efectivas; el arte y la tipografía mantienen su escala.
+`WelcomeScreen.resize` cambia el viewport; el campo queda visible únicamente en las franjas que
+deja el arte. La composición ASCII histórica se sustituye por `welcome-background-v1.png` y el logo
+`cosmic-aces-logo-v1.png`, cargados una sola vez por pantalla. `WelcomeScreen.fitCentered` ajusta el
+fondo 4:3 sin deformarlo (letterbox/pillarbox centrado) y el logo se dibuja en la zona superior
+despejada del arte; el prompt `INSERT COIN (pulsa Y)` y `ESC: AJUSTES` se anclan a la franja
+inferior de la imagen. El arte y la tipografía mantienen su escala con las dimensiones efectivas.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
@@ -1570,9 +1574,10 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
+            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
             |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
             |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
+            |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
             |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
