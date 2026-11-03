@@ -4,13 +4,14 @@ import com.davidpe.cosmicaces.domain.player.FlightControls;
 
 /**
  * Pure interaction lifecycle of {@link PhaseOneScreen}: the objective panel ({@code INTRO}), the
- * running mission ({@code PLAYING}) and the frozen result panel ({@code RESULT}).
+ * running mission ({@code PLAYING}) and the frozen result frame ({@code RESULT}).
  *
  * <p>It also owns the SPACE arming rule so one physical press can never drive two actions: the press
- * that confirms the objective cannot also fire Astra, and the shot that ends the mission cannot also
- * leave the result panel. A press only acts again after SPACE has been seen released. The class has
- * no LibGDX dependency and no game rules, so the whole transition and input contract is unit tested
- * without a window.
+ * that confirms the objective cannot also fire Astra. A press only acts again after SPACE has been
+ * seen released. The terminal result is materialised as the Hall of Fame by the composition root at
+ * the end of the frame, so {@code RESULT} is only the last frozen frame of the playable screen and
+ * accepts no navigation press. The class has no LibGDX dependency and no game rules, so the whole
+ * transition and input contract is unit tested without a window.
  */
 final class PhaseOneScreenFlow {
 
@@ -134,21 +135,13 @@ final class PhaseOneScreenFlow {
   }
 
   /**
-   * Freezes the mission on its terminal result. Consumes the latch so the press that fired the
-   * ending shot cannot be reused to confirm the panel; the player must release and press again.
+   * Freezes the mission on its terminal result and consumes the latch, so the press that fired the
+   * ending shot cannot be reused by any later action of this screen. The Hall of Fame transition is
+   * applied by the composition root at the end of the frame, not by a second SPACE press.
    */
   void showResult() {
     stage = Stage.RESULT;
     missileArmed = false;
     spaceArmed = false;
-  }
-
-  /** Consumes a fresh SPACE press from {@code RESULT}, or returns {@code false} on a held key. */
-  boolean consumeResultConfirm(boolean spaceJustPressed) {
-    if (stage != Stage.RESULT || !spaceJustPressed || !spaceArmed) {
-      return false;
-    }
-    spaceArmed = false;
-    return true;
   }
 }

@@ -121,6 +121,24 @@ public final class HallOfFameScroll {
     phase = Phase.SCROLLING;
   }
 
+  /**
+   * Moves the reading position so the given row is visible, clamped to the current bounds.
+   *
+   * <p>Used after confirming a new entry so the player sees the row just registered instead of the
+   * top of the table. A hold/rewind in progress is cancelled because the new position is a deliberate
+   * reading position, not the end of an automatic pass.
+   */
+  public void revealRow(int row) {
+    if (rowCount <= 0) {
+      reset();
+      return;
+    }
+    int safeRow = Math.max(0, Math.min(rowCount - 1, row));
+    offsetRows = Math.min(maxOffsetRows(), safeRow);
+    holdRemaining = 0.0;
+    phase = Phase.SCROLLING;
+  }
+
   /** Number of rows in the current ranking. */
   public int rowCount() {
     return rowCount;

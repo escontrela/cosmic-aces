@@ -70,38 +70,23 @@ class PhaseOneScreenFlowTest {
   }
 
   @Test
-  void theEndingShotCannotConfirmTheResultPanel() {
+  void theResultStageIsTerminalAndConsumesTheEndingPress() {
     PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
     flow.observeSpace(true);
     flow.consumeStartPress(true);
 
-    // The mission ends while SPACE is still held from the firing burst.
+    // The mission ends while SPACE is still held from the firing burst. The frozen frame accepts no
+    // firing, no missile mode and no launch; the Hall of Fame takes over at the end of the frame.
     flow.showResult();
     assertTrue(flow.isResult());
-    assertFalse(flow.consumeResultConfirm(false));
+    assertFalse(flow.fireTrigger(true));
+    assertFalse(flow.armMissile());
+    assertFalse(flow.consumeMissileLaunch(true));
 
-    // The release does not confirm by itself...
     flow.observeSpace(false);
-    assertFalse(flow.consumeResultConfirm(false));
+    flow.observeSpace(true);
+    assertFalse(flow.fireTrigger(true), "the result frame never fires again");
     assertTrue(flow.isResult());
-
-    // ...but the next fresh press does.
-    flow.observeSpace(true);
-    assertTrue(flow.consumeResultConfirm(true));
-    assertFalse(flow.consumeResultConfirm(true), "one press confirms the result only once");
-  }
-
-  @Test
-  void theEndingPressOfTheSameFrameDoesNotConfirm() {
-    PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
-    flow.observeSpace(true);
-    flow.consumeStartPress(true);
-    flow.observeSpace(false);
-    flow.observeSpace(true);
-
-    // The same physical press that fired the ending shot is still down when RESULT appears.
-    flow.showResult();
-    assertFalse(flow.consumeResultConfirm(true), "the ending press must be released first");
   }
 
   @Test
@@ -165,7 +150,7 @@ class PhaseOneScreenFlowTest {
     flow.showResult();
     assertFalse(flow.isMissileArmed());
     assertFalse(flow.consumeMissileLaunch(true));
-    assertFalse(flow.consumeMissileEscape(), "ESC on a result remains phase abandonment");
+    assertFalse(flow.consumeMissileEscape(), "ESC on a result belongs to the Hall takeover");
   }
 
   @Test

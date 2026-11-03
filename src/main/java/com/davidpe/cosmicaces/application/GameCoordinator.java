@@ -107,10 +107,13 @@ public final class GameCoordinator {
         if (accepts(completed)) {
           state.completePhase(completed.result());
           if (completed.outcome().isFinished()) {
-            state.changePhase(GamePhase.GAME_OVER);
+            // The terminal result is captured before the transition so the screen built at the end of
+            // the frame already sees the pending candidate and its eligibility.
+            state.changePhase(GamePhase.HALL_OF_FAME);
             if (hallOfFameSession != null) {
               hallOfFameSession.captureTerminalResult(completed.result(), completed.outcome());
             }
+            pendingTransition = GamePhase.HALL_OF_FAME;
           }
         }
       }
@@ -156,16 +159,16 @@ public final class GameCoordinator {
   }
 
   /**
-   * An abandon is accepted only from the playable screen of the current game. Its run may already
-   * have completed ({@link GamePhase#GAME_OVER}) while the screen stays alive until the player
-   * leaves, so both the playing phase and game over are accepted; any other phase (for example a
-   * stale abandon that still says {@code WELCOME}) is rejected.
+   * An abandon is accepted only from the playable screen of the current game. Once the terminal
+   * result was accepted the state is {@link GamePhase#HALL_OF_FAME}; a later abandon from the
+   * already-replaced screen is rejected so it cannot discard the captured candidate. Any other phase
+   * (for example a stale abandon that still says {@code WELCOME}) is rejected too.
    */
   private boolean acceptsAbandon(GameAbandoned event) {
     if (event.phase() != GamePhase.PLAYING_PHASE_ONE || !state.gameId().equals(event.gameId())) {
       return false;
     }
-    return state.phase() == GamePhase.PLAYING_PHASE_ONE || state.phase() == GamePhase.GAME_OVER;
+    return state.phase() == GamePhase.PLAYING_PHASE_ONE;
   }
 
   private boolean accepts(GameEvent event) {

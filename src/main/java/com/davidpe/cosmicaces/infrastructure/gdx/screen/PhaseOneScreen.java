@@ -72,7 +72,7 @@ import java.util.function.Supplier;
 public final class PhaseOneScreen extends ScreenAdapter {
 
   private static final String START_PROMPT = "PULSA ESPACIO PARA EMPEZAR";
-  private static final String RETURN_PROMPT = "PULSA ESPACIO PARA VOLVER A WELCOME";
+  private static final String RETURN_PROMPT = "EL HALL OF FAME SE ABRE A CONTINUACIÓN";
   private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
   private static final String LOSE_DETAIL = "MISION FALLIDA";
   /**
@@ -314,7 +314,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
       if (flow.consumeMissileEscape()) {
         controller.armAstraCannon();
         canceledMissileModeThisFrame = true;
-      } else {
+      } else if (!flow.isResult()) {
+        // Before the terminal result, ESC abandons the run: it returns to welcome and never creates a
+        // Hall of Fame entry. After the result was captured the Hall takes over at the end of the
+        // frame, so an ESC on the frozen panel must not discard the pending candidate.
         publisher.publish(new GameAbandoned(gameId, phase));
         return;
       }
@@ -335,10 +338,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
         controller.start();
         startedThisFrame = true;
       }
-    } else if (flow.isResult() && flow.consumeResultConfirm(spaceJustPressed)) {
-      // A fresh SPACE after the ending shot leaves the frozen panel for the welcome screen.
-      publisher.publish(new GameAbandoned(gameId, phase));
-      return;
     }
     boolean armedMissileThisFrame = false;
     if (!canceledMissileModeThisFrame && flow.isPlaying() && !startedThisFrame
@@ -716,8 +715,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /**
    * Freezes the mission on its terminal result and reports the phase exactly once with the
    * authoritative snapshot (points and lives already published this frame). The coordinator's
-   * {@code GAME_OVER} transition is a no-op screen-wise: the result panel stays until the player
-   * confirms with a fresh SPACE or leaves with ESC.
+   * terminal transition is materialised as the Hall of Fame screen at the end of the frame; the
+   * frozen result panel is only the last frame the playable screen draws.
    */
   private void completeRun() {
     flow.showResult();

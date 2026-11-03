@@ -116,6 +116,45 @@ class HallOfFameLayoutTest {
   }
 
   @Test
+  void placesTheInitialsEditorBelowTheTableAndInsideTheArtwork() {
+    for (float[] viewport : new float[][] {{800f, 600f}, {1920f, 1080f}, {1000f, 1000f}}) {
+      HallOfFameLayout.Fit art = HallOfFameLayout.fitCentered(viewport[0], viewport[1]);
+      HallOfFameLayout.Area table = HallOfFameLayout.tableArea(viewport[0], viewport[1]);
+      HallOfFameLayout.Area panel = HallOfFameLayout.entryPanelArea(viewport[0], viewport[1]);
+
+      assertTrue(panel.x() >= art.x(), "editor starts inside the artwork");
+      assertTrue(panel.y() >= art.y(), "editor starts inside the artwork");
+      assertTrue(panel.x() + panel.width() <= art.x() + art.width() + 0.001f,
+          "editor ends inside the artwork");
+      assertTrue(panel.y() + panel.height() <= art.y() + art.height() + 0.001f,
+          "editor ends inside the artwork");
+      assertTrue(panel.y() + panel.height() <= table.y() + 0.001f,
+          "the editor never covers the clipped ranking table");
+
+      float title = HallOfFameLayout.entryTitleBaselineY(panel);
+      float score = HallOfFameLayout.entryScoreBaselineY(panel);
+      float initials = HallOfFameLayout.entryInitialsBaselineY(panel);
+      float cursor = HallOfFameLayout.entryCursorBaselineY(panel);
+      float help = HallOfFameLayout.entryHelpBaselineY(panel);
+      assertTrue(title > score, "title stays above the score");
+      assertTrue(score > initials, "score stays above the initials");
+      assertTrue(initials > cursor, "cursor stays below the initials");
+      assertTrue(cursor > help, "cursor stays above the hint");
+      assertTrue(help > panel.y(), "hint stays inside the panel");
+
+      float cell = HallOfFameLayout.entryInitialCellWidth(panel);
+      float first = HallOfFameLayout.entryInitialCellX(panel, 0);
+      float second = HallOfFameLayout.entryInitialCellX(panel, 1);
+      float third = HallOfFameLayout.entryInitialCellX(panel, 2);
+      assertEquals(cell, second - first, 0.001f);
+      assertEquals(cell, third - second, 0.001f);
+      assertTrue(first >= panel.x(), "first initials cell stays inside the panel");
+      assertTrue(third + cell <= panel.x() + panel.width() + 0.001f,
+          "last initials cell stays inside the panel");
+    }
+  }
+
+  @Test
   void formatsPositionsScoresAndDatesWithoutTruncatingThem() {
     assertEquals("01", HallOfFameLayout.positionLabel(1));
     assertEquals("09", HallOfFameLayout.positionLabel(9));

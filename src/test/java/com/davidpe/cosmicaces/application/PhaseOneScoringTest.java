@@ -51,6 +51,6 @@ class PhaseOneScoringTest {
 
     // 600 complete run seconds (600) plus 2 visible coincidence seconds (20).
     assertEquals(620, coordinator.state().points());
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
   }
 }

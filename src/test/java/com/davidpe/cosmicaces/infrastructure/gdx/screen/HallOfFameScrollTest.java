@@ -167,6 +167,41 @@ class HallOfFameScrollTest {
     assertEquals(before, scroll.offsetRows(), 1e-9);
   }
 
+  @Test
+  void revealRowShowsTheNewEntryAndClampsToTheTableBounds() {
+    HallOfFameScroll scroll = new HallOfFameScroll();
+    scroll.sync(50, 10);
+
+    scroll.revealRow(10);
+    assertEquals(10.0, scroll.offsetRows(), 1e-9);
+    assertEquals(10, scroll.firstVisibleRow());
+
+    scroll.revealRow(999);
+    assertEquals(40.0, scroll.offsetRows(), 1e-9);
+
+    scroll.revealRow(-5);
+    assertEquals(0.0, scroll.offsetRows(), 1e-9);
+
+    scroll.sync(0, 10);
+    scroll.revealRow(4);
+    assertEquals(0.0, scroll.offsetRows(), 1e-9);
+  }
+
+  @Test
+  void revealRowCancelsAPendingHoldOrRewind() {
+    HallOfFameScroll scroll = new HallOfFameScroll();
+    scroll.sync(50, 10);
+    for (int frame = 0; frame < 400 && !scroll.atEnd(); frame++) {
+      scroll.advance(HallOfFameScroll.MAX_STEP_SECONDS);
+    }
+    assertEquals(HallOfFameScroll.Phase.HOLDING_AT_END, scroll.phase());
+
+    scroll.revealRow(5);
+
+    assertEquals(5.0, scroll.offsetRows(), 1e-9);
+    assertEquals(HallOfFameScroll.Phase.SCROLLING, scroll.phase());
+  }
+
   private static void advanceFrames(HallOfFameScroll scroll, double seconds, int framesPerSecond) {
     int frames = Math.max(1, (int) Math.round(seconds * framesPerSecond));
     double step = seconds / frames;

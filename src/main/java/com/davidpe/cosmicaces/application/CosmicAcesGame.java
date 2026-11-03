@@ -87,9 +87,7 @@ public final class CosmicAcesGame extends Game {
     switch (next) {
       case WELCOME -> showScreen(screenFactory.createWelcomeScreen());
       case PLAYING_PHASE_ONE -> showScreen(screenFactory.createPhaseOneScreen());
-      case GAME_OVER -> {
-        // No game-over screen is part of this ticket.
-      }
+      case HALL_OF_FAME -> showScreen(screenFactory.createHallOfFameScreen());
     }
   }
 

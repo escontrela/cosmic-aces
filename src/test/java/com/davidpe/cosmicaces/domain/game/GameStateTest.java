@@ -57,9 +57,9 @@ class GameStateTest {
   void changePhaseUpdatesThePhase() {
     GameState state = new GameState(GAME, GamePhase.PLAYING_PHASE_ONE, 0, 3);
 
-    state.changePhase(GamePhase.GAME_OVER);
+    state.changePhase(GamePhase.HALL_OF_FAME);
 
-    assertEquals(GamePhase.GAME_OVER, state.phase());
+    assertEquals(GamePhase.HALL_OF_FAME, state.phase());
   }
 
   @Test

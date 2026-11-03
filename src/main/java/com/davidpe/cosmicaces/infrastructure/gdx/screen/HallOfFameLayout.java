@@ -36,6 +36,15 @@ public final class HallOfFameLayout {
   private static final float MAX_ART_SCALE = 2.6f;
   private static final float TITLE_BASELINE_FRACTION = 0.825f;
   private static final float HEADER_BASELINE_FRACTION = 0.775f;
+  private static final float ENTRY_LEFT_FRACTION = 0.17f;
+  private static final float ENTRY_RIGHT_FRACTION = 0.83f;
+  private static final float ENTRY_BOTTOM_FRACTION = 0.055f;
+  private static final float ENTRY_TOP_FRACTION = 0.275f;
+  private static final float ENTRY_TITLE_BASELINE_FRACTION = 0.87f;
+  private static final float ENTRY_SCORE_BASELINE_FRACTION = 0.68f;
+  private static final float ENTRY_INITIALS_BASELINE_FRACTION = 0.38f;
+  private static final float ENTRY_HELP_BASELINE_FRACTION = 0.09f;
+  private static final float ENTRY_CELL_FRACTION = 0.12f;
   private static final DateTimeFormatter SHORT_DATE =
       DateTimeFormatter.ofPattern("dd/MM/yy", Locale.ROOT);
 
@@ -67,6 +76,65 @@ public final class HallOfFameLayout {
     float bottom = art.y() + art.height() * TABLE_BOTTOM_FRACTION;
     float height = art.height() * (TABLE_TOP_FRACTION - TABLE_BOTTOM_FRACTION);
     return new Area(left, bottom, Math.max(0f, width), Math.max(0f, height));
+  }
+
+  /**
+   * Panel used to collect the three initials, centered below the clipped table and inside the
+   * artwork. It never overlaps the ranking rows, so the player can read the table while editing.
+   */
+  public static Area entryPanelArea(float viewportWidth, float viewportHeight) {
+    Fit art = fitCentered(viewportWidth, viewportHeight);
+    float left = art.x() + art.width() * ENTRY_LEFT_FRACTION;
+    float width = art.width() * (ENTRY_RIGHT_FRACTION - ENTRY_LEFT_FRACTION);
+    float bottom = art.y() + art.height() * ENTRY_BOTTOM_FRACTION;
+    float height = art.height() * (ENTRY_TOP_FRACTION - ENTRY_BOTTOM_FRACTION);
+    return new Area(left, bottom, Math.max(0f, width), Math.max(0f, height));
+  }
+
+  /** Baseline of the editor title inside its panel. */
+  public static float entryTitleBaselineY(Area panel) {
+    Objects.requireNonNull(panel, "panel");
+    return panel.y() + panel.height() * ENTRY_TITLE_BASELINE_FRACTION;
+  }
+
+  /** Baseline of the finished game's outcome and points inside the editor panel. */
+  public static float entryScoreBaselineY(Area panel) {
+    Objects.requireNonNull(panel, "panel");
+    return panel.y() + panel.height() * ENTRY_SCORE_BASELINE_FRACTION;
+  }
+
+  /** Baseline shared by the three initials inside the editor panel. */
+  public static float entryInitialsBaselineY(Area panel) {
+    Objects.requireNonNull(panel, "panel");
+    return panel.y() + panel.height() * ENTRY_INITIALS_BASELINE_FRACTION;
+  }
+
+  /** Baseline of the keyboard hint inside the editor panel. */
+  public static float entryHelpBaselineY(Area panel) {
+    Objects.requireNonNull(panel, "panel");
+    return panel.y() + panel.height() * ENTRY_HELP_BASELINE_FRACTION;
+  }
+
+  /** Width of one initials cell; the three cells are centered as a group. */
+  public static float entryInitialCellWidth(Area panel) {
+    Objects.requireNonNull(panel, "panel");
+    return panel.width() * ENTRY_CELL_FRACTION;
+  }
+
+  /** Left edge of the cell that contains the given initials position. */
+  public static float entryInitialCellX(Area panel, int index) {
+    Objects.requireNonNull(panel, "panel");
+    if (index < 0 || index >= 3) {
+      throw new IllegalArgumentException("Initials position out of range: " + index);
+    }
+    float cell = entryInitialCellWidth(panel);
+    float groupLeft = panel.x() + panel.width() / 2f - cell * 1.5f;
+    return groupLeft + cell * index;
+  }
+
+  /** Baseline of the blinking cursor drawn under the selected initials cell. */
+  public static float entryCursorBaselineY(Area panel) {
+    return entryInitialsBaselineY(panel) - entryInitialCellWidth(panel) * 0.32f;
   }
 
   /** Stable horizontal anchors for the four columns, all inside the clipped table area. */

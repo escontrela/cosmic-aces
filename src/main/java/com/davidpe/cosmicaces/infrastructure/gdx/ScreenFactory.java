@@ -70,14 +70,14 @@ public final class ScreenFactory {
   }
 
   /**
-   * Creates the Hall of Fame consultation screen from the loaded session. The immutable view and load
-   * result are read once per visit; the shared scroll keeps the reading position between visits. The
-   * screen is not yet part of the navigation: the attraction rotation (COS-125) and the terminal entry
-   * flow (COS-124) wire it in later subtasks.
+   * Creates the Hall of Fame screen from the shared application session. The screen reads the view
+   * and load result once per visit, confirms the pending initials through the session and refreshes
+   * its own view after a successful registration. The shared scroll keeps the reading position
+   * between visits. The attraction rotation and the start-from-consult navigation arrive with
+   * COS-125.
    */
   public Screen createHallOfFameScreen() {
-    return new HallOfFameScreen(
-        hallOfFameSession.view(), hallOfFameSession.loadResult(), hallOfFameScroll);
+    return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll);
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */

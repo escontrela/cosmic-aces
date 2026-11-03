@@ -48,7 +48,8 @@ class GameCoordinatorHallOfFameTest {
 
     coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
 
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
     HallOfFameCandidate candidate = session.pendingCandidate().orElseThrow();
     assertEquals(playing.gameId(), candidate.gameId());
     assertEquals(120, candidate.points());
@@ -57,12 +58,43 @@ class GameCoordinatorHallOfFameTest {
     String entryId = candidate.entryId();
     assertEquals(0, repository.saveCalls());
 
-    // The coordinator already moved to GAME_OVER, so a repeated completion is rejected before it can
-    // create a second candidate or overwrite the first snapshot.
+    // The coordinator already moved to HALL_OF_FAME, so a repeated completion is rejected before it
+    // can create a second candidate or overwrite the first snapshot.
     coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
 
     assertEquals(entryId, session.pendingCandidate().orElseThrow().entryId());
     assertEquals(0, repository.saveCalls());
+  }
+
+  @Test
+  void terminalLossAlsoOpensTheHallOfFameAndKeepsTheCandidate() {
+    InMemoryHallOfFameRepository repository = new InMemoryHallOfFameRepository();
+    HallOfFameSession session = loadedSession(repository);
+    GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES, session);
+    coordinator.onEvent(new StartRequested(coordinator.state().gameId(), GamePhase.WELCOME));
+    coordinator.consumePendingTransition();
+    GameState playing = coordinator.state();
+    coordinator.onEvent(new PointsEarned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 80));
+    coin(coordinator, 3);
+    PhaseResult result = coordinator.snapshot();
+
+    coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.LOSE));
+
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
+    HallOfFameCandidate candidate = session.pendingCandidate().orElseThrow();
+    assertEquals(PhaseOutcome.LOSE, candidate.outcome());
+    assertEquals(80, candidate.points());
+    assertEquals(0, candidate.lives());
+    assertEquals(HallOfFameView.Mode.ENTRY, session.view().mode());
+    assertEquals(0, repository.saveCalls());
+  }
+
+  private static void coin(GameCoordinator coordinator, int losses) {
+    GameState state = coordinator.state();
+    for (int loss = 0; loss < losses; loss++) {
+      coordinator.onEvent(new LifeLost(state.gameId(), GamePhase.PLAYING_PHASE_ONE));
+    }
   }
 
   @Test
@@ -103,7 +135,7 @@ class GameCoordinatorHallOfFameTest {
   }
 
   @Test
-  void abandonmentAfterTerminalKeepsThePendingCandidate() {
+  void abandonmentAfterTerminalIsRejectedAndKeepsThePendingCandidate() {
     InMemoryHallOfFameRepository repository = new InMemoryHallOfFameRepository();
     HallOfFameSession session = loadedSession(repository);
     GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES, session);
@@ -113,12 +145,13 @@ class GameCoordinatorHallOfFameTest {
     coordinator.onEvent(new PointsEarned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120));
     PhaseResult result = coordinator.snapshot();
     coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
+    coordinator.consumePendingTransition();
     HallOfFameCandidate candidate = session.pendingCandidate().orElseThrow();
 
     coordinator.onEvent(new GameAbandoned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE));
 
-    assertEquals(GamePhase.WELCOME, coordinator.state().phase());
-    assertEquals(0, coordinator.state().points());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(120, coordinator.state().points());
     assertEquals(candidate.entryId(), session.pendingCandidate().orElseThrow().entryId());
     assertEquals(HallOfFameView.Mode.ENTRY, session.view().mode());
     assertEquals(0, repository.saveCalls());

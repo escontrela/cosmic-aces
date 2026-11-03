@@ -71,7 +71,8 @@ class GameCoordinatorTest {
 
     assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES - 1, coordinator.state().lives());
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
   }
 
   @Test
@@ -205,7 +206,7 @@ class GameCoordinatorTest {
   }
 
   @Test
-  void acceptsAbandonAfterTheRunFinishedWhileTheScreenIsStillAlive() {
+  void rejectsAbandonAfterTheTerminalResultWasCaptured() {
     GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES);
     coordinator.onEvent(new StartRequested(coordinator.state().gameId(), GamePhase.WELCOME));
     coordinator.consumePendingTransition();
@@ -215,18 +216,17 @@ class GameCoordinatorTest {
         new PhaseCompleted(
             new PhaseResult(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES),
             PhaseOutcome.WIN));
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
-    assertNull(coordinator.consumePendingTransition());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
 
-    // The playable screen stays alive after GAME_OVER and still reports its original phase, so its
-    // ESC/SPACE abandon must be accepted.
+    // The playable screen was replaced when the Hall of Fame opened. A late abandon carrying its old
+    // phase must not discard the captured result or return to the lobby.
     coordinator.onEvent(new GameAbandoned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE));
 
-    assertNotEquals(playing.gameId(), coordinator.state().gameId());
-    assertEquals(GamePhase.WELCOME, coordinator.state().phase());
-    assertEquals(0, coordinator.state().points());
+    assertEquals(playing.gameId(), coordinator.state().gameId());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES, coordinator.state().lives());
-    assertEquals(GamePhase.WELCOME, coordinator.consumePendingTransition());
     assertNull(coordinator.consumePendingTransition());
   }
 
