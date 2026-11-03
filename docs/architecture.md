@@ -10,6 +10,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `boot` | Arranque y configuración de escritorio | Launcher, configuración LWJGL3 y futura lectura de configuración de arranque. |
 | `application` | Coordinación global y de cada fase | Transiciones, manejo de eventos y controladores que combinan reglas del dominio. |
 | `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. `WorldBounds` representa las dimensiones finitas y el rango útil para cajas de naves. |
+| `domain.score` | Ranking local del Hall of Fame | Entrada confirmada, orden canónico, elegibilidad y alta del top 50; sin I/O, reloj, LibGDX ni pantallas. |
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
@@ -1325,6 +1326,28 @@ Consulta posición y pose en la nave: `controller.astra().x()`,
 reenvíen estos getters. El enemigo puede ser null mientras espera su aparición;
 consulta su presencia antes de usarlo.
 
+### Hall of Fame: ranking puro (COS-120)
+
+`domain.score.HallOfFameEntry` es una fila confirmada e inmutable: id durable, iniciales
+exactas `[A-Z]{3}`, puntos `int >= 0` y `ZonedDateTime finishedAt`. La fecha conserva a la vez
+el instante (`finishedInstant()`, orden y desempate) y la fecha local del fin (`playedOn()`,
+DD/MM/YY estable aunque la aplicación se reinicie en otra zona). El dominio no lee el reloj:
+la aplicación aporta identidad y tiempo. `HallOfFameEntry.isValidInitials(String)` expone la
+misma validación que usa el constructor.
+
+`domain.score.HallOfFame` es un valor inmutable con como máximo `MAX_ENTRIES = 50` filas en
+orden canónico: puntos descendentes y, a igual puntuación, instante terminal ascendente. Con
+instantes idénticos decide el orden persistido de la lista (ordenación estable, sin UUID ni
+secuencia extra). `HallOfFame.of(Collection)` normaliza una colección cargada con ese mismo
+comparador, la trunca a 50 y rechaza ids duplicados; no muta la colección recibida y
+`entries()` devuelve una lista inmutable. `qualifies(entry)` consulta elegibilidad sin insertar
+ni reservar fila: con menos de 50 filas cualquier entrada válida clasifica (incluidos 0 puntos)
+y, con el ranking lleno, el candidato debe superar estrictamente el puesto 50, de modo que un
+empate conserva el registro antiguo. `register(entry)` devuelve
+`HallOfFameRegistration(Status, ranking)` con `REGISTERED`, `DID_NOT_QUALIFY` o
+`ALREADY_REGISTERED`; solo el primer caso publica una instantánea nueva y repetir el mismo id
+nunca duplica. La persistencia y los adaptadores pertenecen a las hijas siguientes.
+
 ## Clases actuales y métodos principales
 
 Los métodos están enumerados por clase. Se omiten constructores y getters
@@ -1401,6 +1424,14 @@ com.davidpe.cosmicaces
 |   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
 |   |   +-- Geran4Death(droneId, centerX, centerY, cause): destrucción de un UAV Geran-4,
 |   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
+|   +-- score
+|   |   +-- HallOfFameEntry(id, initials, points, finishedAt): fila confirmada e inmutable.
+|   |   |   1. isValidInitials() [estático]  2. finishedInstant()  3. playedOn()
+|   |   +-- HallOfFame: ranking puro inmutable top 50 con orden canónico y elegibilidad.
+|   |   |   1. empty()  2. of()  3. entries()  4. size()  5. isEmpty()
+|   |   |   6. qualifies()  7. register()  8. MAX_ENTRIES
+|   |   +-- HallOfFameRegistration(status, ranking): resultado explícito del alta.
+|   |       +-- Status [enum]: REGISTERED | DID_NOT_QUALIFY | ALREADY_REGISTERED.
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]
@@ -1644,8 +1675,9 @@ com.davidpe.cosmicaces
 PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la misión de PhaseOne).
 PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al terminar, GameCoordinator
 cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el panel WIN/LOSE hasta que una
-pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe una pantalla de game over ni
-hall of fame.
+pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe la pantalla de Hall of Fame;
+su ranking puro ya está modelado en `domain.score` (COS-120) y la persistencia y la presentación se
+añaden en las hijas siguientes.
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.
 
