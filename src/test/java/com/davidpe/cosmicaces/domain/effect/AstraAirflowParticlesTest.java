@@ -71,7 +71,7 @@ class AstraAirflowParticlesTest {
   }
 
   @Test
-  void prolongedTurboRecyclesTheBoundedPoolWithoutResidueOrGrowth() {
+  void prolongedElevatedFlowRecyclesTheBoundedPoolWithoutResidueOrGrowth() {
     AstraAirflowParticles particles = new AstraAirflowParticles(3L);
     particles.update(0.5f, true);
     float[] initialProgress = new float[COUNT];
@@ -97,7 +97,8 @@ class AstraAirflowParticlesTest {
   }
 
   @Test
-  void flowPersistsThroughDecelerationAndStopsExactlyAtConfiguredCruise() {
+  void modelKeepsFlowingWhileCallerReportsElevatedSpeedAndStopsAtCruise() {
+    // Raw-model contract only: the graphic adapter is what limits eligibility to the Ultra window.
     Astra astra = new Astra(SPEEDS);
     astra.placeAt(1600f, 6000f, 0f, WORLD);
     AstraAirflowParticles particles = new AstraAirflowParticles(11L);

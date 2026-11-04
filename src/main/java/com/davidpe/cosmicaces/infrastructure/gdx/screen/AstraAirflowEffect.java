@@ -8,15 +8,17 @@ import com.davidpe.cosmicaces.domain.player.Astra;
 
 /**
  * Graphical adapter for {@link AstraAirflowParticles}: draws the bounded local airflow samples as
- * thin world-space streaks that hug Astra's hull while she flies above her configured cruise speed.
+ * thin world-space streaks that hug Astra's hull while her Ultra window is open and she flies above
+ * her configured cruise speed.
  *
  * <p>It owns no native resource: the streaks are emitted in their own {@link ShapeRenderer} session
  * with alpha blending isolated by {@link AlphaBlendPass}, so there is no texture, shader or {@code
  * dispose()} to manage. Eligibility is read only from the live mission and ship state (mission
- * playing, Astra active and real flight speed above {@code speeds().normal()}); it never inspects
- * keys, the Ultra timer or a fixed speed constant. The effect keeps advancing while Astra
- * decelerates above cruise and is cleared as soon as the speed recovers or the run/ship stops being
- * valid.
+ * playing, Astra active, authoritative Ultra still active and real flight speed above {@code
+ * speeds().normal()}); it never inspects keys, {@code ultraUsed()}, speed-mode values or a fixed
+ * speed constant. Turbo alone therefore never shows the flow, and expiring Ultra clears it in that
+ * same update even when the ship is still fast or Turbo is still held. The existing cruise-speed
+ * guard is preserved: braking to the configured normal speed or below also clears it.
  *
  * <p>The invulnerability blink only skips {@link #drawWorldPass}: the model keeps its bounded state so
  * the flow reappears with the hull instead of restarting every blink interval.
@@ -41,18 +43,23 @@ final class AstraAirflowEffect {
   private final AlphaBlendPass alphaBlendPass = new AlphaBlendPass();
 
   /**
-   * True only while the run is playable, Astra is alive/active and her real flight speed exceeds the
-   * configured cruise speed. Configured Turbo or Ultra values at or below normal never engage it.
+   * True only while the run is playable, Astra is alive/active, her authoritative Ultra window
+   * ({@link Astra#ultraRemainingSeconds()}) is still open and her real flight speed exceeds the
+   * configured cruise speed. Turbo alone never satisfies it, whatever its configured speed, and
+   * {@link Astra#ultraUsed()} is not used because it stays true after the window closes. Configured
+   * Turbo or Ultra values at or below normal never engage it either.
    */
   static boolean isEligible(boolean missionPlaying, boolean astraActive, Astra astra) {
     return missionPlaying && astraActive && astra != null
+        && astra.ultraRemainingSeconds() > 0f
         && AstraAirflowParticles.isSpeedElevated(astra.flightSpeed(), astra.speeds());
   }
 
   /**
    * Advances the flow with the mission-authorized frame slice when {@code eligible}, and clears it
-   * immediately otherwise. Clearing covers returning to cruise, death/respawn, mission end and
-   * abandonment, so no sample survives into a new life or run.
+   * immediately otherwise. Clearing covers Ultra expiring (even while still fast or holding Turbo),
+   * braking back to cruise, death/respawn, mission end and abandonment, so no sample survives into a
+   * new life or run and no residual trail can reappear during Turbo.
    */
   void update(float deltaSeconds, boolean missionPlaying, boolean astraActive, Astra astra) {
     particles.update(deltaSeconds, isEligible(missionPlaying, astraActive, astra));

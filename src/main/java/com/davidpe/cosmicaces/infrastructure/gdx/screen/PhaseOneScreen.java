@@ -477,8 +477,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
         !flow.isPlaying(), controller.astra().flightSpeed()));
     astraLightEffect.update(controller.astra(), delta,
         flow.isPlaying() && controller.isAstraActive());
-    // Airflow advances only during the playable mission and while Astra is alive; it keeps running
-    // through deceleration above cruise and is cleared once the configured normal speed is back.
+    // Airflow advances only while Astra's authoritative Ultra window is open during the playable
+    // mission and she is alive. Turbo and any post-Ultra deceleration clear it; the model itself
+    // keeps the existing cruise-speed guard, so braking to normal also clears it.
     astraAirflowEffect.update(activeSeconds, flow.isPlaying(), controller.isAstraActive(),
         controller.astra());
     batch.setProjectionMatrix(camera.combined);

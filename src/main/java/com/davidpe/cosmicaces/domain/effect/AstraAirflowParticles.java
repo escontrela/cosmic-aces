@@ -4,22 +4,22 @@ import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 
 /**
  * A purely presentational, bounded stream of air particles that flows aft along Astra's silhouette
- * while she flies above her configured cruise speed. It knows nothing about LibGDX, cameras,
- * textures, controls or damage: the caller supplies the elapsed time and whether the real flight
- * speed is elevated, and the drawing layer transforms each local sample into the world.
+ * while the caller reports an elevated flight speed. It knows nothing about LibGDX, cameras,
+ * textures, controls, damage or the Ultra window: the caller supplies the elapsed time and whether
+ * the flow is engaged, and the drawing layer transforms each local sample into the world.
  *
- * <p>The pool is created once and every slot is recycled, so a prolonged Turbo or Ultra cannot grow
- * the state. Particles occupy three lanes on each side of the hull, move longitudinally from the
- * bow ({@code +0.5}) towards the tail ({@code -0.5}) and bulge outwards over the wings, which reads
- * as airflow rather than a circular orbit. Coordinates are normalized to Astra's stable drawing box
+ * <p>The pool is created once and every slot is recycled, so a prolonged engagement cannot grow the
+ * state. Particles occupy three lanes on each side of the hull, move longitudinally from the bow
+ * ({@code +0.5}) towards the tail ({@code -0.5}) and bulge outwards over the wings, which reads as
+ * airflow rather than a circular orbit. Coordinates are normalized to Astra's stable drawing box
  * ({@code x} in [-0.5, 0.5] across the width and {@code y} in [-0.5, 0.5] along the length), so the
  * renderer can rotate and scale them with the current hull frame. Density, trail length and alpha
  * are deliberately moderate; their visual tuning belongs to the screen that draws them.
  *
- * <p>Eligibility is derived only from the effective flight speed: the effect stays engaged while
- * {@code flightSpeed > speeds.normal()} and stops as soon as the configured cruise speed is
- * recovered, including the deceleration after Turbo is released or Ultra expires. It never reads
- * keys, the Ultra timer or a fixed default speed.
+ * <p>This model applies one gate: {@code flightSpeed > speeds.normal()}. Deciding that the gate
+ * only counts while Ultra is active belongs to the graphic adapter, so Turbo alone never engages
+ * the effect and Ultra expiring clears it in the same update. The model never reads keys, the Ultra
+ * timer or a fixed default speed; it just advances while engaged and discards everything otherwise.
  */
 public final class AstraAirflowParticles {
 

@@ -1167,10 +1167,10 @@ dibujo de Astra y Vesper por este wrapper con la intensidad del controlador; exp
 proyectiles, minimapa, HUD y fondo conservan su shader/color habituales. No hay sprites nuevos ni
 cambio de daño, cadencia, puntuación o controles.
 
-### Flujo de aire de Astra en Turbo y Ultra (COS-135)
+### Flujo de aire de Astra exclusivamente durante Ultra (COS-135)
 
 `domain.effect.AstraAirflowParticles` es un modelo puramente presentacional del aire que recorre el
-contorno de Astra desde la proa hacia la cola mientras vuela por encima de su velocidad normal. No
+contorno de Astra desde la proa hacia la cola mientras el llamador declara el flujo activo. No
 importa LibGDX, input, cámara ni reglas de vuelo: recibe el delta y un booleano de elegibilidad, y
 entrega muestras locales que la capa gráfica transforma con el marco actual del casco.
 
@@ -1183,11 +1183,12 @@ muestras. Cuando la elegibilidad deja de cumplirse, `clear()` detiene y descarta
 modo que muerte, reaparición, abandono, fin de misión o nueva partida no heredan partículas. Una
 nueva activación vuelve a repartir el pool desde el principio con la misma semilla determinista.
 
-`isSpeedElevated(flightSpeed, speeds)` es el contrato de elegibilidad: exige que la velocidad real
-supere `speeds.normal()` con una tolerancia numérica de 0,01 u/s, rechaza muestras no finitas y no
-interpreta teclas, `accelerating()` ni el temporizador de Ultra. Así el flujo se mantiene durante
-toda la desaceleración por encima del crucero configurado y desaparece exactamente al alcanzarlo,
-aunque las preferencias de Turbo/Ultra no superen la velocidad normal.
+`isSpeedElevated(flightSpeed, speeds)` es el contrato de velocidad real del modelo: exige que la
+velocidad supere `speeds.normal()` con una tolerancia numérica de 0,01 u/s, rechaza muestras no
+finitas y no interpreta teclas, `accelerating()` ni el temporizador de Ultra. El modelo se limita a
+avanzar mientras el llamador lo declara elegible; decidir cuándo cuenta esa velocidad pertenece al
+adaptador gráfico, que añade la ventana activa de Ultra. Así Turbo por sí solo no activa el flujo y
+la expiración de Ultra lo limpia en el mismo frame aunque la nave siga rápida o mantenga Turbo.
 
 Cada `Particle` expone `localX`/`localY` (cabeza), `tailX`/`tailY` (extremo hacia proa), `alpha`,
 `width` y `progress` en coordenadas normalizadas a la caja estable de Astra: `x` de -0,5 a 0,5 y `y`
@@ -1200,11 +1201,14 @@ ambos modos.
 `infrastructure.gdx.screen.AstraAirflowEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
 Posee una única instancia de `AstraAirflowParticles`, no crea texturas, shaders ni otros recursos
 nativos y por tanto no implementa `Disposable` ni añade limpieza ficticia. `isEligible(missionPlaying,
-astraActive, astra)` combina la partida en curso, Astra viva/activa y el mismo contrato de velocidad
-real de la hija 01, sin leer teclas, `accelerating()` ni el temporizador de Ultra. `update(delta,
-missionPlaying, astraActive, astra)` avanza con el tramo autorizado por la pantalla y limpia el flujo
-en cuanto deja de ser elegible, de modo que muerte, reaparición, fin de misión, abandono o nueva
-partida no heredan muestras.
+astraActive, astra)` exige partida en curso, Astra viva/activa, la ventana autoritativa de Ultra
+(`ultraRemainingSeconds() > 0`) y el contrato de velocidad real del modelo. No lee teclas,
+`accelerating()`, `ultraUsed()` —que sigue verdadero tras agotarse— ni umbrales numéricos de
+Turbo/Ultra, porque las preferencias pueden ser iguales y un valor de velocidad no identifica el
+modo. `update(delta, missionPlaying, astraActive, astra)` avanza con el tramo autorizado por la
+pantalla y limpia el flujo en cuanto deja de ser elegible: expiración de Ultra incluso con Turbo
+sostenido o velocidad aún elevada, frenado a normal o inferior, muerte, reaparición, fin de misión,
+abandono o nueva partida no heredan muestras.
 
 `transform(particle, centerX, centerY, boxWidth, boxHeight, yawDegrees, streak)` es la transformación
 pura local→mundo: aplica el vector derecho `(cos yaw, -sin yaw)` al eje local `x` y el vector de avance
