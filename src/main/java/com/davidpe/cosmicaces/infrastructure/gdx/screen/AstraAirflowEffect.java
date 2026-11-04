@@ -1,6 +1,7 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.davidpe.cosmicaces.domain.effect.AstraAirflowParticles;
 import com.davidpe.cosmicaces.domain.player.Astra;
@@ -9,15 +10,16 @@ import com.davidpe.cosmicaces.domain.player.Astra;
  * Graphical adapter for {@link AstraAirflowParticles}: draws the bounded local airflow samples as
  * thin world-space streaks that hug Astra's hull while she flies above her configured cruise speed.
  *
- * <p>It owns no native resource: the streaks use the {@link ShapeRenderer} session the screen already
- * opens for tracers, so there is no texture, shader or {@code dispose()} to manage. Eligibility is
- * read only from the live mission and ship state (mission playing, Astra active and real flight speed
- * above {@code speeds().normal()}); it never inspects keys, the Ultra timer or a fixed speed
- * constant. The effect keeps advancing while Astra decelerates above cruise and is cleared as soon as
- * the speed recovers or the run/ship stops being valid.
+ * <p>It owns no native resource: the streaks are emitted in their own {@link ShapeRenderer} session
+ * with alpha blending isolated by {@link AlphaBlendPass}, so there is no texture, shader or {@code
+ * dispose()} to manage. Eligibility is read only from the live mission and ship state (mission
+ * playing, Astra active and real flight speed above {@code speeds().normal()}); it never inspects
+ * keys, the Ultra timer or a fixed speed constant. The effect keeps advancing while Astra
+ * decelerates above cruise and is cleared as soon as the speed recovers or the run/ship stops being
+ * valid.
  *
- * <p>The invulnerability blink only skips {@link #draw}: the model keeps its bounded state so the
- * flow reappears with the hull instead of restarting every blink interval.
+ * <p>The invulnerability blink only skips {@link #drawWorldPass}: the model keeps its bounded state so
+ * the flow reappears with the hull instead of restarting every blink interval.
  */
 final class AstraAirflowEffect {
 
@@ -35,6 +37,8 @@ final class AstraAirflowEffect {
   private final AstraAirflowParticles particles = new AstraAirflowParticles();
   /** Reused destination for the local-to-world transform, so drawing allocates nothing per frame. */
   private final Streak streak = new Streak();
+  /** Owns the scoped GL blend state of the particle pass; no native resource. */
+  private final AlphaBlendPass alphaBlendPass = new AlphaBlendPass();
 
   /**
    * True only while the run is playable, Astra is alive/active and her real flight speed exceeds the
@@ -70,11 +74,38 @@ final class AstraAirflowEffect {
   }
 
   /**
-   * Draws every sampled streak into the already open world-space {@code Filled} session. The caller
-   * owns {@code begin()/end()} and the world projection; this method restores the renderer colour
-   * before returning and never changes blending, shader or projection.
+   * Draws the engaged streaks in their own isolated alpha-blended {@code Filled} session, in world
+   * projection. The session is opened and flushed inside the blend scope, so alpha is composited and
+   * the previous GL blend enable flag and separate RGB/alpha factors are restored only after the
+   * vertices reached the GPU. Callers must not have another {@code ShapeRenderer} batch open.
+   *
+   * <p>This pass is separate from the tracer session and from the HUD: neither of them changes its
+   * blending behaviour because of the airflow.
    */
-  void draw(ShapeRenderer shapes, Astra astra) {
+  void drawWorldPass(GL20 gl, ShapeRenderer shapes, Astra astra) {
+    if (shapes == null || astra == null) {
+      throw new IllegalArgumentException("Shape renderer and Astra are required");
+    }
+    if (!particles.isEngaged()) {
+      return;
+    }
+    alphaBlendPass.run(gl, () -> {
+      shapes.begin(ShapeRenderer.ShapeType.Filled);
+      try {
+        draw(shapes, astra);
+      } finally {
+        // Flush queued vertices while blending is still enabled; AlphaBlendPass restores GL after.
+        shapes.end();
+      }
+    });
+  }
+
+  /**
+   * Emits every sampled streak into an already open {@code Filled} session. The caller owns {@code
+   * begin()/end()} and the world projection; this method restores the renderer colour before
+   * returning and never changes blending, shader or projection.
+   */
+  private void draw(ShapeRenderer shapes, Astra astra) {
     if (shapes == null || astra == null) {
       throw new IllegalArgumentException("Shape renderer and Astra are required");
     }

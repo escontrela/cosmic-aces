@@ -552,16 +552,18 @@ public final class PhaseOneScreen extends ScreenAdapter {
     drawExplosions(batch);
     drawGuidedMissiles(batch, false);
     batch.end();
+    shapes.setProjectionMatrix(camera.combined);
+    // Procedural airflow streaks over the hull, in their own alpha-blended pass. The effect flushes
+    // its vertices before restoring GL, so the model's alpha envelope is really composited; the
+    // invulnerability blink still hides the pass entirely.
+    if (astraDrawable) {
+      astraAirflowEffect.drawWorldPass(Gdx.gl, shapes, controller.astra());
+    }
     // Tracers of both weapons keep the world projection, in a single Filled batch, drawing each
     // projectile with its frozen shot-time position and forward vector. Never re-read the current
-    // ship heading or camera to orient an already-fired shot.
-    shapes.setProjectionMatrix(camera.combined);
+    // ship heading or camera to orient an already-fired shot. They run outside the airflow blend
+    // scope, so their historic opaque composition is unchanged.
     shapes.begin(ShapeRenderer.ShapeType.Filled);
-    // Procedural airflow streaks over the hull, in the same world pass as the tracers. They reuse
-    // the current hull frame and stay hidden during the invulnerability blink.
-    if (astraDrawable) {
-      astraAirflowEffect.draw(shapes, controller.astra());
-    }
     for (GunProjectile projectile : controller.astraGun().projectiles()) {
       tracer.draw(shapes, projectile.x(), projectile.y(),
           projectile.forwardX(), projectile.forwardY());

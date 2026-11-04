@@ -1210,13 +1210,19 @@ partida no heredan muestras.
 pura local→mundo: aplica el vector derecho `(cos yaw, -sin yaw)` al eje local `x` y el vector de avance
 `(sin yaw, cos yaw)` al eje local `y`, ambos escalados por la caja estable del casco. Así los trazos
 acompañan posición, orientación, tamaño y virajes con cualquier modelo de Astra y en ambos modos de
-cámara; el ancho de trazo se acota a un mínimo legible y el alfa procede del modelo. `draw(shapes,
-astra)` escribe sobre la sesión `ShapeRenderer.ShapeType.Filled` que la pantalla ya abre en proyección
-de mundo, restaura el color previo y no cambia blending, shader ni proyección. `PhaseOneScreen` llama a
-`update(...)` con `activeSeconds` antes de dibujar y a `draw(...)` junto a los trazadores, después del
-casco y del halo de motor, compartiendo `astraVisible(invulnerabilityRemaining)` para que el parpadeo
-solo oculte el dibujo sin reiniciar el flujo. El halo de motor existente se conserva con su propio
-ciclo y recursos.
+cámara; el ancho de trazo se acota a un mínimo legible y el alfa procede del modelo. `drawWorldPass(gl,
+shapes, astra)` abre su propia sesión `ShapeRenderer.ShapeType.Filled` en proyección de mundo y la
+cierra (volcando los vértices) antes de devolver el control. La composición alfa se limita a esa pasada
+mediante `AlphaBlendPass`: `SpriteBatch.end()` deja `GL_BLEND` deshabilitado, así que el helper
+consulta y conserva la habilitación previa y los cuatro factores independientes RGB/alfa, habilita
+`GL_BLEND` con `SRC_ALPHA/ONE_MINUS_SRC_ALPHA` para RGB y `ONE/ONE_MINUS_SRC_ALPHA` para alfa, y
+restaura el estado exacto en `finally` después de que la pasada haya hecho `shapes.end()`. Cambiar GL
+tras emitir vértices pero antes de volcarlos no compondría el alfa; por eso el orden
+habilitar→emitir→volcar→restaurar es parte del contrato. Los trazadores y el HUD se dibujan en pasadas
+separadas y conservan su estado de blending histórico. `PhaseOneScreen` llama a `update(...)` con
+`activeSeconds` antes de dibujar y a `drawWorldPass(...)` después del casco y del halo de motor,
+compartiendo `astraVisible(invulnerabilityRemaining)` para que el parpadeo solo oculte el dibujo sin
+reiniciar el flujo. El halo de motor existente se conserva con su propio ciclo y recursos.
 
 `infrastructure.gdx.screen.AstraLightEffect` es un POC de iluminación de motor propiedad de
 `PhaseOneScreen`: genera una textura radial pequeña en memoria, aplica filtrado lineal y la libera
@@ -1884,8 +1890,10 @@ com.davidpe.cosmicaces
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
             |   1. update()  2. draw()  3. dispose()
             +-- AstraAirflowEffect: trazos de aire procedurales anclados al casco (COS-137).
-                1. isEligible()  2. update()  3. draw()  4. reset()
-                +-- Streak: destino mutable reutilizado por el dibujo, sin asignación por frame.
+            |   1. isEligible()  2. update()  3. drawWorldPass()  4. reset()
+            |   +-- Streak: destino mutable reutilizado por el dibujo, sin asignación por frame.
+            +-- AlphaBlendPass: blending alfa acotado a una pasada y restauración de GL (COS-138).
+            |   1. run(gl, pass)  2. factores RGB/alfa independientes preservados
             +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable
             |   con norte arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
