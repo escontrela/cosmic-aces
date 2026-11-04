@@ -108,8 +108,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
   private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
-  /** Warm tone shared by the minimap village markers and their name labels. */
-  private static final Color VILLAGE_LABEL_COLOR = new Color(0.94f, 0.82f, 0.56f, 1f);
   /** Caps the village label font so the five names stay inside the map; COS-129 raised it with the wider panel. */
   private static final float VILLAGE_LABEL_MAX_SCALE = 0.8f;
   /** Never shrink the label font below this scale, even on very small viewports. */
@@ -126,7 +124,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final FlightCamera flightCamera;
   private final FlightHud hud = new FlightHud();
   private final MissionHud missionHud = new MissionHud();
-  private final EnemyStatusHud enemyStatusHud = new EnemyStatusHud();
   private final FlightMinimap minimap = new FlightMinimap();
   private final GoForwardPrompt goForwardPrompt;
   private final GunBurstVisual tracer = new GunBurstVisual();
@@ -319,6 +316,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
+    // Presentation-only emergency blink clock; it never feeds simulation and is bounded per frame.
+    hud.advanceBlink(delta);
     boolean canceledMissileModeThisFrame = false;
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
       if (flow.consumeMissileEscape()) {
@@ -597,11 +596,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
         drawVillageLabels();
       }
     }
-    hud.draw(batch, hudFont, controller.astra().yawDegrees(),
-        controller.astra().flightSpeed(), controller.astraGun().isFiring(),
-        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth(), flow.isMissileArmed(),
-        controller.astraMissilesRemaining(), controller.astraMissileCapacity(),
-        missileTargetLabel());
+    // The pilot console owns the fixed bottom band shared with the minimap and the off-screen
+    // arrow. It is drawn after the map and draws its own panel plus the current readings, so no
+    // overlay can cover it and the fixed HUD projection never scrolls with the world. One immutable
+    // read of the authoritative state feeds every column, including the enemies visible this frame.
+    List<EnemyStatusHud.Readout> threats = visibleEnemyReadouts(flow.isPlaying(), astraInCombat,
+        raiderInCombat, bomberInViewport);
+    hud.draw(batch, shapes, hudFont,
+        FlightHud.Readout.from(controller, missileTargetLabel(), threats, flow.isPlaying()),
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     PhaseResult snapshot = phaseSnapshot.get();
     hud.drawScore(batch, hudFont, snapshot.points(),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
@@ -614,34 +617,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
         guidedMissileVisuals.region(GuidedMissileSheet.Faction.ASTRA,
             GuidedMissileSheet.Heading.NORTH, GuidedMissileSheet.CombustionStage.SPENT),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
-    // The enemy combat status reuses the single engagement read above and the energy already
-    // resolved by this frame's impacts, so name and percentage always match the encounter actually
-    // drawn; it stays hidden on INTRO, RESULT, before the first spawn, between respawns and after
-    // the final destruction.
-    int enemyHudSlot = 0;
-    if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat, raiderInCombat)) {
-      enemyStatusHud.draw(batch, hudFont,
-          new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
-    }
-    if (EnemyStatusHud.show(flow.isPlaying(), bomberInViewport)) {
-      enemyStatusHud.draw(batch, hudFont,
-          new EnemyStatusHud.Readout("BASTION B-52",
-              controller.bastionBomberCombat().energyPercent()),
-          hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), enemyHudSlot++);
-    }
-    for (BastionEscort escort : controller.bastionEscorts()) {
-      if (!escort.isActive()) continue;
-      VesperRaider wingman = escort.raider();
-      boolean escortVisible = shipVisible(wingman.centerX(), wingman.centerY(),
-          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f);
-      if (EnemyStatusHud.show(flow.isPlaying(), astraInCombat && escortVisible)) {
-        enemyStatusHud.draw(batch, hudFont,
-            new EnemyStatusHud.Readout("BASTION ESCORT",
-                escort.combat().energyPercent()), hudViewport.getWorldWidth(),
-            hudViewport.getWorldHeight(), enemyHudSlot++);
-      }
-    }
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
     // and every reading above stay frozen underneath while either panel waits for SPACE.
     if (flow.isIntro()) {
@@ -734,6 +709,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
    */
   private void completeRun() {
     flow.showResult();
+    // The frozen result frame is presentation-only, so the loadout returns to the cannon exactly as
+    // it does after a death or respawn. This keeps the console's authoritative weapon selection
+    // coherent with the flow that just closed missile mode, instead of leaving a stale AIM-120 help
+    // line on the result panel.
+    controller.armAstraCannon();
     // The screen publishes the authoritative snapshot together with the terminal decision resolved
     // by the controller. The application, not the screen, decides whether the whole game finished.
     publisher.publish(new PhaseCompleted(phaseSnapshot.get(), controller.missionOutcome()));
@@ -886,7 +866,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
           projection.map(), seeds, textHeight);
       drawVillageLeaderLines(labels);
       batch.begin();
-      hudFont.setColor(VILLAGE_LABEL_COLOR);
+      hudFont.setColor(PhosphorHudStyle.MAP_TEXT);
       for (VillageLabelLayout.Label label : labels) {
         hudFont.draw(batch, label.name(), label.x(), label.topY());
       }
@@ -900,7 +880,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Thin guides only where the collision-free ladder moved a label away from its marker. */
   private void drawVillageLeaderLines(List<VillageLabelLayout.Label> labels) {
     shapes.begin(ShapeRenderer.ShapeType.Line);
-    shapes.setColor(VILLAGE_LABEL_COLOR);
+    shapes.setColor(PhosphorHudStyle.MAP_TEXT);
     for (VillageLabelLayout.Label label : labels) {
       if (!label.needsLeader()) {
         continue;
@@ -966,6 +946,38 @@ public final class PhaseOneScreen extends ScreenAdapter {
     shapes.line(x, y + 12f, x, y + 34f);
     shapes.end();
     shapes.setColor(previous);
+  }
+
+  /**
+   * One compact console reading per enemy the HUD covers in the frame actually drawn, using the
+   * visibility decisions already taken for the world drawing: Vesper needs Astra and the live Raider
+   * in the rotated camera view, the Bastion follows its own viewport visibility and each escort needs
+   * Astra plus its own ship in view. The list is rebuilt every frame, so a destroyed, off-camera or
+   * not-yet-spawned enemy leaves no stale row; several visible enemies keep their own identity and
+   * energy instead of one arbitrary priority. Energies are read after this frame's impacts were
+   * resolved.
+   */
+  private List<EnemyStatusHud.Readout> visibleEnemyReadouts(boolean playing, boolean astraInCombat,
+      boolean raiderInCombat, boolean bomberInViewport) {
+    List<EnemyStatusHud.Readout> readouts = new ArrayList<>(4);
+    if (EnemyStatusHud.show(playing, astraInCombat, raiderInCombat)) {
+      readouts.add(new EnemyStatusHud.Readout(controller.raiderCombat().energyPercent()));
+    }
+    if (EnemyStatusHud.show(playing, bomberInViewport)) {
+      readouts.add(new EnemyStatusHud.Readout("BASTION B-52",
+          controller.bastionBomberCombat().energyPercent()));
+    }
+    for (BastionEscort escort : controller.bastionEscorts()) {
+      if (!escort.isActive()) continue;
+      VesperRaider wingman = escort.raider();
+      boolean escortVisible = shipVisible(wingman.centerX(), wingman.centerY(),
+          Math.max(wingman.drawWidth(), wingman.drawHeight()) / 2f);
+      if (EnemyStatusHud.show(playing, astraInCombat && escortVisible)) {
+        readouts.add(new EnemyStatusHud.Readout("BASTION ESCORT",
+            escort.combat().energyPercent()));
+      }
+    }
+    return readouts;
   }
 
   /** Target identity is read from the same live selection used by the missile controller. */

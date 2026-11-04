@@ -48,9 +48,9 @@ class OffscreenEnemyIndicatorTest {
     assertPlacement(compute(-1000f, 1000f, 0f, 0f, 1f, 1f),
         CENTER_X - 280f, TOP, -DIAGONAL, DIAGONAL);
     assertPlacement(compute(1000f, -1000f, 0f, 0f, 1f, 1f),
-        CENTER_X + 224f, BOTTOM, DIAGONAL, -DIAGONAL);
+        CENTER_X + (CENTER_Y - BOTTOM), BOTTOM, DIAGONAL, -DIAGONAL);
     assertPlacement(compute(-1000f, -1000f, 0f, 0f, 1f, 1f),
-        CENTER_X - 224f, BOTTOM, -DIAGONAL, -DIAGONAL);
+        CENTER_X - (CENTER_Y - BOTTOM), BOTTOM, -DIAGONAL, -DIAGONAL);
   }
 
   @Test
@@ -66,7 +66,7 @@ class OffscreenEnemyIndicatorTest {
     assertPlacement(compute(1000f, 0f, 0f, DIAGONAL, DIAGONAL, 1f),
         CENTER_X + 280f, TOP, DIAGONAL, DIAGONAL);
     assertPlacement(compute(1000f, 0f, 0f, -DIAGONAL, -DIAGONAL, 1f),
-        CENTER_X - 224f, BOTTOM, -DIAGONAL, -DIAGONAL);
+        CENTER_X - (CENTER_Y - BOTTOM), BOTTOM, -DIAGONAL, -DIAGONAL);
   }
 
   @Test
@@ -121,11 +121,20 @@ class OffscreenEnemyIndicatorTest {
     OffscreenEnemyIndicator.Placement moved = OffscreenEnemyIndicator.avoidReservations(
         placement, VIEW_WIDTH, VIEW_HEIGHT, panel);
 
-    // The panel's right free segment is nearer than its left one; the tip stays on the bottom edge.
-    assertEquals(VIEW_WIDTH - OffscreenEnemyIndicator.EDGE_MARGIN, moved.x(), EPS);
+    // The console band raises the bottom edge, so this diagonal tip lands nearer the panel's left
+    // free segment; it slides there and stays on the bottom edge with its direction untouched.
+    assertEquals(panel.x() - OffscreenEnemyIndicator.RESERVATION_GAP, moved.x(), EPS);
     assertEquals(BOTTOM, moved.y(), EPS);
     assertEquals(placement.directionX(), moved.directionX(), EPS);
     assertEquals(placement.directionY(), moved.directionY(), EPS);
+
+    // A tip inside the panel but nearer its right edge slides out to the right margin instead.
+    OffscreenEnemyIndicator.Placement nearRight = new OffscreenEnemyIndicator.Placement(
+        true, panel.x() + panel.width() - 4f, BOTTOM, 0f, -1f);
+    OffscreenEnemyIndicator.Placement movedRight = OffscreenEnemyIndicator.avoidReservations(
+        nearRight, VIEW_WIDTH, VIEW_HEIGHT, panel);
+    assertEquals(RIGHT, movedRight.x(), EPS);
+    assertEquals(BOTTOM, movedRight.y(), EPS);
 
     // A tip inside the panel but nearer its left edge slides out to the left segment instead.
     OffscreenEnemyIndicator.Placement nearLeft = new OffscreenEnemyIndicator.Placement(

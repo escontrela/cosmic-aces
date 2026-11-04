@@ -26,10 +26,12 @@ class MinimapProjectionTest {
     MinimapProjection.Rectangle panel = projection.panel();
     MinimapProjection.Rectangle map = projection.map();
 
+    assertEquals(panel, map, "one panel rectangle gives the map a single border");
     assertEquals(WORLD.width() / WORLD.height(), map.width() / map.height(), 0.00001f);
     assertTrue(panel.x() >= 0f);
     assertTrue(panel.x() + panel.width() <= 1024f);
-    assertTrue(panel.y() > 50f, "the bottom HUD reading stays below the panel");
+    assertEquals(FlightConsoleLayout.HEIGHT, panel.y(), 0.0001f,
+        "the bottom HUD reading stays below the panel");
     assertTrue(panel.y() + panel.height() <= 768f);
   }
 
@@ -84,13 +86,13 @@ class MinimapProjectionTest {
     MinimapProjection.Rectangle map = projection.map();
     float usableHeight = 600f - MinimapProjection.BOTTOM_MARGIN;
 
-    assertTrue(map.height() >= 0.85f * 600f,
-        "the map covers at least 85% of the nominal 600 px viewport height");
     assertTrue(map.height() >= 0.85f * usableHeight,
-        "the map also covers at least 85% of the band above the bottom HUD");
+        "the map covers at least 85% of the band above the pilot console");
     assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
     assertEquals(MinimapProjection.BOTTOM_MARGIN, panel.y(), 0.0001f,
-        "the panel starts exactly above the fixed bottom HUD band");
+        "the panel starts exactly above the fixed pilot console");
+    assertEquals(FlightConsoleLayout.HEIGHT, panel.y(), 0.0001f,
+        "the console owns the shared bottom band");
     assertTrue(panel.y() + panel.height() <= 600f);
     assertTrue(panel.x() >= 0f);
     assertTrue(panel.x() + panel.width() <= 800f);
@@ -105,9 +107,11 @@ class MinimapProjectionTest {
       MinimapProjection projection = MinimapProjection.fit(extended, size[0], size[1]);
       MinimapProjection.Rectangle panel = projection.panel();
       MinimapProjection.Rectangle map = projection.map();
+      float usableHeight = size[1] - MinimapProjection.BOTTOM_MARGIN;
 
-      assertTrue(map.height() >= 0.85f * size[1],
-          "the map fills at least 85% of " + size[0] + "x" + size[1]);
+      assertTrue(map.height() >= 0.85f * usableHeight,
+          "the map fills at least 85% of the band above the console at "
+              + size[0] + "x" + size[1]);
       assertTrue(map.height() > previousHeight, "the map grows with the viewport height");
       assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
       assertEquals(size[0] - 24f, panel.x() + panel.width(), 0.001f,
@@ -118,9 +122,28 @@ class MinimapProjectionTest {
     }
   }
 
+  @Test void mapPanelStartsExactlyAboveTheConsolePanelAtEverySupportedViewport() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    float[][] viewports = {{800f, 600f}, {1024f, 768f}, {1440f, 900f}, {1920f, 1080f}};
+
+    for (float[] size : viewports) {
+      MinimapProjection.Rectangle mapPanel =
+          MinimapProjection.fit(extended, size[0], size[1]).panel();
+      FlightConsoleLayout.Rectangle consolePanel =
+          FlightConsoleLayout.fit(size[0], size[1]).panel();
+
+      assertEquals(consolePanel.y() + consolePanel.height(), mapPanel.y(), 0.0001f,
+          "the map starts on the console top edge without overlapping it at "
+              + size[0] + "x" + size[1]);
+      assertTrue(mapPanel.y() >= consolePanel.y() + consolePanel.height());
+      assertTrue(mapPanel.x() >= 0f && mapPanel.x() + mapPanel.width() <= size[0]);
+      assertTrue(mapPanel.y() + mapPanel.height() <= size[1]);
+    }
+  }
+
   @Test void visualScaleGrowsWithTheTallerMapAndIsCapped() {
     WorldBounds extended = new WorldBounds(8192f, 36000f);
-    MinimapProjection compact = MinimapProjection.fit(extended, 800f, 448f);
+    MinimapProjection compact = MinimapProjection.fit(extended, 800f, 400f);
     MinimapProjection nominal = MinimapProjection.fit(extended, 800f, 600f);
     MinimapProjection fullHd = MinimapProjection.fit(extended, 1920f, 1080f);
 

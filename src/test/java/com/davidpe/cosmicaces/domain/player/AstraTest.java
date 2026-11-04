@@ -56,8 +56,10 @@ class AstraTest {
 
   @Test void oppositeLateralKeysCancelAndTurboAccelerates() {
     Astra ship = new Astra();
+    assertEquals(Astra.SpeedMode.NORMAL, ship.speedMode());
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     ship.fly(new FlightControls(true,true,true,false,false), 1.1f, WORLD);
+    assertEquals(Astra.SpeedMode.TURBO, ship.speedMode());
     assertEquals(0f, ship.yawDegrees(), 0.01f);
     assertEquals(1600f, ship.x(), EPS);
     assertEquals(480f, ship.flightSpeed(), EPS);
@@ -69,6 +71,7 @@ class AstraTest {
     ship.fly(new FlightControls(false,false,true,false,false), 1.1f, WORLD);
     assertEquals(480f, ship.flightSpeed(), EPS);
     ship.fly(FlightControls.neutral(), 2f, WORLD);
+    assertEquals(Astra.SpeedMode.NORMAL, ship.speedMode());
     assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS);
 
     ship.fly(new FlightControls(false,false,true,true,false), 1f, WORLD);
@@ -109,6 +112,7 @@ class AstraTest {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
     ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
+    assertEquals(Astra.SpeedMode.ULTRA, ship.speedMode());
     assertEquals(750f, ship.flightSpeed(), EPS);
     assertEquals(6f, ship.ultraRemainingSeconds(), 0.02f);
     ship.fly(new FlightControls(false,false,true,true,true), 2f, WORLD);

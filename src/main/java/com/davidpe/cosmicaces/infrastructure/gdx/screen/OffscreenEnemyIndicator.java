@@ -4,18 +4,18 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 /**
- * Discrete off-screen enemy indicator for PhaseOne (COS-39): a small amber triangle at the HUD edge
- * pointing toward the active Vesper Raider while it stays outside the camera view.
+ * Discrete off-screen enemy indicator for PhaseOne (COS-39): a small green phosphor triangle at the
+ * HUD edge pointing toward the active Vesper Raider while it stays outside the camera view.
  *
  * <p>The placement is pure geometry in the virtual HUD frame and is deliberately derived from the
  * same camera transform that draws the world: it converts the enemy centre through {@link
  * CameraVisibility#localFrame} (identical formulas to the shared visibility rule), hides whenever
  * {@link CameraVisibility#shipVisible} reports the enemy inside the view, and never scales itself
  * with the world zoom. The triangle tip sits on the interior rectangle edge; the base lies toward
- * the screen centre, so no part of the triangle enters the reserved bottom band (the flight
- * readings at y≈34/58 stay below {@link MinimapProjection#BOTTOM_MARGIN}). While the player keeps
- * the minimap open, its real panel rectangle is passed as a reservation and the placement slides
- * along the same edge to the nearest free segment, preserving the direction.
+ * the screen centre, so no part of the triangle enters the reserved bottom band (the pilot console
+ * occupies it). While the player keeps the minimap open, its real panel rectangle is passed as a
+ * reservation and the placement slides along the same edge to the nearest free segment, preserving
+ * the direction.
  *
  * <p>The class owns no native resources and never opens or closes a {@link ShapeRenderer} session:
  * the caller supplies the opened renderer, exactly like {@code GunBurstVisual}.
@@ -23,11 +23,12 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 final class OffscreenEnemyIndicator {
   /** Outer margin of the interior rectangle on the left, right and top HUD edges. */
   static final float EDGE_MARGIN = 20f;
-  /** Side length of the amber triangle in virtual pixels. */
+  /** Side length of the phosphor triangle in virtual pixels. */
   static final float TRIANGLE_SIZE = 11f;
   /** Free gap kept between the placement and a reserved rectangle (triangle reach + margin). */
   static final float RESERVATION_GAP = 18f;
-  private static final Color INDICATOR_COLOR = new Color(1f, 0.76f, 0.03f, 1f);
+  /** COS-133 shares the phosphor palette with the console and minimap; placement is unchanged. */
+  private static final Color INDICATOR_COLOR = PhosphorHudStyle.MAP_FRAME;
   /** Float tolerance when deciding which interior edge a placement lies on. */
   private static final float EDGE_EPSILON = 0.01f;
 
@@ -122,7 +123,7 @@ final class OffscreenEnemyIndicator {
   }
 
   /**
-   * Draws the amber triangle at the placement edge into the already-open {@code shapes} session.
+   * Draws the phosphor triangle at the placement edge into the already-open {@code shapes} session.
    * The caller has set the HUD projection and owns begin/end; the previous renderer colour is
    * restored on every path.
    */
@@ -152,7 +153,7 @@ final class OffscreenEnemyIndicator {
     }
   }
 
-  /** Interior rectangle's bottom: the shared fixed HUD band above every flight reading. */
+  /** Interior rectangle's bottom: the shared fixed pilot console band above every reading. */
   private static float bottomBand() {
     return MinimapProjection.BOTTOM_MARGIN;
   }

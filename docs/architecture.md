@@ -138,8 +138,9 @@ normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 p
 de los bordes opuestos de la única textura de pradera activa. El atlas incluye las bases aliada y
 enemiga, ambas de 3072×2304 unidades y alineadas en X en los extremos sur y norte respectivamente;
 las dos zonas se reservan para que la decoración no invada edificios ni pistas. `TerrainSceneryRenderer`
-dibuja ambas desde el atlas. `FlightMinimap` señala el centro aliado con un punto cian y el enemigo
-con una X roja. El renderer vive en `infrastructure.gdx.scenery`; una pantalla lo crea en el hilo
+dibuja ambas desde el atlas. `FlightMinimap` señala el centro aliado con un aro hueco y el enemigo
+con una X, ambos en el fósforo verde compartido (COS-133). El renderer vive en
+`infrastructure.gdx.scenery`; una pantalla lo crea en el hilo
 LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
@@ -158,7 +159,7 @@ de juego y tamaño restaurado de ventana, no el límite del viewport. En HiDPI, 
 dimensiones del viewport provienen del callback lógico `resize`, no del backbuffer.
 En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 `MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
-rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
+rumbo, velocidad instantánea, `SpeedMode` (NORMAL/TURBO/ULTRA), tiempo restante de Ultra y su uso único por fase.
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×36000: ocho anchos virtuales de 1024
 unidades y el triple de la longitud original de 12000. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
@@ -268,9 +269,9 @@ active a sí mismo. `PhaseOneScreen` pasa el centro/caja del raider activo antes
 dibujar; la visibilidad de armas, dibujo y minimapa sigue usando la cámara real ya
 actualizada y la puntuación conserva su muestreo previo al movimiento.
 `PhaseOneScreen` separa la proyección de mundo de la del HUD fijo.
-`FlightHud` presenta rumbo y velocidad instantánea como texto directo sobre
-el mundo, sin panel ni títulos, anclando la velocidad al margen derecho actual;
-el score acumulado también se alinea a esa esquina. El minimapa y su reserva del
+`FlightHud` presenta rumbo, velocidad y energía dentro de la consola inferior de fósforo verde
+(COS-131), que no se desplaza con la cámara; el score acumulado sigue alineado a la esquina
+superior derecha. El minimapa y su reserva del
 indicador de Vesper usan el mismo tamaño lógico actual de la cámara HUD, por lo
 que ambos permanecen juntos en el borde derecho después de resize. `PhaseScore`
 (domain.game) convierte el tiempo válido del recorrido en
@@ -287,33 +288,34 @@ sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
-lecturas. Marca el centro aliado con un punto cian y el enemigo con una X roja,
-además de Astra, Vesper y Ghostwing. Durante el apuntado de misiles, la pantalla fuerza la
-visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al salir del modo;
-M no puede ocultar la única superficie de selección. El rombo cian muestra la mira libre y un aro
-amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
-la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
-la cámara actual, sin moverla. `FlightHud` presenta AIM-120 AMRAAM, munición, objetivo fijado o su
-ausencia y la ayuda de controles dentro de la banda inferior. Mientras haya misiles guiados activos,
-`PhaseOneScreen` fuerza temporalmente la visibilidad del minimapa incluso fuera del modo de apuntado;
-`FlightMinimap` proyecta su posición actual por frame como un punto brillante, verde para Astra y
-magenta para los misiles enemigos. La preferencia M se conserva y se restaura al retirarse todos los
-misiles. `GoForwardPrompt`, propiedad de
+lecturas. Marca el centro aliado con un aro hueco y el enemigo con una X, además de Astra, Vesper y
+Ghostwing, todo en el fósforo verde compartido (COS-133). Durante el apuntado de misiles, la
+pantalla fuerza la visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al
+salir del modo; M no puede ocultar la única superficie de selección. El rombo brillante muestra la
+mira libre y un aro con marcas marca la posición exacta del objetivo fijado, incluidos los drones
+Ghostwing agrupados en la vista normal. La retícula también se dibuja en el mundo cuando la
+coordenada de mira intersecta la cámara actual, sin moverla. `FlightHud` presenta el arma
+seleccionada (M61 Vulcan o AIM-120 AMRAAM), la actividad de disparo como marca aparte, munición,
+objetivo fijado cuando existe y misiles en vuelo en la franja inferior de una sola línea. Mientras haya misiles guiados activos, `PhaseOneScreen` fuerza temporalmente la
+visibilidad del minimapa incluso fuera del modo de apuntado; `FlightMinimap` proyecta su posición
+actual por frame como un punto relleno brillante para los misiles de Astra y un aro hueco para los
+enemigos, de modo que ambos propietarios siguen distintos sin color. La preferencia M se conserva y
+se restaura al retirarse todos los misiles. `GoForwardPrompt`, propiedad de
 `PhaseOneScreen`, crea y libera una textura procedural con aro azul degradado y dispone “GO FORWARD”
 en un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier tecla o clic lo
 oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras un Vesper activo
 intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
 enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
-el punto rojo con estela direccional de Vesper Raider. Desde COS-129 el panel
+el punto relleno con estela direccional de Vesper Raider. Desde COS-129 el panel
 aprovecha casi toda la altura útil sobre la banda HUD inferior (al menos el 85 %
 del viewport de 800×600), conserva la proporción 8192×36000 y recalcula su área en
 cada `resize`; su escala visual crece con el mapa hasta 1,6× para marcadores y
-etiquetas. `FlightMinimap` pinta el panel y el interior con relleno oscuro
-translúcido (`PANEL_ALPHA` 0,55 y `MAP_ALPHA` 0,30), activa el blending solo si
-estaba desactivado y restaura el estado GL y el color del renderer al terminar,
-de modo que el escenario se distingue detrás del overlay sin alterar la opacidad
-del resto de escena, HUD o pantallas.
+etiquetas. `FlightMinimap` pinta el panel y el interior con relleno verde
+translúcido tomado de `PhosphorHudStyle` (`PANEL_ALPHA` 0,58 y `MAP_ALPHA` 0,30), activa el blending
+solo si estaba desactivado y restaura el estado GL y el color del renderer al terminar, de modo que
+el escenario se distingue detrás del overlay sin alterar la opacidad del resto de escena, HUD o
+pantallas.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -326,6 +328,86 @@ es su propietaria. Ship.draw(batch) usa un SpriteBatch ya abierto por la pantall
 `internalPath()`, `frameSlices()` y `frameSlice(int)` exponen recortes sin cargar
 texturas; el futuro objeto visual de Ghostwing deberá compartir una textura por
 pantalla y liberarla allí.
+
+### Consola de piloto inferior en fósforo verde (COS-131/132/134)
+
+`infrastructure.gdx.screen.FlightConsoleLayout` calcula la franja fija inferior de PhaseOne: un
+único renglón a ancho completo, anclado en `y = 0`, de `HEIGHT = 36` píxeles nominales. Expone
+`panel`, `contentLeft`, `contentRight` y `baseline` para colocar el texto en la proyección HUD sin
+cabeceras ni filas secundarias. Su altura es la reserva que comparten `MinimapProjection` y
+`OffscreenEnemyIndicator`, de modo que mapa e indicador empiezan por encima de la barra. Un viewport
+más bajo recorta el panel. La geometría no posee recursos LibGDX.
+
+`PhosphorHudStyle` conserva la paleta de fósforo verde y el alfa del panel y el mapa. `FlightHud`
+dibuja una franja oscura translúcida, un filete superior y un prompt `|>` centrado sobre una pestaña angular,
+seguido de valores separados por `|`. El bloque central, centrado en el ancho disponible, muestra rumbo cardinal/grados, velocidad y modo
+(NORMAL/TURBO/ULTRA), `ENERGY` en %, alarma de misil enemigo si existe, arma seleccionada,
+munición y objetivo fijado. Una ranura fija a la derecha conserva espacio para un contacto enemigo. No hay títulos de
+sección ni ayuda de controles en la franja. La actividad real del cañón añade `*` al arma. `MISILES n/cap - m (EN VUELO)` combina munición
+restante/capacidad con proyectiles guiados propios activos; `@nombre` identifica el objetivo fijado. Las alertas aprobadas conservan
+`!!` y alternan `TEXT_BRIGHT`/`TEXT_DIM` sin desaparecer; la energía se alerta con ≤ 25 % durante
+`PLAYING`, y el aviso de misil exige la referencia exacta a la vida actual de Astra.
+
+`FlightHud.Readout.from(...)` toma la instantánea autoritativa después del combate, incluida la
+lista de enemigos visibles calculada por `PhaseOneScreen.visibleEnemyReadouts(...)`. Cada contacto
+visible ocupa la ranura derecha durante 3 s y después se muestra el siguiente en orden de encuentro;
+si no hay contactos, el slot muestra `---` centrado; el ciclo se reinicia al aparecer uno nuevo. El
+texto enemigo usa la misma tipografía y parpadea en rojo. El bloque de lecturas centrales queda centrado en su zona y reduce la escala hasta
+un suelo legible al estrecharse el viewport; el texto que aún no cabe se recorta al final. `TerminalText`
+proporciona el avance fijo y el recorte con la fuente existente. El score sigue arriba a la derecha.
+`FlightHud` muestra `HIT` o `FAIL` durante 3 s y los hace parpadear al terminar un misil propio: un
+impacto directo válido es `HIT`; combustible agotado o pérdida del objetivo es `FAIL`. El controlador
+expone una secuencia de resultados para que la pantalla no pierda impactos rápidos consecutivos. No
+posee recursos nativos: utiliza el `SpriteBatch`, `ShapeRenderer` y `BitmapFont` de la pantalla y
+restaura sus estados al terminar. `MinimapProjection` hace coincidir panel y mapa en un rectángulo;
+su borde usa el mismo `FRAME` del HUD.
+
+### Minimapa en fósforo verde y convivencia con la consola (COS-133)
+
+`PhosphorHudStyle` amplía la paleta compartida con las superficies del mapa (`MAP_PANEL`,
+`MAP_FILL`, `MAP_FRAME`, `MAP_TEXT`) y tres intensidades de marcador (`MAP_MARKER_BRIGHT`,
+`MAP_MARKER`, `MAP_MARKER_DIM`). `FlightMinimap` deja de tener colores propios y deriva
+`PANEL_ALPHA`/`MAP_ALPHA` de esa paleta; `PhaseOneScreen` usa `MAP_TEXT` para los nombres de pueblo y
+sus líneas guía, y `OffscreenEnemyIndicator` pinta su flecha con `MAP_FRAME` sin cambiar su
+colocación ni su dirección.
+
+Al ser monocromo, cada contacto del mapa se distingue por forma, contorno e intensidad y nunca por
+tono: Astra es un triángulo relleno brillante; Vesper, un punto relleno dentro de un aro con estela
+tenue; las escoltas del Bastion, cuadrados huecos; cada grupo Ghostwing, un rombo hueco tenue; la base
+aliada, un aro hueco; la base enemiga, una X; el bombardero, un punto tenue con núcleo brillante; los
+pueblos, cuadrados rellenos tenues; la mira libre, un rombo hueco brillante; el objetivo fijado, un
+aro con marcas; los misiles propios, puntos rellenos; y los enemigos, aros huecos. La proyección, la
+preferencia M, la visibilidad forzada por apuntado o misiles activos y la reserva inferior compartida
+con la consola no cambian: `MinimapProjection.fit(...)` sigue empezando en
+`FlightConsoleLayout.HEIGHT` y `OffscreenEnemyIndicator.avoidReservations(...)` sigue usando el panel
+real del mapa.
+
+La verificación automática cubre la paleta verde y sus intensidades (`PhosphorHudStyleTest`), el
+distintivo relleno/hueco de los misiles (`FlightMinimapTest`), la proyección y la ausencia de
+intersección mapa/consola en 800×600, 1024×768, 1440×900 y 1920×1080 (`MinimapProjectionTest`) y las
+pruebas existentes del indicador, etiquetas y HUD. La matriz de QA visual queda para el PO humano:
+mapa manual y forzado por apuntado/misiles, varios enemigos y escuadras, arma normal y misil, nueva
+partida y los cuatro tamaños de ventana.
+
+### Misiles en vuelo y emergencias de la consola (COS-134)
+
+`FlightHud.Readout` añade `missilesInFlight`, `astraThreatened` y `alertsEnabled`, derivados en la
+misma lectura por frame desde `controller.guidedMissiles()` y `flow.isPlaying()`. `ownMissilesInFlight`
+cuenta solo misiles `Owner.ASTRA` activos, independientemente del arma seleccionada.
+`enemyMissileTargetsAstra` exige un misil `Owner.ENEMY` activo cuya `MissileTarget.Reference` sea de
+tipo `ASTRA`, use el `PhaseOneGameController.ASTRA_ENTITY_ID` autoritativo y tenga exactamente la
+`lifeGeneration` vigente; `missileThreat` añade que Astra pueda actuar. Así un misil retirado, uno
+dirigido a otra entidad —incluida otra referencia `ASTRA` con distinto `entityId`— o uno lanzado
+contra una vida anterior no generan falsos avisos, y la espera de reaparición apaga la amenaza.
+
+La franja de una línea muestra `MISILES n/cap - m (EN VUELO)` para la munición restante/capacidad
+y los misiles propios activos, `!! MISIL ENEMIGO` cuando existe una amenaza y `!! ENERGY NN%` si
+`energyAlarm(...)` es
+cierto, solo en `PLAYING` y con energía ≤ 25 %. Ambos avisos alternan `TEXT_BRIGHT`/`TEXT_DIM`
+con el reloj de presentación de `FlightHud` (`advanceBlink(delta)`, periodo de 1 s), sin desaparecer.
+Fuera de `PLAYING` no queda estado visual residual. El reloj no modifica simulación, cámara,
+targeting ni recursos. `FlightHudTest` cubre el umbral 25/26, la referencia exacta de Astra, los
+misiles retirados o propios, las fases del parpadeo y la ocultación fuera de juego. Los contactos enemigos alternan rojo brillante y rojo tenue cada 0,5 s.
 
 ### UAV Geran-4: lámina y modelo de vuelo recto (COS-93)
 
@@ -587,7 +669,7 @@ en `drawExplosions`. El pico es `1,8 ×` la caja 72×72 del dron (ajuste visual 
 
 `FlightMinimap.draw` recibe ahora una lista de puntos representativos
 (`GhostwingEncounter.representativePoint(group)`, uno por grupo activo —centroide de los miembros
-vivos—, no por dron) y dibuja exactamente un rombo ámbar hueco por grupo
+vivos—, no por dron) y dibuja exactamente un rombo hueco tenue por grupo
 (`GROUP_MARKER_HALF = 6` px; vértices puros en `diamondVertices`, probados sin renderer). El grupo
 sin miembros vivos desaparece del encuentro y del mapa; la preferencia M y la ocultación temporal
 por combate se conservan, y esa ocultación sigue siendo solo por Vesper.
@@ -615,8 +697,8 @@ dos hechos reales: `advanceEncounter()` registra la llegada en cuanto el bombard
 `ShipCombatState.bastionBomber()` requiere tres veces los impactos de Vesper para agotar la energía;
 el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` integra su avance,
 impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
-su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador rojo
-intermitente con intervalos de 0,3 s.
+su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador tenue con
+núcleo brillante intermitente con intervalos de 0,3 s.
 `BastionEscort` mantiene dos encuentros Vesper adicionales: se despliegan a izquierda y derecha
 cuando el bombardero despega y conservan esos puestos mientras Astra está fuera de 1800 u. Al
 detectar a Astra pasan al mismo encuentro de aproximación, pasadas y disparo que el Raider normal.
@@ -977,19 +1059,19 @@ derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redim
 batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
 inicial autoritativa; la legibilidad visual es del PO.
 
-### HUD de enemigos visibles en PhaseOne (COS-72)
+### Lecturas de enemigos visibles en PhaseOne (COS-72/COS-132)
 
-`infrastructure.gdx.screen.EnemyStatusHud` dibuja nombre y energía de los enemigos bajo la misma
-proyección HUD de `hudViewport`, con `Readout(title, energyPercent)` y porcentaje entero con clamp
-0–100. Vesper conserva su regla actual: Astra y el Raider vivo deben coincidir en la vista rotada
-real de cámara durante PLAYING. Bastion se muestra durante PLAYING cuando su nave activa intersecta
-esa cámara, incluso si Astra no coincide con él. Si ambos son visibles, los dos bloques ocupan
-slots verticales separados; el bloque de Bastion dice `BASTION B-52`. La pantalla calcula la
-visibilidad para el fotograma dibujado y lee la energía después de resolver impactos, de modo que el
-HUD coincide con el estado del avión. No posee recursos nativos y es independiente del porcentaje
-de Astra (`FlightHud`). El layout puro mide cada nombre con `GlyphLayout`, queda bajo los contadores,
-reloj y score, y encima de la banda inferior y el minimapa; `EnemyStatusHudTest` cubre las reglas de
-visibilidad, títulos, energía y slots.
+`infrastructure.gdx.screen.EnemyStatusHud` conserva el modelo de las lecturas enemigas con
+`Readout(title, energyPercent)` y porcentaje entero con clamp 0–100. Vesper conserva su regla
+original: Astra y el Raider vivo deben coincidir en la vista rotada real de cámara durante PLAYING.
+Bastion se muestra durante PLAYING cuando su nave activa intersecta esa cámara, incluso si Astra no
+coincide con él. La pantalla calcula la visibilidad para el fotograma dibujado y lee la energía
+después de resolver impactos, de modo que la lectura coincide con el estado del avión. Desde COS-132
+la clase ya no dibuja ni posee layout: `FlightHud` integra los `Readout` al final de la franja de una línea, y
+`PhaseOneScreen.visibleEnemyReadouts(...)` reconstruye la lista por frame (Vesper, `BASTION B-52` y
+escoltas `BASTION ESCORT`). Varios contactos comparten el espacio horizontal disponible. No posee recursos nativos y sigue siendo independiente del porcentaje de Astra.
+`EnemyStatusHudTest` cubre las reglas de visibilidad, títulos, energía y clamps; el formato de la
+línea y las filas de la consola se prueban en `FlightHudTest` y `FlightConsoleLayoutTest`.
 
 ### Tramo activo autorizado del frame (COS-73)
 
@@ -1124,11 +1206,12 @@ El parpadeo de Astra es presentación pura: mientras `invulnerabilityRemaining()
 alterna cuerpo/fogonazo cada 0,1 s (regla `PhaseOneScreen.astraVisible(remaining)`,
 sin pruebas de color/alpha residual en el batch); la inmunidad que decide el dominio
 (`ShipCombatState`) no depende de la visibilidad del sprite y Astra puede pilotar y
-disparar mientras parpadea. `FlightHud.draw(...)` recibe ahora además la energía
-0–100 de `astraCombat().energyPercent()` y `energyLabel(int)` muestra «ENERGIA NN%»
-(clamp a 0–100) en la fila inferior izquierda, siempre visible durante la partida,
-incluidos el 0 % de la espera y el 100 % del respawn, sin invadir rumbo, velocidad,
-arma, score ni minimapa. El cuerpo del Vesper muerto no se dibuja ni cuenta como
+disparar mientras parpadea. `FlightHud.draw(...)` recibe además la energía
+0–100 de `astraCombat().energyPercent()` y `energyLabel(int)` muestra «ENERGÍA NN%»
+(clamp a 0–100) en la tercera fila de la columna `PILOTAJE` de la consola inferior (COS-131),
+siempre visible durante la partida,
+incluidos el 0 % de la espera y el 100 % del respawn, sin invadir las otras columnas,
+el score ni el minimapa. El cuerpo del Vesper muerto no se dibuja ni cuenta como
 coincidente ni en el minimapa (`isRaiderActive()` ya es falso mientras está destruido);
 el score mostrado sigue siendo el snapshot del coordinador, incluido el bonus 1000 de
 COS-32, y ni la animación ni el fin de explosión publican puntos.
@@ -1334,10 +1417,10 @@ pose (escala uniforme; no se estira la pose ni cambia la caja). El pulso del
 fogonazo lo da el propio `GunBurst.flashVisible()` (0,035 s del mismo reloj de
 emisión): la pantalla lo propaga con `Astra.setMuzzleFlashVisible` y
 `VesperRaider.setMuzzleFlashVisible` antes del dibujo, y `currentRegion` elige
-`region(pose, accelerating, flash)` / `region(pose, flash)`. `FlightHud.draw`
-recibe `isFiring` y `weaponLabel(boolean)` devuelve «M61 VULCAN» o vacío,
-dibujado centrado en una fila inferior libre (y=58) sin mover cámara ni
-reorganizar las lecturas existentes.
+`region(pose, accelerating, flash)` / `region(pose, flash)`. `FlightHud.Readout`
+recibe `firing` desde `astraGun().isFiring()` y muestra el arma seleccionada en la
+franja inferior, añadiendo `*` solo mientras el cañón dispara. La lectura no mueve la cámara ni crea
+otra autoridad de selección.
 
 Vesper integra su cañón autónomo en el mismo controlador. `PhaseOneGameController`
 posee un segundo `GunBurst`, `raiderGun()`, y `advanceWeapons(frameDelta,
@@ -1430,14 +1513,15 @@ pantalla (`OffscreenEnemyIndicator`) en la pasada HUD, después de fijar
 `hudCamera`, entre sesiones de `SpriteBatch`/`ShapeRenderer` y sin anidar
 `begin`. La colocación es geometría pura: reutiliza
 `CameraVisibility.localFrame(...)` (el mismo marco de cámara con rotación y zoom
-que `shipVisible`) para orientar una flecha ámbar hacia el Vesper activo, se
+que `shipVisible`) para orientar una flecha de fósforo hacia el Vesper activo, se
 oculta con `CameraVisibility.shipVisible(...)` —una única regla de visibilidad,
 sin un segundo test discrepante— cuando el enemigo entra en la vista, y no
 escala con el zoom mundial. Solo se muestra si la fase sigue y
 `controller.isRaiderActive()`: muerto, esperando reaparecer, sin aparecer aún o
 con la fase terminada no hay indicador. El borde inferior del rectángulo
-interior se ancla en `MinimapProjection.BOTTOM_MARGIN` para no tapar las
-lecturas del HUD; mientras el minimapa está visible se le pasa su panel real
+interior se ancla en `MinimapProjection.BOTTOM_MARGIN` —que es
+`FlightConsoleLayout.HEIGHT` desde COS-131— para no tapar la consola inferior;
+mientras el minimapa está visible se le pasa su panel real
 como reserva y la flecha se desliza por el mismo borde conservando la dirección.
 No crea recursos nativos ni modifica el minimapa, las armas, el daño, la
 puntuación ni las cadencias.
@@ -1611,7 +1695,7 @@ com.davidpe.cosmicaces
 |   |       1. none()  2. fromDirections()  3. fromDownwardHeading()
 |   +-- player
 |   |   +-- Astra extends Ship: protagonista y estado de vuelo por rumbo.
-|   |   |   1. placeAt()  2. respawnAt()  3. fly()  4. yawDegrees()  5. flightSpeed()  6. speeds()
+|   |   |   1. placeAt()  2. respawnAt()  3. fly()  4. yawDegrees()  5. flightSpeed()  6. speedMode()/speeds()
 |   |   |   7. ultraRemainingSeconds()  8. setVisuals()  9. setMuzzleFlashVisible()
 |   |   |   10. currentRegion()  11. shotAt(): instantánea de los dos cañones para una emisión.
 |   |   |   +-- Visuals: carga texturas; dispose() las libera.
@@ -1838,13 +1922,26 @@ com.davidpe.cosmicaces
             +-- FlightCamera: aplica el estado a OrthographicCamera; recibe el CameraMode capturado
             |   por la pantalla y lo fija durante esa partida.
             |   1. update() [2 sobrecargas]
-            +-- FlightHud: brújula, velocidad, arma activa, energía y score en pantalla.
-            |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
-            |   5. draw()  6. drawScore()
+            +-- FlightHud: consola inferior en fósforo con lecturas y score en pantalla (COS-131/132/134).
+            |   1. Readout.from()  2. headingLabel()  3. headingDegrees()  4. energyLabel()
+            |   5. headingLine()  6. velocityLine()  7. weaponLine()  8. threatLine()
+            |   9. missileAmmoLabel()/missileTargetLabel()  10. missileHelpLabel()
+            |   11. ownMissilesInFlight()/enemyMissileTargetsAstra()/missileThreat()
+            |   12. energyAlarm()/missileAlarm()/blinkBright()  13. advanceBlink()
+            |   14. missilesInFlightLabel()/energyAlarmLabel()/missileAlarmLabel()
+            |   15. draw(batch, shapes, font, Readout, viewportWidth, viewportHeight)  16. drawScore()
+            +-- FlightConsoleLayout: geometría pura de la franja inferior de una línea.
+            |   1. fit()  2. HEIGHT/bottomBand()  3. Layout.panel()/contentLeft()/contentRight()
+            |   4. Layout.baseline()
+            +-- PhosphorHudStyle: paleta de fósforo verde con alfa para consola y mapa (COS-131/133).
+            |   1. PANEL/FRAME/FRAME_DIM  2. TEXT/TEXT_BRIGHT/TEXT_DIM/TEXT_FAINT  3. SHADOW
+            |   4. MAP_PANEL/MAP_FILL/MAP_FRAME/MAP_TEXT  5. MAP_MARKER_BRIGHT/MARKER/DIM
+            +-- TerminalText: rejilla monoespaciada sobre la BitmapFont existente (COS-131).
+            |   1. cellWidth()  2. width()  3. fitScale()  4. truncate()  5. draw()
             +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
             |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
-            +-- EnemyStatusHud: nombre + energía % de enemigos visibles (Vesper/Bastion, COS-72).
-            |   1. show()  2. Readout.titleLabel()/energyLabel()  3. layout()  4. draw()
+            +-- EnemyStatusHud: modelo nombre + energía % de enemigos visibles (COS-72/132).
+            |   1. show()  2. Readout.titleLabel()/energyLabel()  [dibujo en FlightHud]
             +-- PhaseOneTerrainCatalog: catálogo histórico de 128 PNG (COS-82; sin uso activo).
             |   1. tiles()  2. tile()  3. pathFor()  4. tileAt()  5. tilesIn()
             |   6. requiresVerticalFlip()
@@ -1854,15 +1951,16 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, selección de misil y marcadores de objetivo.
+            +-- FlightMinimap: overlay opcional del mundo en fósforo, selección y marcadores (COS-133).
                 1. toggle()  2. isVisible()  3. setTargeting()  4. draw()
                 5. aimMarkers() [proyección pura del cursor/objetivo]  6. bomberBlinkVisible()
                 7. diamondVertices() [geom. pura del rombo]  8. GROUP_MARKER_HALF
+                9. solidMissileMarker(owner) [punto propio vs aro enemigo]
             +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
                 1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
-            |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            |   5. BOTTOM_MARGIN [= FlightConsoleLayout.HEIGHT, banda compartida con el indicador]
             |   6. visualScale() [marcadores 1–1,6× según la altura del mapa] (COS-129)
             +-- VillageLabelLayout: nombres y escalera sin solapes de los cinco pueblos (COS-128).
             |   1. seeds()  2. place()  3. MARKER_MARGIN/LABEL_GAP/EDGE_INSET/LINE_GAP
