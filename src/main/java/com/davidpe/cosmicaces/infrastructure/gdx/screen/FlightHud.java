@@ -128,9 +128,10 @@ final class FlightHud {
   }
 
   /**
-   * True only while an active enemy missile targets Astra's exact current life. The controller always
-   * identifies Astra with entity id 0, so the kind plus the life generation are the exact reference;
-   * a retired missile or one launched at a previous life generation cannot raise the alarm.
+   * True only while an active enemy missile targets Astra's exact current identity: kind
+   * {@code ASTRA}, the authoritative {@link PhaseOneGameController#ASTRA_ENTITY_ID} and the current
+   * life generation. A retired missile, an Astra entity with another id, or one launched at a
+   * previous life generation cannot raise the alarm.
    */
   static boolean enemyMissileTargetsAstra(List<GuidedMissile> missiles, int astraLifeGeneration) {
     if (missiles == null) {
@@ -143,6 +144,7 @@ final class FlightHud {
       }
       MissileTarget.Reference reference = missile.targetReference();
       if (reference.kind() == MissileTarget.Kind.ASTRA
+          && reference.entityId() == PhaseOneGameController.ASTRA_ENTITY_ID
           && reference.lifeGeneration() == astraLifeGeneration) {
         return true;
       }

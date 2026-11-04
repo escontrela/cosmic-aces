@@ -427,9 +427,10 @@ partida y los cuatro tamaños de ventana.
 misma lectura por frame desde `controller.guidedMissiles()` y `flow.isPlaying()`. `ownMissilesInFlight`
 cuenta solo misiles `Owner.ASTRA` activos, independientemente del arma seleccionada.
 `enemyMissileTargetsAstra` exige un misil `Owner.ENEMY` activo cuya `MissileTarget.Reference` sea de
-tipo `ASTRA` y tenga exactamente la `lifeGeneration` vigente; `missileThreat` añade que Astra pueda
-actuar. Así un misil retirado, uno dirigido a otra entidad o uno lanzado contra una vida anterior no
-generan falsos avisos, y la espera de reaparición apaga la amenaza.
+tipo `ASTRA`, use el `PhaseOneGameController.ASTRA_ENTITY_ID` autoritativo y tenga exactamente la
+`lifeGeneration` vigente; `missileThreat` añade que Astra pueda actuar. Así un misil retirado, uno
+dirigido a otra entidad —incluida otra referencia `ASTRA` con distinto `entityId`— o uno lanzado
+contra una vida anterior no generan falsos avisos, y la espera de reaparición apaga la amenaza.
 
 El pie de la consola aloja dos lecturas: a la izquierda `MISILES EN VUELO n` (tenue en 0 y brillante
 con alguno) y a la derecha la alerta `!! MISIL ENEMIGO A ASTRA` cuando procede, con prioridad sobre la

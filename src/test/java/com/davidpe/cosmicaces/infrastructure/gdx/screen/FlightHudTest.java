@@ -111,6 +111,12 @@ class FlightHudTest {
     assertFalse(FlightHud.enemyMissileTargetsAstra(List.of(staleLife), 2));
     assertFalse(FlightHud.enemyMissileTargetsAstra(List.of(incoming), 1),
         "a missile locked to a previous life generation cannot raise the alarm");
+    GuidedMissile otherAstraEntity =
+        enemyMissile(new MissileTarget.Reference(MissileTarget.Kind.ASTRA, 7, 2));
+    assertFalse(FlightHud.enemyMissileTargetsAstra(List.of(otherAstraEntity), 2),
+        "the same kind and generation with another Astra entity id is not Astra's exact reference");
+    assertTrue(FlightHud.enemyMissileTargetsAstra(List.of(otherAstraEntity, incoming), 2),
+        "the real Astra entity still raises the alarm beside a foreign Astra id");
     assertFalse(FlightHud.enemyMissileTargetsAstra(List.of(), 2));
     assertFalse(FlightHud.enemyMissileTargetsAstra(List.of(astraMissile()), 2),
         "an Astra-owned missile is never an enemy threat");

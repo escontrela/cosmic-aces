@@ -47,6 +47,12 @@ public final class PhaseOneGameController extends GameController {
    */
   public static final WorldBounds WORLD = new WorldBounds(8192f, 36000f);
   /**
+   * Astra is a single controlled hull, so its authoritative missile identity uses entity id 0;
+   * uniqueness across lives comes from {@code lifeGeneration}. Presentation code that resolves the
+   * exact target of a missile must compare this id as part of the reference.
+   */
+  public static final long ASTRA_ENTITY_ID = 0L;
+  /**
    * Body hulls are approximated by the inscribed circle of each ship box; the exact rotated box can
    * be introduced later without changing the collision contract.
    */
@@ -513,8 +519,8 @@ public final class PhaseOneGameController extends GameController {
 
   /** Each Bastion escort owns its lock clock and one configured missile; viewport visibility is irrelevant. */
   private void advanceEscortMissileLocks(float deltaSeconds) {
-    MissileTarget.Reference reference = new MissileTarget.Reference(MissileTarget.Kind.ASTRA, 0,
-        astraCombat.lifeGeneration());
+    MissileTarget.Reference reference = new MissileTarget.Reference(MissileTarget.Kind.ASTRA,
+        ASTRA_ENTITY_ID, astraCombat.lifeGeneration());
     MissileTarget target = astraCombat.canAct()
         ? currentMissileTarget(reference).orElse(null) : null;
     if (!isRunStarted() || isRunFinished() || mission.isFinished()) {
