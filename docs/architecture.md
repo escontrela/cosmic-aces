@@ -376,7 +376,8 @@ visible: `M61 VULCAN` sin disparar y `AIM-120 AMRAAM` en modo misil. La activida
 cañón se muestra como marca separada (` · DISPARO`) solo mientras `astraGun().isFiring()` es
 efectivo; la munición real (`MISILES n/cap`, `Sin misiles` al agotarse) y el objetivo fijado o su
 ausencia se muestran en ambas selecciones, y la ayuda de controles permanece en el pie solo en modo
-misil. No se crea una segunda autoridad de selección.
+misil (COS-134 añade antes de esa ayuda la lectura de misiles propios en vuelo). No se crea una
+segunda autoridad de selección.
 
 `PhaseOneScreen.visibleEnemyReadouts(...)` reconstruye cada frame una lista de
 `EnemyStatusHud.Readout` con las mismas reglas de visibilidad que el dibujo del mundo: Vesper exige
@@ -419,6 +420,27 @@ intersección mapa/consola en 800×600, 1024×768, 1440×900 y 1920×1080 (`Mini
 pruebas existentes del indicador, etiquetas y HUD. La matriz de QA visual queda para el PO humano:
 mapa manual y forzado por apuntado/misiles, varios enemigos y escuadras, arma normal y misil, nueva
 partida y los cuatro tamaños de ventana.
+
+### Misiles en vuelo y emergencias de la consola (COS-134)
+
+`FlightHud.Readout` añade `missilesInFlight`, `astraThreatened` y `alertsEnabled`, derivados en la
+misma lectura por frame desde `controller.guidedMissiles()` y `flow.isPlaying()`. `ownMissilesInFlight`
+cuenta solo misiles `Owner.ASTRA` activos, independientemente del arma seleccionada.
+`enemyMissileTargetsAstra` exige un misil `Owner.ENEMY` activo cuya `MissileTarget.Reference` sea de
+tipo `ASTRA` y tenga exactamente la `lifeGeneration` vigente; `missileThreat` añade que Astra pueda
+actuar. Así un misil retirado, uno dirigido a otra entidad o uno lanzado contra una vida anterior no
+generan falsos avisos, y la espera de reaparición apaga la amenaza.
+
+El pie de la consola aloja dos lecturas: a la izquierda `MISILES EN VUELO n` (tenue en 0 y brillante
+con alguno) y a la derecha la alerta `!! MISIL ENEMIGO A ASTRA` cuando procede, con prioridad sobre la
+ayuda de misil de COS-132. La fila de energía antepone `!!` y parpadea cuando `energyAlarm(...)` es
+cierto, es decir, solo en `PLAYING` y con energía ≤ 25 %. Ambos avisos alternan `TEXT_BRIGHT`/
+`TEXT_DIM` con un reloj de presentación de `FlightHud` (`advanceBlink(delta)`, periodo de 1 s y
+envuelto dentro del periodo) en lugar de desaparecer, de modo que la etiqueta sigue siendo legible en
+las dos fases; fuera de `PLAYING` las condiciones se evalúan falsas y no queda estado residual. El
+reloj nunca modifica simulación, cámara, targeting ni recursos. La verificación pura cubre umbral
+25/26, referencia exacta de Astra, misiles retirados o propios, varios misiles, fase del parpadeo y
+ocultación fuera de juego en `FlightHudTest`; la QA visual del parpadeo y del pie queda para el PO.
 
 ### UAV Geran-4: lámina y modelo de vuelo recto (COS-93)
 
@@ -1935,11 +1957,14 @@ com.davidpe.cosmicaces
             +-- FlightCamera: aplica el estado a OrthographicCamera; recibe el CameraMode capturado
             |   por la pantalla y lo fija durante esa partida.
             |   1. update() [2 sobrecargas]
-            +-- FlightHud: consola inferior en fósforo con lecturas y score en pantalla (COS-131/132).
+            +-- FlightHud: consola inferior en fósforo con lecturas y score en pantalla (COS-131/132/134).
             |   1. Readout.from()  2. headingLabel()  3. headingDegrees()  4. energyLabel()
             |   5. headingLine()  6. velocityLine()  7. weaponLine()  8. threatLine()
             |   9. missileAmmoLabel()/missileTargetLabel()  10. missileHelpLabel()
-            |   11. draw(batch, shapes, font, Readout, viewportWidth, viewportHeight)  12. drawScore()
+            |   11. ownMissilesInFlight()/enemyMissileTargetsAstra()/missileThreat()
+            |   12. energyAlarm()/missileAlarm()/blinkBright()  13. advanceBlink()
+            |   14. missilesInFlightLabel()/energyAlarmLabel()/missileAlarmLabel()
+            |   15. draw(batch, shapes, font, Readout, viewportWidth, viewportHeight)  16. drawScore()
             +-- FlightConsoleLayout: geometría pura de la banda inferior compartida (COS-131).
             |   1. fit()  2. HEIGHT/bottomBand()  3. Layout.rowBaseline()/contentLeft()/contentRight()
             |   4. Layout.headerSeparatorY()/footerSeparatorY()/firstSeparatorX()/secondSeparatorX()

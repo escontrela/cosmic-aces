@@ -316,6 +316,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
+    // Presentation-only emergency blink clock; it never feeds simulation and is bounded per frame.
+    hud.advanceBlink(delta);
     boolean canceledMissileModeThisFrame = false;
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
       if (flow.consumeMissileEscape()) {
@@ -601,7 +603,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
     List<EnemyStatusHud.Readout> threats = visibleEnemyReadouts(flow.isPlaying(), astraInCombat,
         raiderInCombat, bomberInViewport);
     hud.draw(batch, shapes, hudFont,
-        FlightHud.Readout.from(controller, missileTargetLabel(), threats),
+        FlightHud.Readout.from(controller, missileTargetLabel(), threats, flow.isPlaying()),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     PhaseResult snapshot = phaseSnapshot.get();
     hud.drawScore(batch, hudFont, snapshot.points(),
