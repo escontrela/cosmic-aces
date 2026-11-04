@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
@@ -167,9 +168,29 @@ class FlightHudTest {
         FlightHud.threatLine(new EnemyStatusHud.Readout("BASTION ESCORT", 0)));
   }
 
+  @Test void rotatesVisibleEnemyReadingsEveryThreeSeconds() {
+    FlightHud hud = new FlightHud();
+    List<EnemyStatusHud.Readout> threats = List.of(
+        new EnemyStatusHud.Readout("VESPER RAIDER", 80),
+        new EnemyStatusHud.Readout("BASTION B-52", 60));
+
+    assertEquals("VESPER RAIDER", hud.nextThreat(threats, 0f).titleLabel());
+    assertEquals("VESPER RAIDER", hud.nextThreat(threats, 2.9f).titleLabel());
+    assertEquals("BASTION B-52", hud.nextThreat(threats, 0.1f).titleLabel());
+    assertEquals("BASTION B-52", hud.nextThreat(threats, 2.9f).titleLabel());
+    assertEquals("VESPER RAIDER", hud.nextThreat(threats, 0.1f).titleLabel());
+    assertNull(hud.nextThreat(List.of(), 0f), "contacts clear when none remain visible");
+  }
+
+  @Test void missileLineShowsRemainingAmmoAndActiveProjectilesTogether() {
+    assertEquals("MISILES 5/4 - 1 (EN VUELO)", FlightHud.missileLoadoutLine(5, 4, 1));
+    assertEquals("MISILES 0/4 - 0 (EN VUELO)", FlightHud.missileLoadoutLine(-1, 4, -2));
+  }
+
   @Test void readoutClampsAmmoAndEnergyAndCopiesTheVisibleThreats() {
     EnemyStatusHud.Readout threat = new EnemyStatusHud.Readout(42);
-    FlightHud.Readout readout = new FlightHud.Readout(12f, 150.4f, true, 125,
+    FlightHud.Readout readout = new FlightHud.Readout(12f, 150.4f,
+        Astra.SpeedMode.NORMAL, true, 125,
         MissileLoadout.Weapon.CANNON, 5, 2, -4, null, true, false, List.of(threat));
 
     assertEquals(100, readout.energyPercent(), "energy never exceeds the displayable range");
@@ -183,7 +204,8 @@ class FlightHudTest {
         () -> readout.threats().add(new EnemyStatusHud.Readout(10)),
         "the frame snapshot is immutable");
 
-    FlightHud.Readout empty = new FlightHud.Readout(0f, 0f, false, -5,
+    FlightHud.Readout empty = new FlightHud.Readout(0f, 0f,
+        Astra.SpeedMode.NORMAL, false, -5,
         MissileLoadout.Weapon.MISSILE, -3, -1, 0, null, false, true, null);
     assertEquals(0, empty.energyPercent());
     assertEquals(0, empty.missilesRemaining());

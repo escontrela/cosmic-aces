@@ -38,7 +38,7 @@ final class FlightMinimap {
    */
   static final float PANEL_ALPHA = PhosphorHudStyle.MAP_PANEL.a;
   static final float MAP_ALPHA = PhosphorHudStyle.MAP_FILL.a;
-  private static final Color BORDER_COLOR = PhosphorHudStyle.MAP_FRAME;
+  private static final Color BORDER_COLOR = PhosphorHudStyle.FRAME_DIM;
   private static final Color ASTRA_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
   private static final Color RAIDER_COLOR = PhosphorHudStyle.MAP_MARKER;
   private static final Color RAIDER_TRAIL_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;

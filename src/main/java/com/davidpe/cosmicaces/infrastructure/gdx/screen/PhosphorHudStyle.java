@@ -31,6 +31,12 @@ final class PhosphorHudStyle {
   /** Help text and inactive readings. */
   static final Color TEXT_FAINT = new Color(0.23f, 0.62f, 0.34f, 1f);
 
+  /** Red warning for hostile contacts in the pilot strip. */
+  static final Color ENEMY_ALERT = new Color(1f, 0.25f, 0.22f, 1f);
+
+  /** Dim red pulse phase for hostile contacts. */
+  static final Color ENEMY_ALERT_DIM = new Color(0.48f, 0.10f, 0.09f, 1f);
+
   /** Shadow kept behind every glyph so the console stays readable over bright terrain. */
   static final Color SHADOW = new Color(0f, 0.03f, 0.01f, 0.90f);
 

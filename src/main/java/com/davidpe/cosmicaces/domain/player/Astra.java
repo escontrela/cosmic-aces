@@ -13,6 +13,8 @@ import java.util.List;
 /** The player's ship and its continuous, world-space flight state. */
 public final class Astra extends Ship {
 
+  public enum SpeedMode { NORMAL, TURBO, ULTRA }
+
   public static final float DEFAULT_SPEED = FlightTuning.NORMAL_SPEED;
   // The tighter v3 slices need a larger pixel scale to retain the existing on-screen ship size.
   private static final float SPRITE_SCALE = 0.145f;
@@ -27,6 +29,7 @@ public final class Astra extends Ship {
   private float yawDegrees;
   private final FlightSpeeds speeds;
   private float flightSpeed;
+  private SpeedMode speedMode = SpeedMode.NORMAL;
   private float ultraRemainingSeconds;
   private boolean ultraUsed;
 
@@ -77,6 +80,11 @@ public final class Astra extends Ship {
     return flightSpeed;
   }
 
+  /** Speed target selected by the current flight input, even while speed is still ramping. */
+  public SpeedMode speedMode() {
+    return speedMode;
+  }
+
   public float height() {
     return FlightTuning.FIXED_HEIGHT;
   }
@@ -109,6 +117,7 @@ public final class Astra extends Ship {
     }
     placeAt(centerX - drawWidth() / 2f, centerY - drawHeight() / 2f, 0f, world);
     flightSpeed = speeds.normal();
+    speedMode = SpeedMode.NORMAL;
     ultraRemainingSeconds = 0f;
     pose = HeroShipSheet.Pose.NEUTRAL;
     accelerating = false;
@@ -144,6 +153,8 @@ public final class Astra extends Ship {
 
   private void advanceStep(FlightControls controls, float step, WorldBounds world) {
     boolean ultra = ultraRemainingSeconds > 0f;
+    speedMode = controls.down() ? SpeedMode.NORMAL
+        : ultra ? SpeedMode.ULTRA : controls.up() ? SpeedMode.TURBO : SpeedMode.NORMAL;
     float target = controls.down() ? 0f
         : ultra ? speeds.ultra()
         : controls.up() ? speeds.turbo() : speeds.normal();

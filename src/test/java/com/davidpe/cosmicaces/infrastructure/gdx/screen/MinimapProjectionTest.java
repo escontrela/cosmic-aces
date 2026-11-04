@@ -26,10 +26,12 @@ class MinimapProjectionTest {
     MinimapProjection.Rectangle panel = projection.panel();
     MinimapProjection.Rectangle map = projection.map();
 
+    assertEquals(panel, map, "one panel rectangle gives the map a single border");
     assertEquals(WORLD.width() / WORLD.height(), map.width() / map.height(), 0.00001f);
     assertTrue(panel.x() >= 0f);
     assertTrue(panel.x() + panel.width() <= 1024f);
-    assertTrue(panel.y() > 50f, "the bottom HUD reading stays below the panel");
+    assertEquals(FlightConsoleLayout.HEIGHT, panel.y(), 0.0001f,
+        "the bottom HUD reading stays below the panel");
     assertTrue(panel.y() + panel.height() <= 768f);
   }
 
@@ -141,7 +143,7 @@ class MinimapProjectionTest {
 
   @Test void visualScaleGrowsWithTheTallerMapAndIsCapped() {
     WorldBounds extended = new WorldBounds(8192f, 36000f);
-    MinimapProjection compact = MinimapProjection.fit(extended, 800f, 448f);
+    MinimapProjection compact = MinimapProjection.fit(extended, 800f, 400f);
     MinimapProjection nominal = MinimapProjection.fit(extended, 800f, 600f);
     MinimapProjection fullHd = MinimapProjection.fit(extended, 1920f, 1080f);
 

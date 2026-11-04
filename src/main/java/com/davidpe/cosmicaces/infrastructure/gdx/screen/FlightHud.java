@@ -8,23 +8,24 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Fixed-screen pilot console of PhaseOne (COS-131/COS-132/COS-134): a translucent green terminal
- * anchored to the bottom edge, with ruled columns for navigation, weapons and the visible enemy
- * readings.
+ * Fixed-screen pilot console of PhaseOne: a translucent green, single-line terminal strip anchored
+ * to the bottom edge. Values appear without section headings, separated by dim shell-style rules.
  *
  * <p>Every frame the screen builds one immutable {@link Readout} from the authoritative state after
  * combat is resolved, so the console never keeps a mutable copy of energy, inventory, selection or
  * the enemy list. The formats are the existing ones: Spanish cardinal heading and three-digit
- * degrees, rounded speed in km/h, Astra's energy percentage, the selected weapon name (M61 Vulcan or
- * AIM-120 AMRAAM) with a separate firing marker, the missile inventory/target/help, one compact line
- * per enemy the HUD already covers, the own missiles currently in flight and the two approved
+ * degrees, rounded speed in km/h, Astra's energy percentage, the selected weapon name with a firing
+ * marker, missile inventory and target, every visible enemy with its energy, own missiles currently
+ * in flight and the two approved
  * emergencies: Astra at 25 % energy or less, and an active enemy missile whose exact target is
  * Astra's current life. The emergencies only exist during PLAYING and blink by alternating the
  * phosphor intensity, so their label stays readable in both phases.
@@ -41,9 +42,6 @@ final class FlightHud {
   /** Separate marker that tells effective cannon fire apart from the selected weapon. */
   private static final String FIRING_MARKER = " · DISPARO";
   private static final String MISSILE_HELP = "ESPACIO LANZAR · ESC RÁFAGAS";
-  private static final String NAVIGATION_TITLE = ":: PILOTAJE";
-  private static final String WEAPONS_TITLE = ":: ARMAMENTO";
-  private static final String THREATS_TITLE = ":: AMENAZAS";
   /** Energy percentage at or below which Astra's own reading becomes an emergency. */
   static final int LOW_ENERGY_PERCENT = 25;
   /** Prefix kept on every emergency label during both blink phases so it stays identifiable. */
@@ -52,11 +50,6 @@ final class FlightHud {
   private static final String MISSILES_IN_FLIGHT = "MISILES EN VUELO ";
   private static final float BLINK_HALF_PERIOD_SECONDS = 0.5f;
   private static final float BLINK_PERIOD_SECONDS = BLINK_HALF_PERIOD_SECONDS * 2f;
-  private static final float HEADER_TEXT_SCALE = 0.90f;
-  private static final float DATA_TEXT_SCALE = 1f;
-  private static final float FOOTER_TEXT_SCALE = 0.85f;
-  /** Minimum gap between the two readings that share the footer band. */
-  private static final float FOOTER_GAP = 24f;
   /** Top-right score margin, kept aligned with the mission counters. */
   private static final float EDGE_MARGIN = 24f;
   private static final float SCORE_VALUE_GAP = 12f;
@@ -65,6 +58,15 @@ final class FlightHud {
   private final GlyphLayout scoreValueLayout = new GlyphLayout();
   /** Presentation-only blink clock; it never changes any simulation value. */
   private float blinkSeconds;
+  private float frameDeltaSeconds;
+  private List<String> threatOrder = List.of();
+  private int threatIndex;
+  private float threatVisibleSeconds;
+  private long lastMissileResultSequence;
+  private PhaseOneGameController.AstraMissileResult visibleMissileResult =
+      PhaseOneGameController.AstraMissileResult.NONE;
+  private float missileResultRemainingSeconds;
+  private static final float MISSILE_RESULT_SECONDS = 3f;
 
   /**
    * Immutable presentation snapshot of one frame. The screen reads the authoritative controller once
@@ -78,6 +80,7 @@ final class FlightHud {
   record Readout(
       float yawDegrees,
       float speed,
+      Astra.SpeedMode speedMode,
       boolean firing,
       int energyPercent,
       MissileLoadout.Weapon weapon,
@@ -87,10 +90,23 @@ final class FlightHud {
       String missileTarget,
       boolean astraThreatened,
       boolean alertsEnabled,
-      List<EnemyStatusHud.Readout> threats) {
+      List<EnemyStatusHud.Readout> threats,
+      long missileResultSequence,
+      PhaseOneGameController.AstraMissileResult missileResult) {
+
+    Readout(float yawDegrees, float speed, Astra.SpeedMode speedMode, boolean firing,
+        int energyPercent, MissileLoadout.Weapon weapon, int missilesRemaining, int missileCapacity,
+        int missilesInFlight, String missileTarget, boolean astraThreatened, boolean alertsEnabled,
+        List<EnemyStatusHud.Readout> threats) {
+      this(yawDegrees, speed, speedMode, firing, energyPercent, weapon, missilesRemaining,
+          missileCapacity, missilesInFlight, missileTarget, astraThreatened, alertsEnabled, threats,
+          0L, PhaseOneGameController.AstraMissileResult.NONE);
+    }
 
     Readout {
       weapon = Objects.requireNonNull(weapon, "weapon");
+      speedMode = Objects.requireNonNull(speedMode, "speedMode");
+      missileResult = Objects.requireNonNull(missileResult, "missileResult");
       energyPercent = Math.max(0, Math.min(100, energyPercent));
       missileCapacity = Math.max(0, missileCapacity);
       missilesRemaining = Math.max(0, Math.min(missilesRemaining, missileCapacity));
@@ -104,12 +120,14 @@ final class FlightHud {
       Objects.requireNonNull(controller, "controller");
       List<GuidedMissile> missiles = controller.guidedMissiles();
       return new Readout(controller.astra().yawDegrees(), controller.astra().flightSpeed(),
+          controller.astra().speedMode(),
           controller.astraGun().isFiring(), controller.astraCombat().energyPercent(),
           controller.astraWeapon(), controller.astraMissilesRemaining(),
           controller.astraMissileCapacity(), ownMissilesInFlight(missiles), missileTarget,
           missileThreat(missiles, controller.astraCombat().lifeGeneration(),
               controller.isAstraActive()),
-          playing, threats);
+          playing, threats, controller.astraMissileResultSequence(),
+          controller.lastAstraMissileResult());
     }
   }
 
@@ -226,6 +244,11 @@ final class FlightHud {
     return MISSILES_IN_FLIGHT + Math.max(0, count);
   }
 
+  static String missileLoadoutLine(int remaining, int capacity, int inFlight) {
+    return "MISILES " + Math.max(0, remaining) + "/" + Math.max(0, capacity) + " - "
+        + Math.max(0, inFlight) + " (EN VUELO)";
+  }
+
   static String missileAlarmLabel() {
     return MISSILE_ALARM;
   }
@@ -265,6 +288,8 @@ final class FlightHud {
    * stays finite and never depends on the run duration. Invalid deltas are ignored.
    */
   void advanceBlink(float deltaSeconds) {
+    frameDeltaSeconds = Float.isFinite(deltaSeconds) && deltaSeconds > 0f
+        ? Math.min(deltaSeconds, 1f) : 0f;
     if (!Float.isFinite(deltaSeconds) || deltaSeconds <= 0f) {
       return;
     }
@@ -277,10 +302,7 @@ final class FlightHud {
     return blinkSeconds;
   }
 
-  /**
-   * Draws the console panel, its rules and the current readings into the HUD projection. The screen
-   * has already set the HUD camera/viewport and owns both renderers.
-   */
+  /** Draws a single shell-style row of values inside the bottom pilot strip. */
   void draw(SpriteBatch batch, ShapeRenderer shapes, BitmapFont font, Readout readout,
       float viewportWidth, float viewportHeight) {
     FlightConsoleLayout.Layout layout = FlightConsoleLayout.fit(viewportWidth, viewportHeight);
@@ -293,11 +315,8 @@ final class FlightHud {
       batch.begin();
       try {
         batch.setColor(Color.WHITE);
-        drawHeaders(batch, font, layout);
-        drawNavigation(batch, font, layout, readout);
-        drawWeapons(batch, font, layout, readout);
-        drawThreats(batch, font, layout, readout.threats());
-        drawFooter(batch, font, layout, readout);
+        drawPrompt(batch, font, layout);
+        drawReadings(batch, font, layout, readout);
       } finally {
         batch.end();
       }
@@ -343,23 +362,15 @@ final class FlightHud {
       shapes.begin(ShapeRenderer.ShapeType.Filled);
       try {
         FlightConsoleLayout.Rectangle panel = layout.panel();
+        float height = panel.height();
         shapes.setColor(PhosphorHudStyle.PANEL);
-        shapes.rect(panel.x(), panel.y(), panel.width(), panel.height());
-        shapes.setColor(PhosphorHudStyle.FRAME);
-        shapes.rect(panel.x(), panel.y() + panel.height() - 2f, panel.width(), 2f);
+        shapes.rect(panel.x(), panel.y(), panel.width(), height);
         shapes.setColor(PhosphorHudStyle.FRAME_DIM);
-        shapes.rect(panel.x(), panel.y() + panel.height() - 6f, panel.width(), 1f);
-        float contentWidth = layout.contentRight() - layout.contentLeft();
-        shapes.rect(layout.contentLeft(), layout.headerSeparatorY(), contentWidth, 1f);
-        shapes.rect(layout.contentLeft(), layout.footerSeparatorY(), contentWidth, 1f);
-        float separatorHeight = layout.headerSeparatorY() - layout.footerSeparatorY();
-        shapes.rect(layout.firstSeparatorX() - 0.5f, layout.footerSeparatorY(), 1f,
-            separatorHeight);
-        shapes.rect(layout.secondSeparatorX() - 0.5f, layout.footerSeparatorY(), 1f,
-            separatorHeight);
-        shapes.setColor(PhosphorHudStyle.FRAME);
-        shapes.rect(panel.x(), panel.y() + panel.height() - 16f, 2f, 10f);
-        shapes.rect(panel.x() + panel.width() - 2f, panel.y() + panel.height() - 16f, 2f, 10f);
+        shapes.rect(0f, 0f, 44f, height);
+        shapes.triangle(44f, 0f, 58f, height / 2f, 44f, height);
+        shapes.rect(0f, height - 1f, panel.width(), 1f);
+        shapes.setColor(PhosphorHudStyle.FRAME_DIM);
+        shapes.rect(layout.enemyLeft() - 8f, height / 2f - 8f, 1f, 16f);
       } finally {
         shapes.end();
       }
@@ -371,140 +382,157 @@ final class FlightHud {
     }
   }
 
-  private static void drawHeaders(SpriteBatch batch, BitmapFont font,
+  private static void drawPrompt(SpriteBatch batch, BitmapFont font,
       FlightConsoleLayout.Layout layout) {
-    drawFittedLine(batch, font, layout.navigation().x(), layout.headerBaseline(),
-        layout.navigation().width(), NAVIGATION_TITLE, HEADER_TEXT_SCALE,
-        PhosphorHudStyle.TEXT_DIM);
-    drawFittedLine(batch, font, layout.weapons().x(), layout.headerBaseline(),
-        layout.weapons().width(), WEAPONS_TITLE, HEADER_TEXT_SCALE, PhosphorHudStyle.TEXT_DIM);
-    drawFittedLine(batch, font, layout.threats().x(), layout.headerBaseline(),
-        layout.threats().width(), THREATS_TITLE, HEADER_TEXT_SCALE, PhosphorHudStyle.TEXT_DIM);
+    float x = 25.5f - TerminalText.width(font, "|>") / 2f;
+    float y = layout.baseline();
+    font.setColor(PhosphorHudStyle.SHADOW);
+    TerminalText.draw(font, batch, "|>", x + 1f, y - 1f);
+    font.setColor(PhosphorHudStyle.TEXT_BRIGHT);
+    TerminalText.draw(font, batch, "|>", x, y);
   }
 
-  private void drawNavigation(SpriteBatch batch, BitmapFont font,
+  private record Segment(String text, Color color) {}
+
+  private void drawReadings(SpriteBatch batch, BitmapFont font,
       FlightConsoleLayout.Layout layout, Readout readout) {
-    drawColumnLine(batch, font, layout.navigation(), layout, 0, headingLine(readout.yawDegrees()),
-        PhosphorHudStyle.TEXT);
-    drawColumnLine(batch, font, layout.navigation(), layout, 1, velocityLine(readout.speed()),
-        PhosphorHudStyle.TEXT);
-    boolean energyAlarm = energyAlarm(readout.energyPercent(), readout.alertsEnabled());
-    String energyText = energyAlarm
-        ? energyAlarmLabel(readout.energyPercent()) : energyLabel(readout.energyPercent());
-    drawColumnLine(batch, font, layout.navigation(), layout, 2, energyText,
-        energyAlarm ? blinkColor() : PhosphorHudStyle.TEXT_BRIGHT);
+    List<Segment> readings = new ArrayList<>();
+    readings.add(new Segment(headingLabel(readout.yawDegrees()) + " "
+        + threeDigits(headingDegrees(readout.yawDegrees())), PhosphorHudStyle.TEXT));
+    readings.add(new Segment(Math.round(readout.speed()) + " KM/H " + readout.speedMode(),
+        PhosphorHudStyle.TEXT));
+    boolean lowEnergy = energyAlarm(readout.energyPercent(), readout.alertsEnabled());
+    readings.add(new Segment((lowEnergy ? "!! " : "") + "ENERGY "
+        + readout.energyPercent() + "%",
+        lowEnergy ? blinkColor() : PhosphorHudStyle.TEXT_BRIGHT));
+    if (missileAlarm(readout.astraThreatened(), readout.alertsEnabled())) {
+      readings.add(new Segment("!! MISIL ENEMIGO", blinkColor()));
+    }
+    boolean missileSelected = readout.weapon() == MissileLoadout.Weapon.MISSILE;
+    readings.add(new Segment(missileSelected ? "AIM-120" :
+        readout.firing() ? "M61 VULCAN*" : "M61 VULCAN",
+        missileSelected ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT));
+    readings.add(new Segment(missileLoadoutLine(readout.missilesRemaining(),
+        readout.missileCapacity(), readout.missilesInFlight()),
+        readout.missilesRemaining() == 0 ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT));
+    updateMissileResult(readout);
+    if (missileResultRemainingSeconds > 0f
+        && visibleMissileResult != PhaseOneGameController.AstraMissileResult.NONE) {
+      Color resultColor = visibleMissileResult == PhaseOneGameController.AstraMissileResult.HIT
+          ? (blinkBright(blinkSeconds) ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT_DIM)
+          : (blinkBright(blinkSeconds) ? PhosphorHudStyle.ENEMY_ALERT
+              : PhosphorHudStyle.ENEMY_ALERT_DIM);
+      readings.add(new Segment(visibleMissileResult.name(), resultColor));
+    }
+    if (missileSelected && readout.missileTarget() != null
+        && !readout.missileTarget().isBlank()) {
+      readings.add(new Segment("@" + readout.missileTarget().trim(),
+          PhosphorHudStyle.TEXT_BRIGHT));
+    }
+    float originalScaleX = font.getData().scaleX;
+    float originalScaleY = font.getData().scaleY;
+    try {
+      font.getData().setScale(originalScaleX * 0.92f, originalScaleY * 0.92f);
+      float separator = TerminalText.cellWidth(font) * 2.4f;
+      float naturalWidth = separator * Math.max(0, readings.size() - 1);
+      for (Segment reading : readings) {
+        naturalWidth += TerminalText.width(font, reading.text());
+      }
+      float available = layout.contentRight() - layout.contentLeft();
+      float fit = naturalWidth > available ? Math.max(0.62f, available / naturalWidth) : 1f;
+      font.getData().setScale(font.getData().scaleX * fit, font.getData().scaleY * fit);
+      separator = TerminalText.cellWidth(font) * 2.4f;
+      float fittedWidth = naturalWidth * fit;
+      float x = layout.contentLeft() + Math.max(0f, (available - fittedWidth) / 2f);
+      for (int index = 0; index < readings.size() && x < layout.contentRight(); index++) {
+        Segment reading = readings.get(index);
+        String shown = TerminalText.truncate(font, reading.text(), layout.contentRight() - x);
+        if (shown.isEmpty()) {
+          break;
+        }
+        font.setColor(PhosphorHudStyle.SHADOW);
+        TerminalText.draw(font, batch, shown, x + 1f, layout.baseline() - 1f);
+        font.setColor(reading.color());
+        TerminalText.draw(font, batch, shown, x, layout.baseline());
+        x += TerminalText.width(font, shown);
+        if (index + 1 < readings.size() && x + separator < layout.contentRight()) {
+          font.setColor(PhosphorHudStyle.TEXT_FAINT);
+          TerminalText.draw(font, batch, "|", x + separator * 0.3f, layout.baseline());
+          x += separator;
+        }
+      }
+      drawThreatSlot(batch, font, layout, readout.threats());
+    } finally {
+      font.getData().setScale(originalScaleX, originalScaleY);
+    }
+  }
+
+  private void drawThreatSlot(SpriteBatch batch, BitmapFont font,
+      FlightConsoleLayout.Layout layout, List<EnemyStatusHud.Readout> threats) {
+    EnemyStatusHud.Readout threat = nextThreat(threats, frameDeltaSeconds);
+    float x = layout.enemyLeft();
+    float width = layout.enemyRight() - layout.enemyLeft();
+    String label = threat == null ? "---" : threatLine(threat);
+    Color color = threat == null ? PhosphorHudStyle.TEXT_FAINT
+        : blinkBright(blinkSeconds) ? PhosphorHudStyle.ENEMY_ALERT
+        : PhosphorHudStyle.ENEMY_ALERT_DIM;
+    drawFittedText(batch, font, x, layout.baseline(), width, label, 0.92f, color, true);
+  }
+
+  private void updateMissileResult(Readout readout) {
+    if (readout.missileResultSequence() != lastMissileResultSequence) {
+      lastMissileResultSequence = readout.missileResultSequence();
+      visibleMissileResult = readout.missileResult();
+      missileResultRemainingSeconds = MISSILE_RESULT_SECONDS;
+    } else if (missileResultRemainingSeconds > 0f) {
+      missileResultRemainingSeconds = Math.max(0f,
+          missileResultRemainingSeconds - frameDeltaSeconds);
+    }
+  }
+
+  /** Each currently visible enemy owns one three-second reading slot, in encounter order. */
+  EnemyStatusHud.Readout nextThreat(List<EnemyStatusHud.Readout> threats, float delta) {
+    List<EnemyStatusHud.Readout> current = threats == null ? List.of() : threats;
+    List<String> names = current.stream().map(EnemyStatusHud.Readout::titleLabel).toList();
+    if (!names.equals(threatOrder)) {
+      threatOrder = names;
+      threatIndex = 0;
+      threatVisibleSeconds = 0f;
+    }
+    if (current.isEmpty()) {
+      return null;
+    }
+    threatVisibleSeconds += delta;
+    while (threatVisibleSeconds >= 3f) {
+      threatVisibleSeconds -= 3f;
+      threatIndex = (threatIndex + 1) % current.size();
+    }
+    return current.get(threatIndex % current.size());
+  }
+
+  private static void drawFittedText(SpriteBatch batch, BitmapFont font, float x, float y,
+      float width, String text, float relativeScale, Color color, boolean centerAligned) {
+    if (text == null || text.isEmpty() || width <= 0f) return;
+    float scaleX = font.getData().scaleX;
+    float scaleY = font.getData().scaleY;
+    try {
+      font.getData().setScale(scaleX * relativeScale, scaleY * relativeScale);
+      float fit = TerminalText.fitScale(font, width, text);
+      font.getData().setScale(font.getData().scaleX * fit, font.getData().scaleY * fit);
+      String shown = TerminalText.truncate(font, text, width);
+      float drawX = centerAligned ? x + (width - TerminalText.width(font, shown)) / 2f : x;
+      font.setColor(PhosphorHudStyle.SHADOW);
+      TerminalText.draw(font, batch, shown, drawX + 1f, y - 1f);
+      font.setColor(color);
+      TerminalText.draw(font, batch, shown, drawX, y);
+    } finally {
+      font.getData().setScale(scaleX, scaleY);
+    }
   }
 
   /** Bright/dim phosphor alternation shared by both approved emergencies. */
   private Color blinkColor() {
     return blinkBright(blinkSeconds) ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT_DIM;
-  }
-
-  private static void drawWeapons(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Layout layout, Readout readout) {
-    boolean missileSelected = readout.weapon() == MissileLoadout.Weapon.MISSILE;
-    drawColumnLine(batch, font, layout.weapons(), layout, 0,
-        weaponLine(readout.weapon(), readout.firing()),
-        missileSelected ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT);
-    drawColumnLine(batch, font, layout.weapons(), layout, 1,
-        missileAmmoLabel(readout.missilesRemaining(), readout.missileCapacity()),
-        readout.missilesRemaining() <= 0 ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT);
-    drawColumnLine(batch, font, layout.weapons(), layout, 2,
-        missileTargetLabel(readout.missileTarget()),
-        readout.missileTarget() == null || readout.missileTarget().isBlank()
-            ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT_BRIGHT);
-  }
-
-  /**
-   * One compact line per enemy the HUD covers this frame, in encounter order (Vesper, Bastion and
-   * then its escorts). No enemy is dropped or prioritised: the layout compresses the row spacing when
-   * several are visible at once, so a dead or off-camera enemy simply leaves the next frame's list.
-   */
-  private static void drawThreats(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Layout layout, List<EnemyStatusHud.Readout> threats) {
-    float[] baselines = layout.threatBaselines(threats.size());
-    for (int index = 0; index < threats.size(); index++) {
-      drawFittedLine(batch, font, layout.threats().x(), baselines[index],
-          layout.threats().width(), threatLine(threats.get(index)), DATA_TEXT_SCALE,
-          PhosphorHudStyle.TEXT);
-    }
-  }
-
-  /**
-   * Footer band shared by the own-missiles-in-flight reading (left) and one right-hand reading: the
-   * blinking enemy-missile emergency when it is active, otherwise the existing missile help. The
-   * emergency takes precedence over the help for the same frame, so the alarm is never hidden.
-   */
-  private void drawFooter(SpriteBatch batch, BitmapFont font, FlightConsoleLayout.Layout layout,
-      Readout readout) {
-    float contentWidth = layout.contentRight() - layout.contentLeft();
-    float halfWidth = Math.max(0f, (contentWidth - FOOTER_GAP) / 2f);
-    int inFlight = readout.missilesInFlight();
-    drawFittedLine(batch, font, layout.contentLeft(), layout.footerBaseline(), halfWidth,
-        missilesInFlightLabel(inFlight), FOOTER_TEXT_SCALE,
-        inFlight > 0 ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT_FAINT);
-    if (missileAlarm(readout.astraThreatened(), readout.alertsEnabled())) {
-      drawFittedRightLine(batch, font, layout.contentRight(), layout.footerBaseline(), halfWidth,
-          missileAlarmLabel(), FOOTER_TEXT_SCALE, blinkColor());
-    } else if (readout.weapon() == MissileLoadout.Weapon.MISSILE) {
-      drawFittedRightLine(batch, font, layout.contentRight(), layout.footerBaseline(), halfWidth,
-          missileHelpLabel(), FOOTER_TEXT_SCALE, PhosphorHudStyle.TEXT_FAINT);
-    }
-  }
-
-  private static void drawColumnLine(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Rectangle column, FlightConsoleLayout.Layout layout, int row, String text,
-      Color color) {
-    drawFittedLine(batch, font, column.x(), layout.rowBaseline(row), column.width(), text,
-        DATA_TEXT_SCALE, color);
-  }
-
-  /**
-   * Draws one line at the requested relative size, shrinking it to the column and truncating only
-   * when the readable floor is still too wide. The font scale is restored on every path.
-   */
-  private static void drawFittedLine(SpriteBatch batch, BitmapFont font, float x, float y,
-      float maxWidth, String text, float relativeScale, Color color) {
-    drawFittedText(batch, font, x, y, maxWidth, text, relativeScale, color, false);
-  }
-
-  /**
-   * Right-aligned variant of {@link #drawFittedLine}, used by the footer so the emergency or the
-   * help is always flush with the content's right edge after fitting and truncation.
-   */
-  private static void drawFittedRightLine(SpriteBatch batch, BitmapFont font, float rightX, float y,
-      float maxWidth, String text, float relativeScale, Color color) {
-    drawFittedText(batch, font, rightX, y, maxWidth, text, relativeScale, color, true);
-  }
-
-  /**
-   * Shared measured drawing for both footer alignments. It applies the relative scale, fits and
-   * truncates the line to {@code maxWidth}, draws the shadow and the glyphs, and restores the font
-   * scale on every path.
-   */
-  private static void drawFittedText(SpriteBatch batch, BitmapFont font, float anchorX, float y,
-      float maxWidth, String text, float relativeScale, Color color, boolean rightAligned) {
-    if (text == null || text.isEmpty() || !(maxWidth > 0f)) {
-      return;
-    }
-    float baseScaleX = font.getData().scaleX;
-    float baseScaleY = font.getData().scaleY;
-    try {
-      font.getData().setScale(baseScaleX * relativeScale, baseScaleY * relativeScale);
-      float fit = TerminalText.fitScale(font, maxWidth, text);
-      if (fit < 1f) {
-        font.getData().setScale(font.getData().scaleX * fit, font.getData().scaleY * fit);
-      }
-      String fitted = TerminalText.truncate(font, text, maxWidth);
-      float width = TerminalText.width(font, fitted);
-      float x = rightAligned ? anchorX - width : anchorX;
-      font.setColor(PhosphorHudStyle.SHADOW);
-      TerminalText.draw(font, batch, fitted, x + 1f, y - 1f);
-      font.setColor(color);
-      TerminalText.draw(font, batch, fitted, x, y);
-    } finally {
-      font.getData().setScale(baseScaleX, baseScaleY);
-    }
   }
 
   private static int headingIndex(float yawDegrees) {

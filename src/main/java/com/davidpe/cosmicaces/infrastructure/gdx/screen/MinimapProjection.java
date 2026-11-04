@@ -8,8 +8,8 @@ import com.davidpe.cosmicaces.domain.game.WorldBounds;
  * is anchored above the bottom pilot console, so the taller panel never covers the flight readings.
  */
 final class MinimapProjection {
-  /** Interior gap between the panel border and the map, kept small to use the height. */
-  private static final float PANEL_PADDING = 4f;
+  /** The map and its panel share one rectangle, leaving a single visible border. */
+  private static final float PANEL_PADDING = 0f;
   /** Left clamp and top breathing room of the panel inside the HUD viewport. */
   private static final float VIEWPORT_MARGIN = 12f;
   private static final float TOP_MARGIN = 4f;

@@ -40,6 +40,8 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class PhaseOneGameController extends GameController {
 
+  public enum AstraMissileResult { NONE, HIT, FAIL }
+
   /**
    * PhaseOne world in world units. The advance axis keeps the width of the original 8192-unit map
    * and triples its length to 36000, so the procedural terrain, both PNG bases and the legacy
@@ -84,6 +86,8 @@ public final class PhaseOneGameController extends GameController {
   private final MissileLoadout astraMissiles;
   private final MissileAim astraMissileAim;
   private final List<GuidedMissile> guidedMissiles = new ArrayList<>();
+  private long astraMissileResultSequence;
+  private AstraMissileResult lastAstraMissileResult = AstraMissileResult.NONE;
   private final ShipCombatState astraCombat = ShipCombatState.astra();
   private final ShipCombatState raiderCombat = ShipCombatState.vesper();
   private final ShipCombatState bastionBomberCombat = ShipCombatState.bastionBomber();
@@ -430,6 +434,16 @@ public final class PhaseOneGameController extends GameController {
   /** Immutable view for presentation and deterministic combat inspection. */
   public List<GuidedMissile> guidedMissiles() {
     return List.copyOf(guidedMissiles);
+  }
+
+  /** Latest terminal result of Astra's missiles, for brief presentation feedback. */
+  public AstraMissileResult lastAstraMissileResult() {
+    return lastAstraMissileResult;
+  }
+
+  /** Monotonic result counter lets presentation detect multiple outcomes in adjacent frames. */
+  public long astraMissileResultSequence() {
+    return astraMissileResultSequence;
   }
 
   /** Adds an already configured enemy missile; called by the later escort firing behavior. */
@@ -1112,6 +1126,13 @@ public final class PhaseOneGameController extends GameController {
         frameOffset += step;
       }
     }
+    for (GuidedMissile missile : guidedMissiles) {
+      if (missile.owner() == GuidedMissile.Owner.ASTRA
+          && (missile.retirement() == GuidedMissile.Retirement.FUEL_EXHAUSTED
+              || missile.retirement() == GuidedMissile.Retirement.TARGET_INVALID)) {
+        recordAstraMissileResult(AstraMissileResult.FAIL);
+      }
+    }
     guidedMissiles.removeIf(missile -> !missile.isActive());
   }
 
@@ -1138,7 +1159,12 @@ public final class PhaseOneGameController extends GameController {
   private void applyGuidedMissileImpact(GuidedMissile missile) {
     MissileTarget.Reference reference = missile.targetReference();
     MissileTarget stillLive = currentMissileTarget(reference).orElse(null);
-    if (stillLive == null) return;
+    if (stillLive == null) {
+      if (missile.owner() == GuidedMissile.Owner.ASTRA) {
+        recordAstraMissileResult(AstraMissileResult.FAIL);
+      }
+      return;
+    }
     if (missile.owner() == GuidedMissile.Owner.ENEMY) {
       if (reference.kind() != MissileTarget.Kind.ASTRA) return;
       if (astraCombat.receiveMissileDamage(50)) {
@@ -1148,6 +1174,7 @@ public final class PhaseOneGameController extends GameController {
       return;
     }
 
+    recordAstraMissileResult(AstraMissileResult.HIT);
     switch (reference.kind()) {
       case ASTRA -> { }
       case VESPER -> {
@@ -1170,6 +1197,11 @@ public final class PhaseOneGameController extends GameController {
         }
       }
     }
+  }
+
+  private void recordAstraMissileResult(AstraMissileResult result) {
+    lastAstraMissileResult = result;
+    astraMissileResultSequence++;
   }
 
   private static boolean hitsShip(float fromX, float fromY, float toX, float toY, Ship ship) {
