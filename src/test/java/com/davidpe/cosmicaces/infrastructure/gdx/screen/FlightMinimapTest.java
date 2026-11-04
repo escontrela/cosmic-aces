@@ -99,6 +99,15 @@ class FlightMinimapTest {
     assertEquals(null, FlightMinimap.aimMarkers(projection, 5900f, 8100f, null).selectedTarget());
   }
 
+  @Test void missileOwnersAreToldApartByFillAndOutlineInsteadOfColour() {
+    assertTrue(FlightMinimap.solidMissileMarker(GuidedMissile.Owner.ASTRA),
+        "own missiles keep a solid bright dot");
+    assertFalse(FlightMinimap.solidMissileMarker(GuidedMissile.Owner.ENEMY),
+        "enemy missiles are hollow rings");
+    assertThrows(IllegalArgumentException.class,
+        () -> FlightMinimap.solidMissileMarker(null));
+  }
+
   @Test void translucentPanelAndMapStillLeaveTheScenarioVisible() {
     assertTrue(FlightMinimap.PANEL_ALPHA > 0f && FlightMinimap.PANEL_ALPHA < 1f,
         "the panel background must be translucent");

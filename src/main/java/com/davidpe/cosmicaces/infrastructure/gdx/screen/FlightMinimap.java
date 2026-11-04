@@ -16,41 +16,52 @@ import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import java.util.List;
 
 /**
- * Optional fixed-screen map overlay for PhaseOne: the whole world, Astra's
- * cyan arrow, allied and enemy base markers, Vesper, both active Bastion escorts, the blinking
- * Bastion bomber after takeoff, and one amber hollow diamond per active Ghostwing group (the group's
- * representative point, never one marker per drone). It owns no native resources.
+ * Optional fixed-screen map overlay for PhaseOne: the whole world, Astra's bright arrow, allied
+ * and enemy base markers, Vesper, both active Bastion escorts, the blinking Bastion bomber after
+ * takeoff, and one hollow diamond per active Ghostwing group (the group's representative point,
+ * never one marker per drone).
+ *
+ * <p>COS-133 paints every surface with the shared {@link PhosphorHudStyle} green and removes the
+ * old cyan/red/amber/magenta code. Because colour no longer separates the contacts, each object
+ * keeps its own shape, outline and intensity: Astra is a bright filled triangle, Vesper a filled
+ * dot inside a ring with a dim trail, escorts hollow squares, groups hollow diamonds, the allied
+ * base a hollow ring and the enemy base an X, the bomber a dim dot with a bright core, villages dim
+ * filled squares, the aim cursor a bright diamond and the lock a ring with tick marks. Own missiles
+ * are solid dots and enemy missiles hollow rings, so both owners stay distinct without colour. The
+ * projection, the visibility rules and the shared bottom reservation are unchanged. The class owns
+ * no native resource.
  */
 final class FlightMinimap {
   /**
-   * Translucent dark fills (COS-129): the panel and map let the scenario show through while still
-   * keeping the cyan/amber markers readable.
+   * Translucent green fills (COS-129/COS-133): the panel and map let the scenario show through
+   * while the phosphor markers stay readable. Both alphas come from the shared palette.
    */
-  static final float PANEL_ALPHA = 0.55f;
-  static final float MAP_ALPHA = 0.30f;
-  private static final Color PANEL_COLOR = new Color(0.008f, 0.022f, 0.04f, PANEL_ALPHA);
-  private static final Color MAP_COLOR = new Color(0.012f, 0.036f, 0.06f, MAP_ALPHA);
-  private static final Color BORDER_COLOR = new Color(0.08f, 0.52f, 0.70f, 1f);
-  private static final Color ASTRA_COLOR = new Color(0.48f, 0.91f, 1f, 1f);
-  private static final Color RAIDER_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
-  private static final Color RAIDER_TRAIL_COLOR = new Color(1f, 0.48f, 0.20f, 1f);
-  private static final Color GROUP_COLOR = new Color(1f, 0.72f, 0.12f, 1f);
-  private static final Color BASE_COLOR = new Color(0.30f, 0.92f, 1f, 1f);
-  private static final Color ENEMY_BASE_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
-  private static final Color BOMBER_COLOR = new Color(1f, 0.24f, 0.12f, 1f);
-  private static final Color BOMBER_CORE_COLOR = new Color(1f, 0.91f, 0.62f, 1f);
-  private static final Color ESCORT_COLOR = new Color(1f, 0.36f, 0.28f, 1f);
-  private static final Color AIM_COLOR = new Color(0.30f, 0.96f, 1f, 1f);
-  private static final Color LOCK_COLOR = new Color(1f, 0.92f, 0.30f, 1f);
-  private static final Color ASTRA_MISSILE_COLOR = new Color(0.28f, 1f, 0.56f, 1f);
-  private static final Color ENEMY_MISSILE_COLOR = new Color(1f, 0.28f, 0.92f, 1f);
-  /** Muted tan used for the approved village PNG milestones on the long map. */
-  private static final Color VILLAGE_COLOR = new Color(0.86f, 0.72f, 0.46f, 1f);
-  /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
+  static final float PANEL_ALPHA = PhosphorHudStyle.MAP_PANEL.a;
+  static final float MAP_ALPHA = PhosphorHudStyle.MAP_FILL.a;
+  private static final Color BORDER_COLOR = PhosphorHudStyle.MAP_FRAME;
+  private static final Color ASTRA_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
+  private static final Color RAIDER_COLOR = PhosphorHudStyle.MAP_MARKER;
+  private static final Color RAIDER_TRAIL_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  private static final Color GROUP_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  private static final Color BASE_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  private static final Color ENEMY_BASE_COLOR = PhosphorHudStyle.MAP_MARKER;
+  private static final Color BOMBER_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  private static final Color BOMBER_CORE_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
+  private static final Color ESCORT_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  private static final Color AIM_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
+  private static final Color LOCK_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
+  private static final Color ASTRA_MISSILE_COLOR = PhosphorHudStyle.MAP_MARKER_BRIGHT;
+  private static final Color ENEMY_MISSILE_COLOR = PhosphorHudStyle.MAP_MARKER;
+  /** Dim green used for the approved village PNG milestones on the long map. */
+  private static final Color VILLAGE_COLOR = PhosphorHudStyle.MAP_MARKER_DIM;
+  /** Half diagonal of the hollow group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
   private static final float ASTRA_BASE_LENGTH = 5f;
   private static final float ASTRA_HALF_WIDTH = 4f;
+  private static final float RAIDER_RING_RADIUS = 5.5f;
+  private static final float RAIDER_DOT_RADIUS = 3f;
+  private static final float ESCORT_HALF = 3f;
 
   private boolean preferredVisible;
   private boolean targeting;
@@ -128,18 +139,30 @@ final class FlightMinimap {
     MinimapProjection.Rectangle panel = projection.panel();
     MinimapProjection.Rectangle map = projection.map();
     float scale = projection.visualScale();
+    MinimapProjection.Point raiderPoint = raider == null ? null
+        : projection.projectMarker(raider.x() + raider.drawWidth() / 2f,
+            raider.y() + raider.drawHeight() / 2f, markerMargin(projection, 13f));
 
     drawTranslucentBackground(shapes, panel, map);
 
+    // Outlines: frame, hollow bases, raider ring, hollow escorts, groups, aim and enemy missiles.
     shapes.begin(ShapeRenderer.ShapeType.Line);
     shapes.setColor(BORDER_COLOR);
     shapes.rect(map.x(), map.y(), map.width(), map.height());
     drawBaseMarker(shapes, projection, scale, baseCenterX, baseCenterY);
-    if (raider != null) drawRaiderTrail(shapes, projection, raider);
+    if (raiderPoint != null) drawRaiderTrail(shapes, raider, raiderPoint, scale);
+    if (raiderPoint != null) {
+      // Vesper is the only contact with a filled dot inside a ring.
+      shapes.setColor(RAIDER_COLOR);
+      shapes.circle(raiderPoint.x(), raiderPoint.y(), RAIDER_RING_RADIUS * scale, 16);
+    }
+    drawEscortMarkers(shapes, projection, escorts);
     drawGroupMarkers(shapes, projection, ghostwingGroups);
     if (aiming) drawAimMarker(shapes, projection, aimX, aimY, selectedTarget);
+    drawEnemyMissileMarkers(shapes, projection, guidedMissiles);
     shapes.end();
 
+    // Fills: villages, Astra, the enemy X, the bomber, the raider dot and own missiles.
     shapes.begin(ShapeRenderer.ShapeType.Filled);
     drawVillageMarkers(shapes, projection, villagePlacements);
     drawAstra(shapes, projection, astra);
@@ -147,24 +170,11 @@ final class FlightMinimap {
     if (bomber != null && bomber.hasTakenOff() && bomberBlinkVisible(elapsedSeconds)) {
       drawBastionBomberMarker(shapes, projection, bomber);
     }
-    if (raider != null) {
-      MinimapProjection.Point point = projection.projectMarker(
-          raider.x() + raider.drawWidth() / 2f,
-          raider.y() + raider.drawHeight() / 2f, markerMargin(projection, 5f));
+    if (raiderPoint != null) {
       shapes.setColor(RAIDER_COLOR);
-      shapes.circle(point.x(), point.y(), 4f * scale, 12);
+      shapes.circle(raiderPoint.x(), raiderPoint.y(), RAIDER_DOT_RADIUS * scale, 12);
     }
-    if (escorts != null) {
-      for (BastionEscort escort : escorts) {
-        if (escort == null || !escort.isActive()) continue;
-        MinimapProjection.Point point = projection.projectMarker(
-            escort.raider().centerX(), escort.raider().centerY(),
-            markerMargin(projection, 5f));
-        shapes.setColor(ESCORT_COLOR);
-        shapes.circle(point.x(), point.y(), 3.5f * scale, 12);
-      }
-    }
-    drawMissileMarkers(shapes, projection, guidedMissiles);
+    drawAstraMissileMarkers(shapes, projection, guidedMissiles);
     shapes.end();
     shapes.setColor(previousColor);
   }
@@ -181,9 +191,9 @@ final class FlightMinimap {
     }
     try {
       shapes.begin(ShapeRenderer.ShapeType.Filled);
-      shapes.setColor(PANEL_COLOR);
+      shapes.setColor(PhosphorHudStyle.MAP_PANEL);
       shapes.rect(panel.x(), panel.y(), panel.width(), panel.height());
-      shapes.setColor(MAP_COLOR);
+      shapes.setColor(PhosphorHudStyle.MAP_FILL);
       shapes.rect(map.x(), map.y(), map.width(), map.height());
       shapes.end();
     } finally {
@@ -227,16 +237,57 @@ final class FlightMinimap {
         .toList();
   }
 
-  private static void drawMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,
+  /**
+   * Own missiles are solid dots and enemy missiles hollow rings, so both owners stay identifiable
+   * on a map that no longer uses a colour per owner.
+   */
+  static boolean solidMissileMarker(GuidedMissile.Owner owner) {
+    if (owner == null) {
+      throw new IllegalArgumentException("Missile owner is required");
+    }
+    return owner == GuidedMissile.Owner.ASTRA;
+  }
+
+  private static void drawAstraMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,
       List<GuidedMissile> missiles) {
     float scale = projection.visualScale();
+    shapes.setColor(ASTRA_MISSILE_COLOR);
     for (MissileMarker marker : missileMarkers(projection, missiles)) {
-      MinimapProjection.Point point = marker.position();
-      shapes.setColor(marker.owner() == GuidedMissile.Owner.ASTRA
-          ? ASTRA_MISSILE_COLOR : ENEMY_MISSILE_COLOR);
-      shapes.circle(point.x(), point.y(), 5f * scale, 12);
-      shapes.setColor(Color.WHITE);
-      shapes.circle(point.x(), point.y(), 1.8f * scale, 8);
+      if (!solidMissileMarker(marker.owner())) {
+        continue;
+      }
+      shapes.circle(marker.position().x(), marker.position().y(), 4f * scale, 12);
+    }
+  }
+
+  private static void drawEnemyMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,
+      List<GuidedMissile> missiles) {
+    float scale = projection.visualScale();
+    shapes.setColor(ENEMY_MISSILE_COLOR);
+    for (MissileMarker marker : missileMarkers(projection, missiles)) {
+      if (solidMissileMarker(marker.owner())) {
+        continue;
+      }
+      shapes.circle(marker.position().x(), marker.position().y(), 4.5f * scale, 12);
+    }
+  }
+
+  /** Active Bastion escorts: small hollow squares, apart from the raider's ring and dot. */
+  private static void drawEscortMarkers(ShapeRenderer shapes, MinimapProjection projection,
+      List<BastionEscort> escorts) {
+    if (escorts == null) {
+      return;
+    }
+    float half = ESCORT_HALF * projection.visualScale();
+    shapes.setColor(ESCORT_COLOR);
+    for (BastionEscort escort : escorts) {
+      if (escort == null || !escort.isActive()) {
+        continue;
+      }
+      MinimapProjection.Point point = projection.projectMarker(
+          escort.raider().centerX(), escort.raider().centerY(),
+          markerMargin(projection, 5f));
+      shapes.rect(point.x() - half, point.y() - half, half * 2f, half * 2f);
     }
   }
 
@@ -403,13 +454,8 @@ final class FlightMinimap {
         baseY - perpendicularY * ASTRA_HALF_WIDTH * scale);
   }
 
-  private static void drawRaiderTrail(ShapeRenderer shapes, MinimapProjection projection,
-      VesperRaider raider) {
-    float scale = projection.visualScale();
-    MinimapProjection.Point center = projection.projectMarker(
-        raider.x() + raider.drawWidth() / 2f,
-        raider.y() + raider.drawHeight() / 2f,
-        markerMargin(projection, 13f));
+  private static void drawRaiderTrail(ShapeRenderer shapes, VesperRaider raider,
+      MinimapProjection.Point center, float scale) {
     MinimapProjection.Point direction = MinimapProjection.raiderDirection(raider.headingDegrees());
     shapes.setColor(RAIDER_TRAIL_COLOR);
     shapes.line(center.x() - direction.x() * 12f * scale,

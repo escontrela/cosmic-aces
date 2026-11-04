@@ -138,8 +138,9 @@ normaliza las variantes de alta resolución dentro de sus regiones y mezcla 32 p
 de los bordes opuestos de la única textura de pradera activa. El atlas incluye las bases aliada y
 enemiga, ambas de 3072×2304 unidades y alineadas en X en los extremos sur y norte respectivamente;
 las dos zonas se reservan para que la decoración no invada edificios ni pistas. `TerrainSceneryRenderer`
-dibuja ambas desde el atlas. `FlightMinimap` señala el centro aliado con un punto cian y el enemigo
-con una X roja. El renderer vive en `infrastructure.gdx.scenery`; una pantalla lo crea en el hilo
+dibuja ambas desde el atlas. `FlightMinimap` señala el centro aliado con un aro hueco y el enemigo
+con una X, ambos en el fósforo verde compartido (COS-133). El renderer vive en
+`infrastructure.gdx.scenery`; una pantalla lo crea en el hilo
 LibGDX y libera su atlas compartido al salir.
 
 Los controladores de fase en application coordinan el dominio. GameCoordinator
@@ -287,35 +288,35 @@ sprite sobre el centro de su caja estable, de modo que Astra conserva su
 orientación respecto al mundo mientras la cámara gira.
 `FlightMinimap` vive en infraestructura y permanece oculto hasta pulsar M; se
 dibuja sobre la proyección fija del HUD sin reservar espacio ni mover sus
-lecturas. Marca el centro aliado con un punto cian y el enemigo con una X roja,
-además de Astra, Vesper y Ghostwing. Durante el apuntado de misiles, la pantalla fuerza la
-visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al salir del modo;
-M no puede ocultar la única superficie de selección. El rombo cian muestra la mira libre y un aro
-amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
-la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
-la cámara actual, sin moverla. `FlightHud` presenta el arma seleccionada (M61 Vulcan o AIM-120
-AMRAAM), la actividad de disparo como marca aparte, munición, objetivo fijado o su ausencia y la
-ayuda de controles dentro de la columna `ARMAMENTO` de la consola inferior. Mientras
-haya misiles guiados activos,
-`PhaseOneScreen` fuerza temporalmente la visibilidad del minimapa incluso fuera del modo de apuntado;
-`FlightMinimap` proyecta su posición actual por frame como un punto brillante, verde para Astra y
-magenta para los misiles enemigos. La preferencia M se conserva y se restaura al retirarse todos los
-misiles. `GoForwardPrompt`, propiedad de
+lecturas. Marca el centro aliado con un aro hueco y el enemigo con una X, además de Astra, Vesper y
+Ghostwing, todo en el fósforo verde compartido (COS-133). Durante el apuntado de misiles, la
+pantalla fuerza la visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al
+salir del modo; M no puede ocultar la única superficie de selección. El rombo brillante muestra la
+mira libre y un aro con marcas marca la posición exacta del objetivo fijado, incluidos los drones
+Ghostwing agrupados en la vista normal. La retícula también se dibuja en el mundo cuando la
+coordenada de mira intersecta la cámara actual, sin moverla. `FlightHud` presenta el arma
+seleccionada (M61 Vulcan o AIM-120 AMRAAM), la actividad de disparo como marca aparte, munición,
+objetivo fijado o su ausencia y la ayuda de controles dentro de la columna `ARMAMENTO` de la consola
+inferior. Mientras haya misiles guiados activos, `PhaseOneScreen` fuerza temporalmente la
+visibilidad del minimapa incluso fuera del modo de apuntado; `FlightMinimap` proyecta su posición
+actual por frame como un punto relleno brillante para los misiles de Astra y un aro hueco para los
+enemigos, de modo que ambos propietarios siguen distintos sin color. La preferencia M se conserva y
+se restaura al retirarse todos los misiles. `GoForwardPrompt`, propiedad de
 `PhaseOneScreen`, crea y libera una textura procedural con aro azul degradado y dispone “GO FORWARD”
 en un arco alrededor de Astra; aparece al iniciar y en cada reaparición, y cualquier tecla o clic lo
 oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras un Vesper activo
 intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
 enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
-el punto rojo con estela direccional de Vesper Raider. Desde COS-129 el panel
+el punto relleno con estela direccional de Vesper Raider. Desde COS-129 el panel
 aprovecha casi toda la altura útil sobre la banda HUD inferior (al menos el 85 %
 del viewport de 800×600), conserva la proporción 8192×36000 y recalcula su área en
 cada `resize`; su escala visual crece con el mapa hasta 1,6× para marcadores y
-etiquetas. `FlightMinimap` pinta el panel y el interior con relleno oscuro
-translúcido (`PANEL_ALPHA` 0,55 y `MAP_ALPHA` 0,30), activa el blending solo si
-estaba desactivado y restaura el estado GL y el color del renderer al terminar,
-de modo que el escenario se distingue detrás del overlay sin alterar la opacidad
-del resto de escena, HUD o pantallas.
+etiquetas. `FlightMinimap` pinta el panel y el interior con relleno verde
+translúcido tomado de `PhosphorHudStyle` (`PANEL_ALPHA` 0,58 y `MAP_ALPHA` 0,30), activa el blending
+solo si estaba desactivado y restaura el estado GL y el color del renderer al terminar, de modo que
+el escenario se distingue detrás del overlay sin alterar la opacidad del resto de escena, HUD o
+pantallas.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -343,8 +344,9 @@ y consola nunca se solapan. No posee recursos LibGDX y se prueba sin ventana.
 
 `infrastructure.gdx.screen.PhosphorHudStyle` centraliza la paleta de fósforo: relleno del panel con
 alfa (`PANEL`), filetes (`FRAME`, `FRAME_DIM`), textos (`TEXT`, `TEXT_BRIGHT`, `TEXT_DIM`,
-`TEXT_FAINT`) y sombra. Son constantes inmutables que los consumidores solo pasan a `setColor`. No
-hay sistema de temas ni recursos nuevos.
+`TEXT_FAINT`), sombra y, desde COS-133, las superficies y marcadores del minimapa (`MAP_*`). Son
+constantes inmutables que los consumidores solo pasan a `setColor`. No hay sistema de temas ni
+recursos nuevos.
 
 `infrastructure.gdx.screen.TerminalText` da la apariencia monoespaciada sin añadir fuentes ni
 dependencias: `cellWidth(font)` toma el avance del glifo más ancho de la página cargada y
@@ -390,6 +392,33 @@ antiguas ni lecturas heredadas por una nueva partida. La lectura enemiga es inde
 energía de Astra y conserva su nombre propio, por lo que ambas magnitudes no se confunden. La antigua
 llamada de dibujo de `EnemyStatusHud` se retiró para no duplicar el bloque; sus reglas puras
 (`show(...)`, `Readout`) siguen siendo la fuente de verdad de la presentación.
+
+### Minimapa en fósforo verde y convivencia con la consola (COS-133)
+
+`PhosphorHudStyle` amplía la paleta compartida con las superficies del mapa (`MAP_PANEL`,
+`MAP_FILL`, `MAP_FRAME`, `MAP_TEXT`) y tres intensidades de marcador (`MAP_MARKER_BRIGHT`,
+`MAP_MARKER`, `MAP_MARKER_DIM`). `FlightMinimap` deja de tener colores propios y deriva
+`PANEL_ALPHA`/`MAP_ALPHA` de esa paleta; `PhaseOneScreen` usa `MAP_TEXT` para los nombres de pueblo y
+sus líneas guía, y `OffscreenEnemyIndicator` pinta su flecha con `MAP_FRAME` sin cambiar su
+colocación ni su dirección.
+
+Al ser monocromo, cada contacto del mapa se distingue por forma, contorno e intensidad y nunca por
+tono: Astra es un triángulo relleno brillante; Vesper, un punto relleno dentro de un aro con estela
+tenue; las escoltas del Bastion, cuadrados huecos; cada grupo Ghostwing, un rombo hueco tenue; la base
+aliada, un aro hueco; la base enemiga, una X; el bombardero, un punto tenue con núcleo brillante; los
+pueblos, cuadrados rellenos tenues; la mira libre, un rombo hueco brillante; el objetivo fijado, un
+aro con marcas; los misiles propios, puntos rellenos; y los enemigos, aros huecos. La proyección, la
+preferencia M, la visibilidad forzada por apuntado o misiles activos y la reserva inferior compartida
+con la consola no cambian: `MinimapProjection.fit(...)` sigue empezando en
+`FlightConsoleLayout.HEIGHT` y `OffscreenEnemyIndicator.avoidReservations(...)` sigue usando el panel
+real del mapa.
+
+La verificación automática cubre la paleta verde y sus intensidades (`PhosphorHudStyleTest`), el
+distintivo relleno/hueco de los misiles (`FlightMinimapTest`), la proyección y la ausencia de
+intersección mapa/consola en 800×600, 1024×768, 1440×900 y 1920×1080 (`MinimapProjectionTest`) y las
+pruebas existentes del indicador, etiquetas y HUD. La matriz de QA visual queda para el PO humano:
+mapa manual y forzado por apuntado/misiles, varios enemigos y escuadras, arma normal y misil, nueva
+partida y los cuatro tamaños de ventana.
 
 ### UAV Geran-4: lámina y modelo de vuelo recto (COS-93)
 
@@ -651,7 +680,7 @@ en `drawExplosions`. El pico es `1,8 ×` la caja 72×72 del dron (ajuste visual 
 
 `FlightMinimap.draw` recibe ahora una lista de puntos representativos
 (`GhostwingEncounter.representativePoint(group)`, uno por grupo activo —centroide de los miembros
-vivos—, no por dron) y dibuja exactamente un rombo ámbar hueco por grupo
+vivos—, no por dron) y dibuja exactamente un rombo hueco tenue por grupo
 (`GROUP_MARKER_HALF = 6` px; vértices puros en `diamondVertices`, probados sin renderer). El grupo
 sin miembros vivos desaparece del encuentro y del mapa; la preferencia M y la ocultación temporal
 por combate se conservan, y esa ocultación sigue siendo solo por Vesper.
@@ -679,8 +708,8 @@ dos hechos reales: `advanceEncounter()` registra la llegada en cuanto el bombard
 `ShipCombatState.bastionBomber()` requiere tres veces los impactos de Vesper para agotar la energía;
 el controlador no lo reaparece ni le asigna disparos. `PhaseOneGameController` integra su avance,
 impactos de los proyectiles de Astra y transición de destrucción; `PhaseOneScreen` lo dibuja y crea
-su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador rojo
-intermitente con intervalos de 0,3 s.
+su explosión. `FlightMinimap` no lo muestra mientras espera y, tras despegar, pinta un marcador tenue con
+núcleo brillante intermitente con intervalos de 0,3 s.
 `BastionEscort` mantiene dos encuentros Vesper adicionales: se despliegan a izquierda y derecha
 cuando el bombardero despega y conservan esos puestos mientras Astra está fuera de 1800 u. Al
 detectar a Astra pasan al mismo encuentro de aproximación, pasadas y disparo que el Raider normal.
@@ -1497,7 +1526,7 @@ pantalla (`OffscreenEnemyIndicator`) en la pasada HUD, después de fijar
 `hudCamera`, entre sesiones de `SpriteBatch`/`ShapeRenderer` y sin anidar
 `begin`. La colocación es geometría pura: reutiliza
 `CameraVisibility.localFrame(...)` (el mismo marco de cámara con rotación y zoom
-que `shipVisible`) para orientar una flecha ámbar hacia el Vesper activo, se
+que `shipVisible`) para orientar una flecha de fósforo hacia el Vesper activo, se
 oculta con `CameraVisibility.shipVisible(...)` —una única regla de visibilidad,
 sin un segundo test discrepante— cuando el enemigo entra en la vista, y no
 escala con el zoom mundial. Solo se muestra si la fase sigue y
@@ -1915,8 +1944,9 @@ com.davidpe.cosmicaces
             |   1. fit()  2. HEIGHT/bottomBand()  3. Layout.rowBaseline()/contentLeft()/contentRight()
             |   4. Layout.headerSeparatorY()/footerSeparatorY()/firstSeparatorX()/secondSeparatorX()
             |   5. Layout.threatBaselines(count)
-            +-- PhosphorHudStyle: paleta de fósforo verde con alfa para consola y mapa (COS-131).
+            +-- PhosphorHudStyle: paleta de fósforo verde con alfa para consola y mapa (COS-131/133).
             |   1. PANEL/FRAME/FRAME_DIM  2. TEXT/TEXT_BRIGHT/TEXT_DIM/TEXT_FAINT  3. SHADOW
+            |   4. MAP_PANEL/MAP_FILL/MAP_FRAME/MAP_TEXT  5. MAP_MARKER_BRIGHT/MARKER/DIM
             +-- TerminalText: rejilla monoespaciada sobre la BitmapFont existente (COS-131).
             |   1. cellWidth()  2. width()  3. fitScale()  4. truncate()  5. draw()
             +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
@@ -1932,10 +1962,11 @@ com.davidpe.cosmicaces
             |   1. primeVisible()  2. update()  3. resource()  4. dispose()
             +-- PhaseOneTerrainTextureFactory: adaptador histórico de PNG (COS-84–86; sin uso activo).
                 1. create()  2. dispose()  3. estimatedBytes()
-            +-- FlightMinimap: overlay opcional del mundo, selección de misil y marcadores de objetivo.
+            +-- FlightMinimap: overlay opcional del mundo en fósforo, selección y marcadores (COS-133).
                 1. toggle()  2. isVisible()  3. setTargeting()  4. draw()
                 5. aimMarkers() [proyección pura del cursor/objetivo]  6. bomberBlinkVisible()
                 7. diamondVertices() [geom. pura del rombo]  8. GROUP_MARKER_HALF
+                9. solidMissileMarker(owner) [punto propio vs aro enemigo]
             +-- GoForwardPrompt: aro degradado y texto curvo alrededor de Astra al despegar/reaparecer.
                 1. draw()  2. dispose()
             +-- MinimapProjection: adaptación y proyección del mundo al panel.

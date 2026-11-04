@@ -120,6 +120,25 @@ class MinimapProjectionTest {
     }
   }
 
+  @Test void mapPanelStartsExactlyAboveTheConsolePanelAtEverySupportedViewport() {
+    WorldBounds extended = new WorldBounds(8192f, 36000f);
+    float[][] viewports = {{800f, 600f}, {1024f, 768f}, {1440f, 900f}, {1920f, 1080f}};
+
+    for (float[] size : viewports) {
+      MinimapProjection.Rectangle mapPanel =
+          MinimapProjection.fit(extended, size[0], size[1]).panel();
+      FlightConsoleLayout.Rectangle consolePanel =
+          FlightConsoleLayout.fit(size[0], size[1]).panel();
+
+      assertEquals(consolePanel.y() + consolePanel.height(), mapPanel.y(), 0.0001f,
+          "the map starts on the console top edge without overlapping it at "
+              + size[0] + "x" + size[1]);
+      assertTrue(mapPanel.y() >= consolePanel.y() + consolePanel.height());
+      assertTrue(mapPanel.x() >= 0f && mapPanel.x() + mapPanel.width() <= size[0]);
+      assertTrue(mapPanel.y() + mapPanel.height() <= size[1]);
+    }
+  }
+
   @Test void visualScaleGrowsWithTheTallerMapAndIsCapped() {
     WorldBounds extended = new WorldBounds(8192f, 36000f);
     MinimapProjection compact = MinimapProjection.fit(extended, 800f, 448f);

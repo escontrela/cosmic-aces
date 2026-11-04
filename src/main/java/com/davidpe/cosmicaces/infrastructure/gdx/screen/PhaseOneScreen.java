@@ -108,8 +108,6 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Astra alternates body/flash visibility every this many seconds while invulnerable. */
   private static final float BLINK_INTERVAL_SECONDS = 0.1f;
   private static final Color AIM_RETICLE_COLOR = new Color(0.30f, 0.96f, 1f, 0.95f);
-  /** Warm tone shared by the minimap village markers and their name labels. */
-  private static final Color VILLAGE_LABEL_COLOR = new Color(0.94f, 0.82f, 0.56f, 1f);
   /** Caps the village label font so the five names stay inside the map; COS-129 raised it with the wider panel. */
   private static final float VILLAGE_LABEL_MAX_SCALE = 0.8f;
   /** Never shrink the label font below this scale, even on very small viewports. */
@@ -866,7 +864,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
           projection.map(), seeds, textHeight);
       drawVillageLeaderLines(labels);
       batch.begin();
-      hudFont.setColor(VILLAGE_LABEL_COLOR);
+      hudFont.setColor(PhosphorHudStyle.MAP_TEXT);
       for (VillageLabelLayout.Label label : labels) {
         hudFont.draw(batch, label.name(), label.x(), label.topY());
       }
@@ -880,7 +878,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Thin guides only where the collision-free ladder moved a label away from its marker. */
   private void drawVillageLeaderLines(List<VillageLabelLayout.Label> labels) {
     shapes.begin(ShapeRenderer.ShapeType.Line);
-    shapes.setColor(VILLAGE_LABEL_COLOR);
+    shapes.setColor(PhosphorHudStyle.MAP_TEXT);
     for (VillageLabelLayout.Label label : labels) {
       if (!label.needsLeader()) {
         continue;
