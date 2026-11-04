@@ -7,16 +7,22 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.weapon.MissileLoadout;
+import java.util.List;
+import java.util.Objects;
 
 /**
- * Fixed-screen pilot console of PhaseOne (COS-131): a translucent green terminal anchored to the
- * bottom edge, with ruled columns for navigation, weapons and the reserved enemy readings.
+ * Fixed-screen pilot console of PhaseOne (COS-131/COS-132): a translucent green terminal anchored to
+ * the bottom edge, with ruled columns for navigation, weapons and the visible enemy readings.
  *
- * <p>The console keeps the existing readings and their formats: Spanish cardinal heading and
- * degrees, rounded speed in km/h, Astra's energy percentage, the M61 Vulcan label while the trigger
- * is effective, and the AIM-120 inventory/target/help block while missile mode is armed. The detailed
- * weapon-selection, firing and enemy integration belongs to the next child (COS-132), so this class
- * does not invent new state or duplicate the enemy HUD.
+ * <p>Every frame the screen builds one immutable {@link Readout} from the authoritative state after
+ * combat is resolved, so the console never keeps a mutable copy of energy, inventory, selection or
+ * the enemy list. The formats are the existing ones: Spanish cardinal heading and three-digit
+ * degrees, rounded speed in km/h, Astra's energy percentage, the selected weapon name (M61 Vulcan or
+ * AIM-120 AMRAAM) with a separate firing marker, the missile inventory/target/help, and one compact
+ * line per enemy the HUD already covers. Own missiles in flight and the emergency blinking belong to
+ * COS-134.
  *
  * <p>{@link FlightConsoleLayout} owns the shared bottom band; {@link PhosphorHudStyle} owns the green
  * palette and {@link TerminalText} gives the existing font a fixed, monospaced-looking advance. The
@@ -27,6 +33,8 @@ final class FlightHud {
   private static final String[] DIRECTIONS = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
   private static final String WEAPON_LABEL = "M61 VULCAN";
   private static final String MISSILE_LABEL = "AIM-120 AMRAAM";
+  /** Separate marker that tells effective cannon fire apart from the selected weapon. */
+  private static final String FIRING_MARKER = " · DISPARO";
   private static final String MISSILE_HELP = "ESPACIO LANZAR · ESC RÁFAGAS";
   private static final String NAVIGATION_TITLE = ":: PILOTAJE";
   private static final String WEAPONS_TITLE = ":: ARMAMENTO";
@@ -41,6 +49,42 @@ final class FlightHud {
   private final GlyphLayout scoreLabelLayout = new GlyphLayout();
   private final GlyphLayout scoreValueLayout = new GlyphLayout();
 
+  /**
+   * Immutable presentation snapshot of one frame. The screen reads the authoritative controller once
+   * and passes the already formatted missile target; the visible enemies come from the same frame
+   * visibility rules. Ammunition and energy are clamped so no anomalous value can paint an invalid
+   * reading, and the threat list is copied so a later frame cannot mutate what this frame draws.
+   */
+  record Readout(
+      float yawDegrees,
+      float speed,
+      boolean firing,
+      int energyPercent,
+      MissileLoadout.Weapon weapon,
+      int missilesRemaining,
+      int missileCapacity,
+      String missileTarget,
+      List<EnemyStatusHud.Readout> threats) {
+
+    Readout {
+      weapon = Objects.requireNonNull(weapon, "weapon");
+      energyPercent = Math.max(0, Math.min(100, energyPercent));
+      missileCapacity = Math.max(0, missileCapacity);
+      missilesRemaining = Math.max(0, Math.min(missilesRemaining, missileCapacity));
+      threats = threats == null ? List.of() : List.copyOf(threats);
+    }
+
+    /** Single authoritative read for the frame being drawn; combat is already resolved. */
+    static Readout from(PhaseOneGameController controller, String missileTarget,
+        List<EnemyStatusHud.Readout> threats) {
+      Objects.requireNonNull(controller, "controller");
+      return new Readout(controller.astra().yawDegrees(), controller.astra().flightSpeed(),
+          controller.astraGun().isFiring(), controller.astraCombat().energyPercent(),
+          controller.astraWeapon(), controller.astraMissilesRemaining(),
+          controller.astraMissileCapacity(), missileTarget, threats);
+    }
+  }
+
   static String headingLabel(float yawDegrees) {
     int index = headingIndex(yawDegrees);
     return DIRECTIONS[index];
@@ -51,14 +95,15 @@ final class FlightHud {
     return degrees < 0 ? degrees + 360 : degrees;
   }
 
-  /** The active weapon shown while Astra's trigger is effective, empty otherwise. */
-  static String weaponLabel(boolean isFiring) {
-    return isFiring ? WEAPON_LABEL : "";
-  }
-
-  /** Weapon name in the console: missile mode wins over the cannon trigger. */
-  static String weaponNameLabel(boolean missileArmed, boolean isFiring) {
-    return missileArmed ? MISSILE_LABEL : weaponLabel(isFiring);
+  /**
+   * Selected weapon plus its firing activity. The name is always present, so the player can read the
+   * selection without firing; the marker only appears while the cannon trigger is effective, which
+   * is the one weapon that emits continuously.
+   */
+  static String weaponLine(MissileLoadout.Weapon weapon, boolean isFiring) {
+    String name = weapon == MissileLoadout.Weapon.MISSILE ? MISSILE_LABEL : WEAPON_LABEL;
+    boolean cannonFiring = isFiring && weapon != MissileLoadout.Weapon.MISSILE;
+    return cannonFiring ? name + FIRING_MARKER : name;
   }
 
   /** Heading row with the existing cardinal and three-digit format. */
@@ -90,6 +135,15 @@ final class FlightHud {
     return MISSILE_HELP;
   }
 
+  /**
+   * One compact threat line: the enemy's own title and its energy percentage. The {@code AMENAZAS}
+   * column and the enemy name keep it apart from Astra's labelled {@code ENERGÍA} row, so both
+   * readings stay unambiguous without duplicating the old block.
+   */
+  static String threatLine(EnemyStatusHud.Readout readout) {
+    return readout.titleLabel() + " " + readout.energyLabel();
+  }
+
   static float rightAlignedX(float viewportWidth, float contentWidth) {
     return Math.max(EDGE_MARGIN, viewportWidth - EDGE_MARGIN - contentWidth);
   }
@@ -102,9 +156,8 @@ final class FlightHud {
    * Draws the console panel, its rules and the current readings into the HUD projection. The screen
    * has already set the HUD camera/viewport and owns both renderers.
    */
-  void draw(SpriteBatch batch, ShapeRenderer shapes, BitmapFont font, float yawDegrees, float speed,
-      boolean isFiring, int energyPercent, float viewportWidth, float viewportHeight,
-      boolean missileArmed, int missilesRemaining, int missileCapacity, String missileTarget) {
+  void draw(SpriteBatch batch, ShapeRenderer shapes, BitmapFont font, Readout readout,
+      float viewportWidth, float viewportHeight) {
     FlightConsoleLayout.Layout layout = FlightConsoleLayout.fit(viewportWidth, viewportHeight);
     drawConsoleFrame(shapes, layout);
     Color originalFontColor = font.getColor().cpy();
@@ -116,10 +169,10 @@ final class FlightHud {
       try {
         batch.setColor(Color.WHITE);
         drawHeaders(batch, font, layout);
-        drawNavigation(batch, font, layout, yawDegrees, speed, energyPercent);
-        drawWeapons(batch, font, layout, isFiring, missileArmed, missilesRemaining,
-            missileCapacity, missileTarget);
-        drawFooter(batch, font, layout, missileArmed);
+        drawNavigation(batch, font, layout, readout);
+        drawWeapons(batch, font, layout, readout);
+        drawThreats(batch, font, layout, readout.threats());
+        drawFooter(batch, font, layout, readout.weapon());
       } finally {
         batch.end();
       }
@@ -205,38 +258,48 @@ final class FlightHud {
   }
 
   private static void drawNavigation(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Layout layout, float yawDegrees, float speed, int energyPercent) {
-    drawColumnLine(batch, font, layout.navigation(), layout, 0, headingLine(yawDegrees),
+      FlightConsoleLayout.Layout layout, Readout readout) {
+    drawColumnLine(batch, font, layout.navigation(), layout, 0, headingLine(readout.yawDegrees()),
         PhosphorHudStyle.TEXT);
-    drawColumnLine(batch, font, layout.navigation(), layout, 1, velocityLine(speed),
+    drawColumnLine(batch, font, layout.navigation(), layout, 1, velocityLine(readout.speed()),
         PhosphorHudStyle.TEXT);
-    drawColumnLine(batch, font, layout.navigation(), layout, 2, energyLabel(energyPercent),
+    drawColumnLine(batch, font, layout.navigation(), layout, 2, energyLabel(readout.energyPercent()),
         PhosphorHudStyle.TEXT_BRIGHT);
   }
 
   private static void drawWeapons(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Layout layout, boolean isFiring, boolean missileArmed,
-      int missilesRemaining, int missileCapacity, String missileTarget) {
-    String weapon = weaponNameLabel(missileArmed, isFiring);
-    if (!weapon.isEmpty()) {
-      drawColumnLine(batch, font, layout.weapons(), layout, 0, weapon,
-          missileArmed ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT);
-    }
-    if (!missileArmed) {
-      return;
-    }
+      FlightConsoleLayout.Layout layout, Readout readout) {
+    boolean missileSelected = readout.weapon() == MissileLoadout.Weapon.MISSILE;
+    drawColumnLine(batch, font, layout.weapons(), layout, 0,
+        weaponLine(readout.weapon(), readout.firing()),
+        missileSelected ? PhosphorHudStyle.TEXT_BRIGHT : PhosphorHudStyle.TEXT);
     drawColumnLine(batch, font, layout.weapons(), layout, 1,
-        missileAmmoLabel(missilesRemaining, missileCapacity),
-        missilesRemaining <= 0 ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT);
+        missileAmmoLabel(readout.missilesRemaining(), readout.missileCapacity()),
+        readout.missilesRemaining() <= 0 ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT);
     drawColumnLine(batch, font, layout.weapons(), layout, 2,
-        missileTargetLabel(missileTarget),
-        missileTarget == null || missileTarget.isBlank()
+        missileTargetLabel(readout.missileTarget()),
+        readout.missileTarget() == null || readout.missileTarget().isBlank()
             ? PhosphorHudStyle.TEXT_FAINT : PhosphorHudStyle.TEXT_BRIGHT);
   }
 
+  /**
+   * One compact line per enemy the HUD covers this frame, in encounter order (Vesper, Bastion and
+   * then its escorts). No enemy is dropped or prioritised: the layout compresses the row spacing when
+   * several are visible at once, so a dead or off-camera enemy simply leaves the next frame's list.
+   */
+  private static void drawThreats(SpriteBatch batch, BitmapFont font,
+      FlightConsoleLayout.Layout layout, List<EnemyStatusHud.Readout> threats) {
+    float[] baselines = layout.threatBaselines(threats.size());
+    for (int index = 0; index < threats.size(); index++) {
+      drawFittedLine(batch, font, layout.threats().x(), baselines[index],
+          layout.threats().width(), threatLine(threats.get(index)), DATA_TEXT_SCALE,
+          PhosphorHudStyle.TEXT);
+    }
+  }
+
   private static void drawFooter(SpriteBatch batch, BitmapFont font,
-      FlightConsoleLayout.Layout layout, boolean missileArmed) {
-    if (!missileArmed) {
+      FlightConsoleLayout.Layout layout, MissileLoadout.Weapon weapon) {
+    if (weapon != MissileLoadout.Weapon.MISSILE) {
       return;
     }
     drawFittedLine(batch, font, layout.contentLeft(), layout.footerBaseline(),

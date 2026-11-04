@@ -1,5 +1,6 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -67,6 +68,47 @@ class FlightConsoleLayoutTest {
       assertTrue(layout.footerBaseline() < layout.footerSeparatorY());
       assertTrue(layout.footerBaseline() > 0f, "the help line stays inside the panel");
     }
+  }
+
+  @Test void threatRowsStayInsideTheThreatColumnForEveryVisibleEnemy() {
+    for (float[] size : VIEWPORTS) {
+      FlightConsoleLayout.Layout layout = FlightConsoleLayout.fit(size[0], size[1]);
+      for (int count = 1; count <= 4; count++) {
+        float[] baselines = layout.threatBaselines(count);
+
+        assertEquals(count, baselines.length);
+        for (int index = 0; index < count; index++) {
+          assertTrue(baselines[index] < layout.headerSeparatorY(),
+              "threat row " + index + " starts under the header rule");
+          assertTrue(baselines[index] > layout.footerSeparatorY(),
+              "threat row " + index + " stays above the footer rule");
+          if (index > 0) {
+            assertTrue(baselines[index] < baselines[index - 1],
+                "threat rows keep their top-to-bottom order");
+          }
+        }
+      }
+    }
+  }
+
+  @Test void threatRowsReuseTheNominalRowsUntilTheColumnIsCrowded() {
+    FlightConsoleLayout.Layout layout = FlightConsoleLayout.fit(800f, 600f);
+
+    assertArrayEquals(new float[] {layout.rowBaseline(0), layout.rowBaseline(1),
+        layout.rowBaseline(2)}, layout.threatBaselines(3), 0.0001f,
+        "three contacts use the same rows as the other columns");
+
+    float[] crowded = layout.threatBaselines(4);
+    assertTrue(crowded[0] - crowded[1] < FlightConsoleLayout.ROW_SPACING,
+        "a fourth contact compresses the spacing instead of overlapping the footer");
+    assertTrue(crowded[3] > layout.footerSeparatorY());
+  }
+
+  @Test void threatRowsAreEmptyOrRejectedForOutOfRangeCounts() {
+    FlightConsoleLayout.Layout layout = FlightConsoleLayout.fit(800f, 600f);
+
+    assertEquals(0, layout.threatBaselines(0).length);
+    assertThrows(IllegalArgumentException.class, () -> layout.threatBaselines(-1));
   }
 
   @Test void sharesItsHeightAsTheSingleBottomBandReservation() {

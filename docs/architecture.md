@@ -293,8 +293,9 @@ visibilidad del minimapa y guarda aparte la preferencia de M para restaurarla al
 M no puede ocultar la única superficie de selección. El rombo cian muestra la mira libre y un aro
 amarillo marca la posición exacta del objetivo fijado, incluidos los drones Ghostwing agrupados en
 la vista normal. La retícula también se dibuja en el mundo cuando la coordenada de mira intersecta
-la cámara actual, sin moverla. `FlightHud` presenta AIM-120 AMRAAM, munición, objetivo fijado o su
-ausencia y la ayuda de controles dentro de la columna `ARMAMENTO` de la consola inferior. Mientras
+la cámara actual, sin moverla. `FlightHud` presenta el arma seleccionada (M61 Vulcan o AIM-120
+AMRAAM), la actividad de disparo como marca aparte, munición, objetivo fijado o su ausencia y la
+ayuda de controles dentro de la columna `ARMAMENTO` de la consola inferior. Mientras
 haya misiles guiados activos,
 `PhaseOneScreen` fuerza temporalmente la visibilidad del minimapa incluso fuera del modo de apuntado;
 `FlightMinimap` proyecta su posición actual por frame como un punto brillante, verde para Astra y
@@ -352,17 +353,43 @@ dependencias: `cellWidth(font)` toma el avance del glifo más ancho de la págin
 `MIN_FIT_SCALE`) para que un resize o un nombre largo nunca pinten fuera de la consola. No abre ni
 cierra el `SpriteBatch`, que sigue siendo de la pantalla.
 
-`FlightHud.draw(batch, shapes, font, …, viewportWidth, viewportHeight, …)` dibuja ahora la consola
+`FlightHud.draw(batch, shapes, font, Readout, viewportWidth, viewportHeight)` dibuja la consola
 completa bajo la proyección HUD ya fijada: el panel translúcido y sus filetes con el `ShapeRenderer`
 de la pantalla (activa el blending solo si estaba desactivado y restaura color y estado GL), y después
-las lecturas actuales en sus columnas: rumbo cardinal y grados y velocidad redondeada en `PILOTAJE`,
-energía de Astra en la tercera fila, M61 Vulcan mientras el gatillo es efectivo o AIM-120 AMRAAM con
-munición y objetivo en `ARMAMENTO`, y la ayuda de controles en el pie cuando el misil está armado. La
-columna `AMENAZAS` queda rotulada y libre para la integración de enemigos de COS-132; no duplica
-`EnemyStatusHud`. El score sigue en la esquina superior derecha con su propio dibujo. Todos los
-formatos de datos existentes se conservan y solo cambia su presentación; `FlightHud` no posee
-recursos nativos, no carga fuentes y restaura color y escala de la fuente y el color del batch en
-todos los caminos.
+las lecturas de la instantánea en sus columnas. `Readout.from(controller, objetivo, amenazas)` es la
+única lectura por frame de los datos autoritativos después de resolver combate: rumbo cardinal y
+grados, velocidad redondeada, energía de Astra, arma seleccionada, actividad de disparo, munición,
+objetivo y la lista inmutable de enemigos visibles. El score sigue en la esquina superior derecha con
+su propio dibujo. `FlightHud` no posee recursos nativos, no carga fuentes y restaura color y escala de
+la fuente y el color del batch en todos los caminos.
+
+### Integración de pilotaje, armamento y amenazas en la consola (COS-132)
+
+`FlightHud.Readout` (record inmutable) evita que la pantalla mantenga copias mutables de energía,
+inventario o selección: la pantalla lo construye una vez por frame y el HUD solo lo dibuja. En
+`PILOTAJE` se conservan los formatos existentes (`RUMBO N 000`, `VELOCIDAD 150 KM/H` y `ENERGÍA NN%`,
+con clamp 0–100). En `ARMAMENTO` el nombre del arma seleccionada procede de
+`PhaseOneGameController.astraWeapon()` (`MissileLoadout.Weapon.CANNON`/`MISSILE`) y siempre está
+visible: `M61 VULCAN` sin disparar y `AIM-120 AMRAAM` en modo misil. La actividad de disparo del
+cañón se muestra como marca separada (` · DISPARO`) solo mientras `astraGun().isFiring()` es
+efectivo; la munición real (`MISILES n/cap`, `Sin misiles` al agotarse) y el objetivo fijado o su
+ausencia se muestran en ambas selecciones, y la ayuda de controles permanece en el pie solo en modo
+misil. No se crea una segunda autoridad de selección.
+
+`PhaseOneScreen.visibleEnemyReadouts(...)` reconstruye cada frame una lista de
+`EnemyStatusHud.Readout` con las mismas reglas de visibilidad que el dibujo del mundo: Vesper exige
+`PLAYING` + Astra y el Raider vivo en la vista rotada; el Bastion sigue su propia visibilidad de
+viewport; cada escolta exige Astra y su nave en vista. La energía se lee después de resolver los
+impactos del frame. El orden es el de encuentro (Vesper, Bastion, escoltas) y no se elige un enemigo
+prioritario: la columna `AMENAZAS` dibuja una línea compacta por contacto (`VESPER RAIDER 65%`,
+`BASTION B-52 100%`, `BASTION ESCORT 65%`) con
+`FlightConsoleLayout.Layout.threatBaselines(count)`, que reutiliza las tres filas nominales y comprime
+el espaciado si hay un cuarto contacto, sin cruzar el filete del pie. Al morir, salir de cámara,
+esperar reaparición o cambiar de fase el contacto desaparece de la lista, de modo que no quedan filas
+antiguas ni lecturas heredadas por una nueva partida. La lectura enemiga es independiente de la
+energía de Astra y conserva su nombre propio, por lo que ambas magnitudes no se confunden. La antigua
+llamada de dibujo de `EnemyStatusHud` se retiró para no duplicar el bloque; sus reglas puras
+(`show(...)`, `Readout`) siguen siendo la fuente de verdad de la presentación.
 
 ### UAV Geran-4: lámina y modelo de vuelo recto (COS-93)
 
@@ -1014,19 +1041,20 @@ derecha; la banda inferior y la zona del minimapa no se tocan, incluido al redim
 batch. `MissionHudTest` cubre formato del reloj, clamps del `Readout`, layout puro y la lectura
 inicial autoritativa; la legibilidad visual es del PO.
 
-### HUD de enemigos visibles en PhaseOne (COS-72)
+### Lecturas de enemigos visibles en PhaseOne (COS-72/COS-132)
 
-`infrastructure.gdx.screen.EnemyStatusHud` dibuja nombre y energía de los enemigos bajo la misma
-proyección HUD de `hudViewport`, con `Readout(title, energyPercent)` y porcentaje entero con clamp
-0–100. Vesper conserva su regla actual: Astra y el Raider vivo deben coincidir en la vista rotada
-real de cámara durante PLAYING. Bastion se muestra durante PLAYING cuando su nave activa intersecta
-esa cámara, incluso si Astra no coincide con él. Si ambos son visibles, los dos bloques ocupan
-slots verticales separados; el bloque de Bastion dice `BASTION B-52`. La pantalla calcula la
-visibilidad para el fotograma dibujado y lee la energía después de resolver impactos, de modo que el
-HUD coincide con el estado del avión. No posee recursos nativos y es independiente del porcentaje
-de Astra (`FlightHud`). El layout puro mide cada nombre con `GlyphLayout`, queda bajo los contadores,
-reloj y score, y encima de la banda inferior y el minimapa; `EnemyStatusHudTest` cubre las reglas de
-visibilidad, títulos, energía y slots.
+`infrastructure.gdx.screen.EnemyStatusHud` conserva el modelo de las lecturas enemigas con
+`Readout(title, energyPercent)` y porcentaje entero con clamp 0–100. Vesper conserva su regla
+original: Astra y el Raider vivo deben coincidir en la vista rotada real de cámara durante PLAYING.
+Bastion se muestra durante PLAYING cuando su nave activa intersecta esa cámara, incluso si Astra no
+coincide con él. La pantalla calcula la visibilidad para el fotograma dibujado y lee la energía
+después de resolver impactos, de modo que la lectura coincide con el estado del avión. Desde COS-132
+la clase ya no dibuja ni posee layout: `FlightHud` integra cada `Readout` como una línea compacta en
+la columna `AMENAZAS` de la consola inferior, y `PhaseOneScreen.visibleEnemyReadouts(...)` reconstruye
+la lista por frame (Vesper, `BASTION B-52` y escoltas `BASTION ESCORT`) con slots comprimidos si
+coinciden varios. No posee recursos nativos y sigue siendo independiente del porcentaje de Astra.
+`EnemyStatusHudTest` cubre las reglas de visibilidad, títulos, energía y clamps; el formato de la
+línea y las filas de la consola se prueban en `FlightHudTest` y `FlightConsoleLayoutTest`.
 
 ### Tramo activo autorizado del frame (COS-73)
 
@@ -1372,10 +1400,11 @@ pose (escala uniforme; no se estira la pose ni cambia la caja). El pulso del
 fogonazo lo da el propio `GunBurst.flashVisible()` (0,035 s del mismo reloj de
 emisión): la pantalla lo propaga con `Astra.setMuzzleFlashVisible` y
 `VesperRaider.setMuzzleFlashVisible` antes del dibujo, y `currentRegion` elige
-`region(pose, accelerating, flash)` / `region(pose, flash)`. `FlightHud.draw`
-recibe `isFiring` y `weaponLabel(boolean)` devuelve «M61 VULCAN» o vacío,
-dibujado centrado en una fila inferior libre (y=58) sin mover cámara ni
-reorganizar las lecturas existentes.
+`region(pose, accelerating, flash)` / `region(pose, flash)`. `FlightHud.Readout`
+recibe `firing` desde `astraGun().isFiring()` y `weaponLine(weapon, firing)` muestra siempre el
+arma seleccionada, añadiendo ` · DISPARO` solo mientras el cañón dispara; el nombre se dibuja en la
+columna `ARMAMENTO` de la consola inferior (COS-132) sin mover cámara ni crear otra autoridad de
+selección.
 
 Vesper integra su cañón autónomo en el mismo controlador. `PhaseOneGameController`
 posee un segundo `GunBurst`, `raiderGun()`, y `advanceWeapons(frameDelta,
@@ -1877,21 +1906,23 @@ com.davidpe.cosmicaces
             +-- FlightCamera: aplica el estado a OrthographicCamera; recibe el CameraMode capturado
             |   por la pantalla y lo fija durante esa partida.
             |   1. update() [2 sobrecargas]
-            +-- FlightHud: consola inferior en fósforo con lecturas y score en pantalla (COS-131).
-            |   1. headingLabel()  2. headingDegrees()  3. weaponLabel()  4. energyLabel()
-            |   5. headingLine()  6. velocityLine()  7. weaponNameLabel()  8. missileHelpLabel()
-            |   9. draw(batch, shapes, font, …, viewportWidth, viewportHeight, …)  10. drawScore()
+            +-- FlightHud: consola inferior en fósforo con lecturas y score en pantalla (COS-131/132).
+            |   1. Readout.from()  2. headingLabel()  3. headingDegrees()  4. energyLabel()
+            |   5. headingLine()  6. velocityLine()  7. weaponLine()  8. threatLine()
+            |   9. missileAmmoLabel()/missileTargetLabel()  10. missileHelpLabel()
+            |   11. draw(batch, shapes, font, Readout, viewportWidth, viewportHeight)  12. drawScore()
             +-- FlightConsoleLayout: geometría pura de la banda inferior compartida (COS-131).
             |   1. fit()  2. HEIGHT/bottomBand()  3. Layout.rowBaseline()/contentLeft()/contentRight()
             |   4. Layout.headerSeparatorY()/footerSeparatorY()/firstSeparatorX()/secondSeparatorX()
+            |   5. Layout.threatBaselines(count)
             +-- PhosphorHudStyle: paleta de fósforo verde con alfa para consola y mapa (COS-131).
             |   1. PANEL/FRAME/FRAME_DIM  2. TEXT/TEXT_BRIGHT/TEXT_DIM/TEXT_FAINT  3. SHADOW
             +-- TerminalText: rejilla monoespaciada sobre la BitmapFont existente (COS-131).
             |   1. cellWidth()  2. width()  3. fitScale()  4. truncate()  5. draw()
             +-- MissionHud: bajas 0/3–3/3, vidas 3–0 y reloj 10:00–00:00 (COS-71), sin recursos nativos.
             |   1. Readout.from()  2. clockLabel()  3. layout()  4. draw()
-            +-- EnemyStatusHud: nombre + energía % de enemigos visibles (Vesper/Bastion, COS-72).
-            |   1. show()  2. Readout.titleLabel()/energyLabel()  3. layout()  4. draw()
+            +-- EnemyStatusHud: modelo nombre + energía % de enemigos visibles (COS-72/132).
+            |   1. show()  2. Readout.titleLabel()/energyLabel()  [dibujo en FlightHud]
             +-- PhaseOneTerrainCatalog: catálogo histórico de 128 PNG (COS-82; sin uso activo).
             |   1. tiles()  2. tile()  3. pathFor()  4. tileAt()  5. tilesIn()
             |   6. requiresVerticalFlip()

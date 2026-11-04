@@ -6,9 +6,10 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
  * the minimap and the off-screen arrow always start above it and the console never covers them.
  *
  * <p>The layout has three measured columns: navigation ({@code PILOTAJE}), weapons ({@code
- * ARMAMENTO}) and the reserved enemy area ({@code AMENAZAS}). It exposes baselines instead of pixel
- * rows so the HUD can re-measure text against the real {@code hudViewport} on every resize. It owns
- * no LibGDX resource and is unit tested without a window.
+ * ARMAMENTO}) and the enemy area ({@code AMENAZAS}). It exposes baselines instead of pixel rows so
+ * the HUD can re-measure text against the real {@code hudViewport} on every resize, including the
+ * variable number of compact threat lines (COS-132). It owns no LibGDX resource and is unit tested
+ * without a window.
  */
 final class FlightConsoleLayout {
 
@@ -57,6 +58,32 @@ final class FlightConsoleLayout {
         throw new IllegalArgumentException("Console row must be between 0 and " + (CONTENT_ROWS - 1));
       }
       return firstRowBaseline - row * rowSpacing;
+    }
+
+    /**
+     * Baselines of the compact threat readings, one line per enemy visible in this frame. They start
+     * on the first data row and compress the spacing when more readings than the nominal three share
+     * the column, so no enemy is dropped or prioritised and no line crosses the footer rule. A
+     * viewport shorter than the band keeps every baseline inside the trimmed panel instead of
+     * failing; {@code count == 0} returns no row.
+     */
+    float[] threatBaselines(int count) {
+      if (count < 0) {
+        throw new IllegalArgumentException("Threat count must not be negative");
+      }
+      if (count == 0) {
+        return new float[0];
+      }
+      float top = Math.min(firstRowBaseline, headerSeparatorY - 2f);
+      float bottom = Math.min(footerSeparatorY + 4f, top);
+      float spacing = count == 1
+          ? 0f
+          : Math.max(0f, Math.min(rowSpacing, (top - bottom) / (count - 1)));
+      float[] baselines = new float[count];
+      for (int index = 0; index < count; index++) {
+        baselines[index] = top - index * spacing;
+      }
+      return baselines;
     }
 
     /** X of the divider between the navigation and weapons columns. */
