@@ -75,9 +75,10 @@ class PhaseOneTerrainCatalogTest {
   }
 
   @Test
-  void catalogWorldMatchesThePhaseOneController() {
+  void retiredCatalogKeepsItsLegacyHeightWhileTheActiveWorldIsTaller() {
     assertEquals(PhaseOneGameController.WORLD.width(), PhaseOneTerrainCatalog.WORLD_WIDTH);
-    assertEquals(PhaseOneGameController.WORLD.height(), PhaseOneTerrainCatalog.WORLD_HEIGHT);
+    assertEquals(12000f, PhaseOneTerrainCatalog.WORLD_HEIGHT);
+    assertTrue(PhaseOneGameController.WORLD.height() > PhaseOneTerrainCatalog.WORLD_HEIGHT);
   }
 
   @Test

@@ -1,6 +1,6 @@
 # Recursos de las pantallas — v1
 
-Generados con la herramienta integrada ImageGen el 2026-11-03. Preparados para la nueva feature; todavía no conectados a las pantallas.
+Generados con la herramienta integrada ImageGen el 2026-11-03. `welcome-background-v1.png` y `cosmic-aces-logo-v1.png` ya se dibujan en `WelcomeScreen`; `hall-of-fame-background-v1.png` queda reservado para la pantalla de puntuaciones (COS-123).
 
 | Archivo dentro de assets/images | Tamaño | Uso |
 | --- | --- | --- |

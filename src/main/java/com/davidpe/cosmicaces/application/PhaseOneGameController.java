@@ -40,7 +40,12 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class PhaseOneGameController extends GameController {
 
-  public static final WorldBounds WORLD = new WorldBounds(8192f, 12000f);
+  /**
+   * PhaseOne world in world units. The advance axis keeps the width of the original 8192-unit map
+   * and triples its length to 36000, so the procedural terrain, both PNG bases and the legacy
+   * village milestones all fit on one continuous run.
+   */
+  public static final WorldBounds WORLD = new WorldBounds(8192f, 36000f);
   /**
    * Body hulls are approximated by the inscribed circle of each ship box; the exact rotated box can
    * be introduced later without changing the collision contract.

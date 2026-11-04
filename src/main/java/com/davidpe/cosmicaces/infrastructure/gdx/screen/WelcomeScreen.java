@@ -5,6 +5,8 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.Texture.TextureFilter;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -12,6 +14,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.davidpe.cosmicaces.application.AttractCycle;
 import com.davidpe.cosmicaces.domain.game.GameId;
 import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
@@ -26,6 +29,7 @@ import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.VideoDisplaySettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Welcome screen, including its artwork, star field, input and all owned LibGDX resources.
@@ -35,29 +39,12 @@ import java.util.List;
  */
 public final class WelcomeScreen extends ScreenAdapter {
 
-  private static final String[] SHIP = {
-    "            ^            ",
-    "           /A\\           ",
-    "     _____/###\\_____     ",
-    "  __/____/#####\\____\\__  ",
-    " <_______|##O##|_______> ",
-    "      /__|#####|__\\      ",
-    "         V     V         "
-  };
-  private static final String[] TITLE = {
-    " XXX   XXX   XXXX  X   X  XXXXX   XXX ",
-    "X     X   X X      XX XX    X    X    ",
-    "X     X   X  XXX   X X X    X    X    ",
-    "X     X   X     X  X   X    X    X    ",
-    " XXX   XXX  XXXX   X   X  XXXXX   XXX ",
-    "",
-    " XXX   XXX  XXXXX  XXXX ",
-    "X   X X     X      X    ",
-    "XXXXX X     XXXX    XXX ",
-    "X   X X     X          X",
-    "X   X  XXX  XXXXX  XXXX "
-  };
+  private static final String BACKGROUND_PATH = "assets/images/screens/welcome-background-v1.png";
+  private static final String LOGO_PATH = "assets/images/branding/cosmic-aces-logo-v1.png";
   private static final String COIN_PROMPT = "INSERT COIN (pulsa Y)";
+  private static final float LOGO_WIDTH_FRACTION = 0.36f;
+  private static final float LOGO_TOP_MARGIN_FRACTION = 0.035f;
+  private static final float PROMPT_BOTTOM_FRACTION = 0.06f;
   private static final int STAR_COUNT = 230;
   private static final float STAR_MIN_SPEED = 64f;
   private static final float STAR_MAX_SPEED = 179f;
@@ -72,15 +59,6 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static final List<RootOption> ROOT_OPTIONS = List.of(
       RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.ASTRA_SPEEDS,
       RootOption.ASTRA_MODEL, RootOption.ARMAMENT, RootOption.CAMERA);
-  private static final float CELL_WIDTH = 15.36f;
-  private static final float LINE_HEIGHT = 26.88f;
-  private static final String[] ASCII_GLYPHS = new String[128];
-
-  static {
-    for (int i = 32; i < ASCII_GLYPHS.length; i++) {
-      ASCII_GLYPHS[i] = Character.toString((char) i);
-    }
-  }
 
   private final GameEventPublisher publisher;
   private final GameId gameId;
@@ -89,7 +67,8 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final Viewport viewport;
   private final SpriteBatch batch;
   private final ShapeRenderer shapes;
-  private final BitmapFont logoFont;
+  private final Texture backgroundTexture;
+  private final Texture logoTexture;
   private final BitmapFont promptFont;
   private final BitmapFont settingsFont;
   private final GlyphLayout promptLayout;
@@ -97,6 +76,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final VideoDisplaySettings videoSettings;
   private final GamePresentationSettings presentationSettings;
   private final GameSettingsStore settingsStore;
+  private final AttractCycle attractCycle;
   private SettingsPage settingsPage = SettingsPage.CLOSED;
   private VideoDisplaySettings.DisplayCatalog videoCatalog;
   private int rootSelection;
@@ -123,12 +103,20 @@ public final class WelcomeScreen extends ScreenAdapter {
   public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
       VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
       GameSettingsStore settingsStore) {
+    this(publisher, gameId, phase, videoSettings, presentationSettings, settingsStore,
+        new AttractCycle());
+  }
+
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
+      GameSettingsStore settingsStore, AttractCycle attractCycle) {
     this.publisher = publisher;
     this.gameId = gameId;
     this.phase = phase;
     this.videoSettings = videoSettings;
     this.presentationSettings = presentationSettings;
     this.settingsStore = settingsStore;
+    this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
     if (settingsStore != null) {
       flightSpeeds = settingsStore.flightSpeeds();
       astraMissilesPerLife = settingsStore.astraMissilesPerLife();
@@ -143,8 +131,8 @@ public final class WelcomeScreen extends ScreenAdapter {
 
     batch = new SpriteBatch();
     shapes = new ShapeRenderer();
-    logoFont = new BitmapFont();
-    logoFont.getData().setScale(1.536f);
+    backgroundTexture = loadTexture(BACKGROUND_PATH);
+    logoTexture = loadTexture(LOGO_PATH);
     promptFont = new BitmapFont();
     promptFont.getData().setScale(1.536f);
     settingsFont = new BitmapFont();
@@ -160,12 +148,16 @@ public final class WelcomeScreen extends ScreenAdapter {
             STAR_MIN_RADIUS,
             STAR_MAX_RADIUS,
             STAR_WRAP_MARGIN);
+    // A newly built lobby always starts a complete attraction interval.
+    attractCycle.enter(AttractCycle.Page.WELCOME);
   }
 
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
     handleSettingsInput();
+    // Ajustes owns the keyboard and the attraction loop while it is open.
+    attractCycle.setPaused(settingsPage != SettingsPage.CLOSED);
     if (settingsPage == SettingsPage.CLOSED && !startRequested
         && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
       startRequested = true;
@@ -196,7 +188,12 @@ public final class WelcomeScreen extends ScreenAdapter {
   public void dispose() {
     batch.dispose();
     shapes.dispose();
-    logoFont.dispose();
+    if (backgroundTexture != null) {
+      backgroundTexture.dispose();
+    }
+    if (logoTexture != null) {
+      logoTexture.dispose();
+    }
     promptFont.dispose();
     settingsFont.dispose();
   }
@@ -204,34 +201,68 @@ public final class WelcomeScreen extends ScreenAdapter {
   private void drawWelcome(float delta) {
     float viewportWidth = viewport.getWorldWidth();
     float viewportHeight = viewport.getWorldHeight();
-    float contentHeight = (SHIP.length + TITLE.length) * LINE_HEIGHT + 84f;
-    float shipTop = (viewportHeight + contentHeight) / 2f;
-    float titleTop = shipTop - (SHIP.length + 1) * LINE_HEIGHT;
-    float titleBottom = titleTop - (TITLE.length - 1) * LINE_HEIGHT;
-    float contentWidth = Math.max(maxLineLength(SHIP), maxLineLength(TITLE)) * CELL_WIDTH;
-    float panelWidth = Math.min(viewportWidth - 32f, contentWidth + 48f);
-    float panelX = (viewportWidth - panelWidth) / 2f;
-
-    shapes.begin(ShapeRenderer.ShapeType.Filled);
-    shapes.setColor(Color.BLACK);
-    shapes.rect(panelX, titleBottom - 68f, panelWidth, shipTop - titleBottom + 92f);
-    shapes.end();
+    Fit art = backgroundTexture == null
+        ? new Fit(0f, 0f, viewportWidth, viewportHeight)
+        : fitCentered(viewportWidth, viewportHeight,
+            backgroundTexture.getWidth(), backgroundTexture.getHeight());
 
     batch.begin();
-    logoFont.setColor(Color.CYAN);
-    drawAsciiLines(SHIP, shipTop, -1);
-    logoFont.setColor(Color.WHITE);
-    drawAsciiLines(TITLE, titleTop, 6);
+    // The artwork is opaque and already has its final colors; the batch tint must not darken it.
+    batch.setColor(Color.WHITE);
+    if (backgroundTexture != null) {
+      batch.draw(backgroundTexture, art.x(), art.y(), art.width(), art.height());
+    }
+    if (logoTexture != null) {
+      float logoWidth = art.width() * LOGO_WIDTH_FRACTION;
+      float logoHeight = logoWidth * logoTexture.getHeight() / logoTexture.getWidth();
+      float logoX = art.x() + (art.width() - logoWidth) / 2f;
+      float logoY = art.y() + art.height()
+          - art.height() * LOGO_TOP_MARGIN_FRACTION - logoHeight;
+      batch.draw(logoTexture, logoX, logoY, logoWidth, logoHeight);
+    }
 
     blinkTimer += delta;
     boolean promptVisible = ((int) (blinkTimer / BLINK_PERIOD)) % 2 == 0;
     if (promptVisible) {
-      float promptX = Math.max(16f, (viewportWidth - promptLayout.width) / 2f);
-      promptFont.draw(batch, promptLayout, promptX, titleBottom - 56f);
+      float promptX = Math.max(art.x() + 16f,
+          art.x() + (art.width() - promptLayout.width) / 2f);
+      promptFont.draw(batch, promptLayout, promptX,
+          art.y() + art.height() * PROMPT_BOTTOM_FRACTION);
     }
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "ESC: AJUSTES", 18f, 28f);
+    settingsFont.draw(batch, "ESC: AJUSTES", art.x() + 18f, art.y() + 28f);
     batch.end();
+  }
+
+  /**
+   * Largest rectangle with the source aspect ratio that fits inside the viewport, centered. Used for
+   * both the 4:3 background and any future full-bleed artwork without deforming the aircraft.
+   */
+  static Fit fitCentered(float viewportWidth, float viewportHeight,
+      float sourceWidth, float sourceHeight) {
+    if (viewportWidth <= 0f || viewportHeight <= 0f || sourceWidth <= 0f || sourceHeight <= 0f) {
+      return new Fit(0f, 0f, Math.max(0f, viewportWidth), Math.max(0f, viewportHeight));
+    }
+    float scale = Math.min(viewportWidth / sourceWidth, viewportHeight / sourceHeight);
+    float width = sourceWidth * scale;
+    float height = sourceHeight * scale;
+    return new Fit((viewportWidth - width) / 2f, (viewportHeight - height) / 2f, width, height);
+  }
+
+  /** Rectangle of a fitted, centered piece of artwork in viewport world units. */
+  record Fit(float x, float y, float width, float height) { }
+
+  private static Texture loadTexture(String path) {
+    try {
+      Texture texture = new Texture(Gdx.files.internal(path));
+      texture.setFilter(TextureFilter.Linear, TextureFilter.Linear);
+      return texture;
+    } catch (RuntimeException failure) {
+      if (Gdx.app != null) {
+        Gdx.app.error("WelcomeScreen", "No se pudo cargar " + path, failure);
+      }
+      return null;
+    }
   }
 
   private void handleSettingsInput() {
@@ -699,30 +730,5 @@ public final class WelcomeScreen extends ScreenAdapter {
     SettingsPage page() {
       return page;
     }
-  }
-
-  private void drawAsciiLines(String[] lines, float top, int accentRow) {
-    for (int row = 0; row < lines.length; row++) {
-      if (row == accentRow) {
-        logoFont.setColor(Color.GOLD);
-      }
-      String line = lines[row];
-      float left = (viewport.getWorldWidth() - line.length() * CELL_WIDTH) / 2f;
-      float y = top - row * LINE_HEIGHT;
-      for (int column = 0; column < line.length(); column++) {
-        char glyph = line.charAt(column);
-        if (glyph != ' ') {
-          logoFont.draw(batch, ASCII_GLYPHS[glyph], left + column * CELL_WIDTH, y);
-        }
-      }
-    }
-  }
-
-  private static int maxLineLength(String[] lines) {
-    int max = 0;
-    for (String line : lines) {
-      max = Math.max(max, line.length());
-    }
-    return max;
   }
 }

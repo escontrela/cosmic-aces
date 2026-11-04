@@ -1,5 +1,6 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainCatalog.Tile;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -101,13 +102,23 @@ public final class PhaseOneTerrainPlanner {
       return new Bounds(minX - marginX, minY - marginY, maxX + marginX, maxY + marginY);
     }
 
-    /** This rectangle clipped to the PhaseOne world {@code [0,8192]×[0,12000]}. */
+    /** This rectangle clipped to the retired 8×16 PNG mosaic {@code [0,8192]×[0,12000]}. */
     public Bounds clippedToWorld() {
       return new Bounds(
           Math.max(minX, 0f),
           Math.max(minY, 0f),
           Math.min(maxX, PhaseOneTerrainCatalog.WORLD_WIDTH),
           Math.min(maxY, PhaseOneTerrainCatalog.WORLD_HEIGHT));
+    }
+
+    /** This rectangle clipped to the active PhaseOne world supplied by the caller. */
+    public Bounds clippedTo(WorldBounds world) {
+      if (world == null) throw new IllegalArgumentException("World is required");
+      return new Bounds(
+          Math.max(minX, 0f),
+          Math.max(minY, 0f),
+          Math.min(maxX, world.width()),
+          Math.min(maxY, world.height()));
     }
   }
 
@@ -203,6 +214,14 @@ public final class PhaseOneTerrainPlanner {
   /** Returns only the conservative visible rectangle, without building tile or cache-demand lists. */
   public static Bounds visibleBounds(Camera camera) {
     return boundsOf(visibleCorners(camera)).clippedToWorld();
+  }
+
+  /**
+   * Returns the conservative visible rectangle clipped to the active world. The screen uses this
+   * overload so the extended 8192×36000 PhaseOne map is never cropped at the retired mosaic height.
+   */
+  public static Bounds visibleBounds(Camera camera, WorldBounds world) {
+    return boundsOf(visibleCorners(camera)).clippedTo(world);
   }
 
   /**

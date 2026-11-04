@@ -1,11 +1,15 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import com.badlogic.gdx.Screen;
+import com.davidpe.cosmicaces.application.AttractCycle;
 import com.davidpe.cosmicaces.application.GameCoordinator;
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScreen;
+import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScroll;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.WelcomeScreen;
 import java.util.Objects;
@@ -23,25 +27,36 @@ public final class ScreenFactory {
   private final GameSettingsStore settingsStore = new GameSettingsStore();
   private final VideoDisplaySettings videoSettings = new VideoDisplaySettings();
   private final GamePresentationSettings presentationSettings = new GamePresentationSettings();
+  private final HallOfFameSession hallOfFameSession;
+  private final HallOfFameScroll hallOfFameScroll = new HallOfFameScroll();
+  private final AttractCycle attractCycle;
 
-  public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher) {
+  public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher,
+      HallOfFameSession hallOfFameSession, AttractCycle attractCycle) {
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
     this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this.hallOfFameSession = Objects.requireNonNull(hallOfFameSession, "hallOfFameSession");
+    this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
   }
 
-  /** Loads file-backed preferences after LibGDX creates its application context. */
+  /**
+   * Loads file-backed preferences and the Hall of Fame once, after LibGDX creates its application
+   * context. The ranking is not read again per frame, screen change or keystroke.
+   */
   public void loadSettings() {
     settingsStore.initialize();
     presentationSettings.loadFrom(settingsStore);
     videoSettings.useSettingsStore(settingsStore);
     videoSettings.restoreSavedPreference();
+    hallOfFameSession.load();
   }
 
   /** Creates the welcome screen for the current welcome state. */
   public Screen createWelcomeScreen() {
     GameState state = coordinator.state();
     return new WelcomeScreen(
-        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore);
+        publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore,
+        attractCycle);
   }
 
   /**
@@ -56,6 +71,20 @@ public final class ScreenFactory {
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
         presentationSettings);
+  }
+
+  /**
+   * Creates the Hall of Fame screen from the shared application session. The screen reads the view
+   * and load result once per visit, confirms the pending initials through the session and refreshes
+   * its own view after a successful registration. The shared scroll keeps the reading position
+   * between visits, and the shared attraction cycle alternates this page with the welcome lobby.
+   * The screen receives the current identity and phase so a Y press in the consultation can request
+   * the same start the welcome screen publishes.
+   */
+  public Screen createHallOfFameScreen() {
+    GameState state = coordinator.state();
+    return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll, attractCycle,
+        publisher, state.gameId(), state.phase());
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */

@@ -14,9 +14,11 @@ import java.util.Optional;
  *
  * <p>The mapping fixed by COS-81/COS-82: {@code row-01} is the start of the run (south, world
  * y = 0) and {@code row-16} is the end (north). Each tile covers 1024 world units per column and
- * 768 per row, matching the 8192×12000 PhaseOne world. The last row would reach y = 12288, so its
- * visible rectangle is clipped to the world height; the clip is expressed as a shorter destination
- * rectangle plus the corresponding sub-rectangle of the PNG, so the image is never stretched.
+ * 768 per row, matching the retired 8192×12000 mosaic. The last row would reach y = 12288, so its
+ * visible rectangle is clipped to the mosaic height; the clip is expressed as a shorter destination
+ * rectangle plus the corresponding sub-rectangle of the PNG, so the image is never stretched. The
+ * active PhaseOne world is taller (see {@code PhaseOneGameController.WORLD}); only the five approved
+ * village cells of this matrix are still loaded, as independent 1:1 map patches.
  *
  * <p>Orientation: each PNG's top edge is the map's north edge. LibGDX draws a default {@code
  * TextureRegion} with its top row at the highest world Y (v = 0 at the top of the destination), so
@@ -36,7 +38,7 @@ public final class PhaseOneTerrainCatalog {
   public static final int TILE_PIXEL_HEIGHT = 768;
   /** PhaseOne world width in world units: {@value #COLUMNS} × {@value #TILE_PIXEL_WIDTH}. */
   public static final float WORLD_WIDTH = COLUMNS * (float) TILE_PIXEL_WIDTH;
-  /** PhaseOne world height in world units, matching {@code PhaseOneGameController.WORLD}. */
+  /** PhaseOne world height in world units for the retired 8×16 PNG mosaic. */
   public static final float WORLD_HEIGHT = 12000f;
   /** Vertical overflow of the last row beyond the world height: 16 × 768 − 12000. */
   public static final float WORLD_HEIGHT_OVERFLOW = ROWS * (float) TILE_PIXEL_HEIGHT - WORLD_HEIGHT;

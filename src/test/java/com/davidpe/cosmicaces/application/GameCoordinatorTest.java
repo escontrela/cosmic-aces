@@ -12,6 +12,7 @@ import com.davidpe.cosmicaces.domain.game.GamePhase;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.game.LifeLost;
 import com.davidpe.cosmicaces.domain.game.PhaseCompleted;
+import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
@@ -65,11 +66,13 @@ class GameCoordinatorTest {
     coordinator.onEvent(
         new PhaseCompleted(
             new PhaseResult(
-                state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES - 1)));
+                state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES - 1),
+            PhaseOutcome.WIN));
 
     assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES - 1, coordinator.state().lives());
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
   }
 
   @Test
@@ -82,8 +85,8 @@ class GameCoordinatorTest {
     PhaseResult result =
         new PhaseResult(state.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES);
 
-    coordinator.onEvent(new PhaseCompleted(result));
-    coordinator.onEvent(new PhaseCompleted(result));
+    coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
+    coordinator.onEvent(new PhaseCompleted(result, PhaseOutcome.WIN));
 
     assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES, coordinator.state().lives());
@@ -203,7 +206,7 @@ class GameCoordinatorTest {
   }
 
   @Test
-  void acceptsAbandonAfterTheRunFinishedWhileTheScreenIsStillAlive() {
+  void rejectsAbandonAfterTheTerminalResultWasCaptured() {
     GameCoordinator coordinator = new GameCoordinator(STARTING_LIVES);
     coordinator.onEvent(new StartRequested(coordinator.state().gameId(), GamePhase.WELCOME));
     coordinator.consumePendingTransition();
@@ -211,19 +214,19 @@ class GameCoordinatorTest {
     coordinator.onEvent(new PointsEarned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120));
     coordinator.onEvent(
         new PhaseCompleted(
-            new PhaseResult(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES)));
-    assertEquals(GamePhase.GAME_OVER, coordinator.state().phase());
-    assertNull(coordinator.consumePendingTransition());
+            new PhaseResult(playing.gameId(), GamePhase.PLAYING_PHASE_ONE, 120, STARTING_LIVES),
+            PhaseOutcome.WIN));
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.consumePendingTransition());
 
-    // The playable screen stays alive after GAME_OVER and still reports its original phase, so its
-    // ESC/SPACE abandon must be accepted.
+    // The playable screen was replaced when the Hall of Fame opened. A late abandon carrying its old
+    // phase must not discard the captured result or return to the lobby.
     coordinator.onEvent(new GameAbandoned(playing.gameId(), GamePhase.PLAYING_PHASE_ONE));
 
-    assertNotEquals(playing.gameId(), coordinator.state().gameId());
-    assertEquals(GamePhase.WELCOME, coordinator.state().phase());
-    assertEquals(0, coordinator.state().points());
+    assertEquals(playing.gameId(), coordinator.state().gameId());
+    assertEquals(GamePhase.HALL_OF_FAME, coordinator.state().phase());
+    assertEquals(120, coordinator.state().points());
     assertEquals(STARTING_LIVES, coordinator.state().lives());
-    assertEquals(GamePhase.WELCOME, coordinator.consumePendingTransition());
     assertNull(coordinator.consumePendingTransition());
   }
 
@@ -263,7 +266,7 @@ class GameCoordinatorTest {
     assertEquals(0, coordinator.state().lives());
 
     coordinator.onEvent(new PhaseCompleted(
-        new PhaseResult(playing, GamePhase.PLAYING_PHASE_ONE, 120, 0)));
+        new PhaseResult(playing, GamePhase.PLAYING_PHASE_ONE, 120, 0), PhaseOutcome.LOSE));
     assertEquals(0, coordinator.state().lives(), "a defeated phase reports zero lives");
     assertEquals(120, coordinator.state().points());
   }

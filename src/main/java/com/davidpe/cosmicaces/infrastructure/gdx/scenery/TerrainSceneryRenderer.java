@@ -35,14 +35,19 @@ public final class TerrainSceneryRenderer implements Disposable {
     private final SceneryPlacement operationsBasePlacement;
     private final SceneryPlacement enemyBasePlacement;
     private final Map<String, TextureRegion> sceneryRegions;
+    private final List<SceneryPlacement> villagePlacements;
+    private final Map<String, Texture> villageTextures;
+    private final long villageEstimatedBytes;
     private final int worldWidth;
     private final int worldHeight;
     private final TerrainGroundPlanner groundPlanner;
     private boolean disposed;
 
-    public TerrainSceneryRenderer(TerrainConfig config, SceneryPlacement operationsBasePlacement,
+    public TerrainSceneryRenderer(TerrainConfig config, List<SceneryPlacement> villagePlacements,
+                                 SceneryPlacement operationsBasePlacement,
                                  SceneryPlacement enemyBasePlacement) {
         Objects.requireNonNull(config, "config");
+        this.villagePlacements = List.copyOf(Objects.requireNonNull(villagePlacements, "villagePlacements"));
         this.operationsBasePlacement = Objects.requireNonNull(operationsBasePlacement, "operationsBasePlacement");
         this.enemyBasePlacement = Objects.requireNonNull(enemyBasePlacement, "enemyBasePlacement");
         worldWidth = config.worldWidth();
@@ -96,8 +101,32 @@ public final class TerrainSceneryRenderer implements Disposable {
             owner.dispose();
             throw failure;
         }
+        Map<String, Texture> loadedVillages = new HashMap<>();
+        long villageBytes = 0;
+        try {
+            for (SceneryPlacement placement : villagePlacements) {
+                String assetId = placement.assetId();
+                if (loadedVillages.containsKey(assetId)) continue;
+                LegacyMapMilestoneCatalog.Asset asset = LegacyMapMilestoneCatalog.asset(assetId);
+                Texture texture = new Texture(Gdx.files.internal(asset.internalPath()));
+                if (texture.getWidth() != asset.width() || texture.getHeight() != asset.height()) {
+                    texture.dispose();
+                    throw new IllegalStateException(
+                            "village milestone must keep its 1:1 size: " + assetId);
+                }
+                texture.setFilter(TextureFilter.Linear, TextureFilter.Linear);
+                loadedVillages.put(assetId, texture);
+                villageBytes += (long) asset.width() * asset.height() * 4;
+            }
+        } catch (RuntimeException | Error failure) {
+            loadedVillages.values().forEach(Texture::dispose);
+            owner.dispose();
+            throw failure;
+        }
         atlasOwner = owner;
         atlas = loaded;
+        villageTextures = Map.copyOf(loadedVillages);
+        villageEstimatedBytes = villageBytes;
     }
 
     /** Draws only the repeated grass tiles intersecting a conservative visible world rectangle. */
@@ -112,6 +141,27 @@ public final class TerrainSceneryRenderer implements Disposable {
             TextureRegion region = rightEdge && topEdge ? ground.partialCorner()
                     : rightEdge ? ground.partialRight() : topEdge ? ground.partialTop() : ground.full();
             batch.draw(region, (float) tile.x(), (float) tile.y(), tile.width(), tile.height());
+            drawn++;
+        }
+        return drawn;
+    }
+
+    /** Draws the visible village PNG cells over the grass and below both bases and decorations. */
+    public int drawVillageMilestones(SpriteBatch batch, WorldRect visibleArea) {
+        requireActive();
+        Objects.requireNonNull(batch, "batch");
+        Objects.requireNonNull(visibleArea, "visibleArea");
+        int drawn = 0;
+        for (SceneryPlacement placement : villagePlacements) {
+            WorldRect bounds = placement.bounds();
+            if (!bounds.intersects(visibleArea)) continue;
+            Texture texture = villageTextures.get(placement.assetId());
+            if (texture == null) {
+                throw new IllegalStateException(
+                        "no texture loaded for village milestone: " + placement.assetId());
+            }
+            batch.draw(texture, (float) bounds.x(), (float) bounds.y(),
+                    (float) bounds.width(), (float) bounds.height());
             drawn++;
         }
         return drawn;
@@ -164,13 +214,14 @@ public final class TerrainSceneryRenderer implements Disposable {
     }
 
     public int pageCount() { return atlas.getTextures().size; }
-    public long estimatedBytes() { return atlasOwner.estimatedBytes(); }
+    public long estimatedBytes() { return atlasOwner.estimatedBytes() + villageEstimatedBytes; }
 
     @Override
     public void dispose() {
         if (disposed) return;
         disposed = true;
         atlasOwner.dispose();
+        villageTextures.values().forEach(Texture::dispose);
     }
 
     private void requireActive() {

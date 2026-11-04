@@ -1,5 +1,6 @@
 package com.davidpe.cosmicaces.application;
 
+import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameAbandoned;
 import com.davidpe.cosmicaces.domain.game.GameEvent;
 import com.davidpe.cosmicaces.domain.game.GameId;
@@ -11,6 +12,7 @@ import com.davidpe.cosmicaces.domain.game.PhaseResult;
 import com.davidpe.cosmicaces.domain.game.PointsEarned;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Framework-free coordinator that keeps the single {@link GameState} of a game alive across phase
@@ -30,16 +32,38 @@ public final class GameCoordinator {
   private static final long FIRST_GAME_ID = 1L;
 
   private final int startingLives;
+  private final HallOfFameSession hallOfFameSession;
   private long nextGameId;
   private GameState state;
   private GamePhase pendingTransition;
 
+  /**
+   * Creates a coordinator without Hall of Fame capture. Kept for tests and callers that only need the
+   * persistent points/lives state; the desktop application always injects a loaded session.
+   */
   public GameCoordinator(int startingLives) {
+    this(startingLives, null);
+  }
+
+  /**
+   * Creates a coordinator that captures the terminal result of every finished game in the given Hall
+   * of Fame session.
+   *
+   * @param startingLives lives of a new game
+   * @param hallOfFameSession session loaded before the first event, or {@code null} to disable capture
+   */
+  public GameCoordinator(int startingLives, HallOfFameSession hallOfFameSession) {
     if (startingLives < 0) {
       throw new IllegalArgumentException("Starting lives must not be negative: " + startingLives);
     }
     this.startingLives = startingLives;
+    this.hallOfFameSession = hallOfFameSession;
     this.state = newInstanceState(GamePhase.WELCOME);
+  }
+
+  /** Hall of Fame session used to capture terminal results, when the coordinator was given one. */
+  public Optional<HallOfFameSession> hallOfFameSession() {
+    return Optional.ofNullable(hallOfFameSession);
   }
 
   /** Returns the single state of the game currently in progress. */
@@ -58,8 +82,9 @@ public final class GameCoordinator {
 
   /**
    * Applies one event. {@link StartRequested} begins a new game with a fresh identity and state only
-   * when it comes from the welcome screen currently shown; events that do not belong to the current
-   * game and phase (for example a late start or abandon from a previous screen) are ignored.
+   * when it comes from the welcome lobby or from a Hall of Fame consultation that no longer waits for
+   * initials, always with the identity and phase currently shown; events that do not belong to the
+   * current game and phase (for example a late start or abandon from a previous screen) are ignored.
    */
   public void onEvent(GameEvent event) {
     Objects.requireNonNull(event, "event");
@@ -82,7 +107,15 @@ public final class GameCoordinator {
       case PhaseCompleted completed -> {
         if (accepts(completed)) {
           state.completePhase(completed.result());
-          state.changePhase(GamePhase.GAME_OVER);
+          if (completed.outcome().isFinished()) {
+            // The terminal result is captured before the transition so the screen built at the end of
+            // the frame already sees the pending candidate and its eligibility.
+            state.changePhase(GamePhase.HALL_OF_FAME);
+            if (hallOfFameSession != null) {
+              hallOfFameSession.captureTerminalResult(completed.result(), completed.outcome());
+            }
+            pendingTransition = GamePhase.HALL_OF_FAME;
+          }
         }
       }
       case GameAbandoned abandoned -> {
@@ -104,7 +137,39 @@ public final class GameCoordinator {
     return transition;
   }
 
+  /**
+   * Returns the persistent state to the welcome lobby after the Hall of Fame consult has been shown
+   * during the attraction loop. It is not an abandonment: no {@link GameAbandoned} is emitted and no
+   * candidate is discarded while it still needs initials.
+   *
+   * <p>A qualifying candidate keeps the state in {@link GamePhase#HALL_OF_FAME} so the editor stays
+   * reachable; a resolved non-qualifying candidate is dismissed. A state that is already
+   * {@link GamePhase#WELCOME} is left untouched, which keeps an attraction visit from inventing a
+   * new game identity.
+   *
+   * @return {@code true} when the lobby may be shown
+   */
+  public boolean returnToAttractionLobby() {
+    if (state.phase() == GamePhase.WELCOME) {
+      return true;
+    }
+    if (state.phase() != GamePhase.HALL_OF_FAME) {
+      return false;
+    }
+    if (hallOfFameSession != null && hallOfFameSession.view().entryRequested()) {
+      return false;
+    }
+    if (hallOfFameSession != null) {
+      hallOfFameSession.dismissResolvedCandidate();
+    }
+    state = newInstanceState(GamePhase.WELCOME);
+    return true;
+  }
+
   private void startNewGame() {
+    if (hallOfFameSession != null) {
+      hallOfFameSession.dismissResolvedCandidate();
+    }
     state = newInstanceState(GamePhase.PLAYING_PHASE_ONE);
     pendingTransition = GamePhase.PLAYING_PHASE_ONE;
   }
@@ -116,27 +181,35 @@ public final class GameCoordinator {
   }
 
   /**
-   * A start is valid only from the welcome state currently shown: the coordinator must still be in
-   * {@link GamePhase#WELCOME} and the event must carry that same identity and phase. Duplicate or
-   * late starts from a previous lobby are therefore discarded before any new state is created.
+   * A start is valid only from the rest state currently shown and with its exact identity and phase.
+   * The welcome lobby always accepts it; the Hall of Fame consult accepts it only after the terminal
+   * result was resolved and no qualifying candidate is still waiting for initials. Duplicate or late
+   * starts from a previous lobby, and stale events from another screen, are therefore discarded
+   * before any new state is created.
    */
   private boolean acceptsStart(StartRequested event) {
-    return state.phase() == GamePhase.WELCOME
-        && state.gameId().equals(event.gameId())
-        && event.phase() == GamePhase.WELCOME;
+    if (!state.gameId().equals(event.gameId()) || state.phase() != event.phase()) {
+      return false;
+    }
+    return switch (state.phase()) {
+      case WELCOME -> true;
+      case HALL_OF_FAME -> hallOfFameSession == null
+          || !hallOfFameSession.view().entryRequested();
+      default -> false;
+    };
   }
 
   /**
-   * An abandon is accepted only from the playable screen of the current game. Its run may already
-   * have completed ({@link GamePhase#GAME_OVER}) while the screen stays alive until the player
-   * leaves, so both the playing phase and game over are accepted; any other phase (for example a
-   * stale abandon that still says {@code WELCOME}) is rejected.
+   * An abandon is accepted only from the playable screen of the current game. Once the terminal
+   * result was accepted the state is {@link GamePhase#HALL_OF_FAME}; a later abandon from the
+   * already-replaced screen is rejected so it cannot discard the captured candidate. Any other phase
+   * (for example a stale abandon that still says {@code WELCOME}) is rejected too.
    */
   private boolean acceptsAbandon(GameAbandoned event) {
     if (event.phase() != GamePhase.PLAYING_PHASE_ONE || !state.gameId().equals(event.gameId())) {
       return false;
     }
-    return state.phase() == GamePhase.PLAYING_PHASE_ONE || state.phase() == GamePhase.GAME_OVER;
+    return state.phase() == GamePhase.PLAYING_PHASE_ONE;
   }
 
   private boolean accepts(GameEvent event) {

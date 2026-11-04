@@ -1,6 +1,8 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.davidpe.cosmicaces.domain.enemy.BastionBomber;
 import com.davidpe.cosmicaces.domain.enemy.BastionEscort;
@@ -8,6 +10,7 @@ import com.davidpe.cosmicaces.domain.enemy.GhostwingEncounter;
 import com.davidpe.cosmicaces.domain.enemy.VesperRaider;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.domain.scenery.SceneryPlacement;
 import com.davidpe.cosmicaces.domain.weapon.GuidedMissile;
 import com.davidpe.cosmicaces.domain.weapon.MissileTarget;
 import java.util.List;
@@ -19,8 +22,14 @@ import java.util.List;
  * representative point, never one marker per drone). It owns no native resources.
  */
 final class FlightMinimap {
-  private static final Color PANEL_COLOR = new Color(0.008f, 0.022f, 0.04f, 1f);
-  private static final Color MAP_COLOR = new Color(0.012f, 0.036f, 0.06f, 1f);
+  /**
+   * Translucent dark fills (COS-129): the panel and map let the scenario show through while still
+   * keeping the cyan/amber markers readable.
+   */
+  static final float PANEL_ALPHA = 0.55f;
+  static final float MAP_ALPHA = 0.30f;
+  private static final Color PANEL_COLOR = new Color(0.008f, 0.022f, 0.04f, PANEL_ALPHA);
+  private static final Color MAP_COLOR = new Color(0.012f, 0.036f, 0.06f, MAP_ALPHA);
   private static final Color BORDER_COLOR = new Color(0.08f, 0.52f, 0.70f, 1f);
   private static final Color ASTRA_COLOR = new Color(0.48f, 0.91f, 1f, 1f);
   private static final Color RAIDER_COLOR = new Color(1f, 0.18f, 0.16f, 1f);
@@ -35,6 +44,8 @@ final class FlightMinimap {
   private static final Color LOCK_COLOR = new Color(1f, 0.92f, 0.30f, 1f);
   private static final Color ASTRA_MISSILE_COLOR = new Color(0.28f, 1f, 0.56f, 1f);
   private static final Color ENEMY_MISSILE_COLOR = new Color(1f, 0.28f, 0.92f, 1f);
+  /** Muted tan used for the approved village PNG milestones on the long map. */
+  private static final Color VILLAGE_COLOR = new Color(0.86f, 0.72f, 0.46f, 1f);
   /** Half diagonal of the hollow amber group diamond, in virtual pixels. */
   static final float GROUP_MARKER_HALF = 6f;
   private static final float ASTRA_TIP_LENGTH = 8f;
@@ -99,29 +110,38 @@ final class FlightMinimap {
       float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
       float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
       MissileTarget selectedTarget, List<GuidedMissile> guidedMissiles) {
+    draw(shapes, world, astra, raider, ghostwingGroups, bomber, escorts, elapsedSeconds,
+        baseCenterX, baseCenterY, enemyBaseCenterX, enemyBaseCenterY, viewportWidth,
+        viewportHeight, aiming, aimX, aimY, selectedTarget, guidedMissiles, List.of());
+  }
+
+  void draw(ShapeRenderer shapes, WorldBounds world, Astra astra,
+      VesperRaider raider, List<GhostwingEncounter.Point> ghostwingGroups,
+      BastionBomber bomber, List<BastionEscort> escorts, float elapsedSeconds,
+      float baseCenterX, float baseCenterY, float enemyBaseCenterX, float enemyBaseCenterY,
+      float viewportWidth, float viewportHeight, boolean aiming, float aimX, float aimY,
+      MissileTarget selectedTarget, List<GuidedMissile> guidedMissiles,
+      List<SceneryPlacement> villagePlacements) {
     if (!isVisible()) return;
     Color previousColor = shapes.getColor().cpy();
     MinimapProjection projection = MinimapProjection.fit(world, viewportWidth, viewportHeight);
     MinimapProjection.Rectangle panel = projection.panel();
     MinimapProjection.Rectangle map = projection.map();
+    float scale = projection.visualScale();
 
-    shapes.begin(ShapeRenderer.ShapeType.Filled);
-    shapes.setColor(PANEL_COLOR);
-    shapes.rect(panel.x(), panel.y(), panel.width(), panel.height());
-    shapes.setColor(MAP_COLOR);
-    shapes.rect(map.x(), map.y(), map.width(), map.height());
-    shapes.end();
+    drawTranslucentBackground(shapes, panel, map);
 
     shapes.begin(ShapeRenderer.ShapeType.Line);
     shapes.setColor(BORDER_COLOR);
     shapes.rect(map.x(), map.y(), map.width(), map.height());
-    drawBaseMarker(shapes, projection, baseCenterX, baseCenterY);
+    drawBaseMarker(shapes, projection, scale, baseCenterX, baseCenterY);
     if (raider != null) drawRaiderTrail(shapes, projection, raider);
     drawGroupMarkers(shapes, projection, ghostwingGroups);
     if (aiming) drawAimMarker(shapes, projection, aimX, aimY, selectedTarget);
     shapes.end();
 
     shapes.begin(ShapeRenderer.ShapeType.Filled);
+    drawVillageMarkers(shapes, projection, villagePlacements);
     drawAstra(shapes, projection, astra);
     drawEnemyBaseMarker(shapes, projection, enemyBaseCenterX, enemyBaseCenterY);
     if (bomber != null && bomber.hasTakenOff() && bomberBlinkVisible(elapsedSeconds)) {
@@ -130,17 +150,18 @@ final class FlightMinimap {
     if (raider != null) {
       MinimapProjection.Point point = projection.projectMarker(
           raider.x() + raider.drawWidth() / 2f,
-          raider.y() + raider.drawHeight() / 2f, 5f);
+          raider.y() + raider.drawHeight() / 2f, markerMargin(projection, 5f));
       shapes.setColor(RAIDER_COLOR);
-      shapes.circle(point.x(), point.y(), 4f, 12);
+      shapes.circle(point.x(), point.y(), 4f * scale, 12);
     }
     if (escorts != null) {
       for (BastionEscort escort : escorts) {
         if (escort == null || !escort.isActive()) continue;
         MinimapProjection.Point point = projection.projectMarker(
-            escort.raider().centerX(), escort.raider().centerY(), 5f);
+            escort.raider().centerX(), escort.raider().centerY(),
+            markerMargin(projection, 5f));
         shapes.setColor(ESCORT_COLOR);
-        shapes.circle(point.x(), point.y(), 3.5f, 12);
+        shapes.circle(point.x(), point.y(), 3.5f * scale, 12);
       }
     }
     drawMissileMarkers(shapes, projection, guidedMissiles);
@@ -148,15 +169,74 @@ final class FlightMinimap {
     shapes.setColor(previousColor);
   }
 
+  /**
+   * Draws the dark panel and map with their alpha channel active, then restores the previous GL
+   * blending state so the rest of the scene, HUD and later screens keep their opacity.
+   */
+  private static void drawTranslucentBackground(ShapeRenderer shapes,
+      MinimapProjection.Rectangle panel, MinimapProjection.Rectangle map) {
+    boolean blendingWasEnabled = Gdx.gl.glIsEnabled(GL20.GL_BLEND);
+    if (!blendingWasEnabled) {
+      Gdx.gl.glEnable(GL20.GL_BLEND);
+    }
+    try {
+      shapes.begin(ShapeRenderer.ShapeType.Filled);
+      shapes.setColor(PANEL_COLOR);
+      shapes.rect(panel.x(), panel.y(), panel.width(), panel.height());
+      shapes.setColor(MAP_COLOR);
+      shapes.rect(map.x(), map.y(), map.width(), map.height());
+      shapes.end();
+    } finally {
+      if (!blendingWasEnabled) {
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+      }
+    }
+  }
+
+  /**
+   * Scales a marker clamp so a bigger map gets bigger symbols while keeping the marker inside the
+   * map even on very small viewports.
+   */
+  static float markerMargin(MinimapProjection projection, float baseMargin) {
+    if (projection == null || !Float.isFinite(baseMargin) || baseMargin < 0f) {
+      throw new IllegalArgumentException("Projection and non-negative margin are required");
+    }
+    float limit = Math.min(projection.map().width(), projection.map().height()) / 2f - 0.5f;
+    return Math.max(0f, Math.min(baseMargin * projection.visualScale(), limit));
+  }
+
+  private static void drawVillageMarkers(ShapeRenderer shapes, MinimapProjection projection,
+      List<SceneryPlacement> villagePlacements) {
+    float half = 2f * projection.visualScale();
+    shapes.setColor(VILLAGE_COLOR);
+    for (MinimapProjection.Point point : villageMarkers(projection, villagePlacements)) {
+      shapes.rect(point.x() - half, point.y() - half, half * 2f, half * 2f);
+    }
+  }
+
+  /** One projected marker per approved village cell, in the south-to-north order received. */
+  static List<MinimapProjection.Point> villageMarkers(MinimapProjection projection,
+      List<SceneryPlacement> villagePlacements) {
+    if (projection == null || villagePlacements == null) {
+      throw new IllegalArgumentException("Projection and village placements are required");
+    }
+    return villagePlacements.stream()
+        .map(placement -> projection.projectMarker(
+            (float) placement.bounds().centerX(), (float) placement.bounds().centerY(),
+            VillageLabelLayout.MARKER_MARGIN))
+        .toList();
+  }
+
   private static void drawMissileMarkers(ShapeRenderer shapes, MinimapProjection projection,
       List<GuidedMissile> missiles) {
+    float scale = projection.visualScale();
     for (MissileMarker marker : missileMarkers(projection, missiles)) {
       MinimapProjection.Point point = marker.position();
       shapes.setColor(marker.owner() == GuidedMissile.Owner.ASTRA
           ? ASTRA_MISSILE_COLOR : ENEMY_MISSILE_COLOR);
-      shapes.circle(point.x(), point.y(), 5f, 12);
+      shapes.circle(point.x(), point.y(), 5f * scale, 12);
       shapes.setColor(Color.WHITE);
-      shapes.circle(point.x(), point.y(), 1.8f, 8);
+      shapes.circle(point.x(), point.y(), 1.8f * scale, 8);
     }
   }
 
@@ -166,19 +246,21 @@ final class FlightMinimap {
     if (projection == null || missiles == null) {
       throw new IllegalArgumentException("Projection and missiles are required");
     }
+    float margin = markerMargin(projection, 5f);
     return missiles.stream().filter(GuidedMissile::isActive)
         .map(missile -> new MissileMarker(
-            projection.projectMarker(missile.x(), missile.y(), 5f), missile.owner()))
+            projection.projectMarker(missile.x(), missile.y(), margin), missile.owner()))
         .toList();
   }
 
   /** The cursor and selected target have deliberately different shapes and colors. */
   private static void drawAimMarker(ShapeRenderer shapes, MinimapProjection projection,
       float aimX, float aimY, MissileTarget selectedTarget) {
+    float scale = projection.visualScale();
     AimMarkers markers = aimMarkers(projection, aimX, aimY, selectedTarget);
     MinimapProjection.Point cursor = markers.cursor();
     shapes.setColor(AIM_COLOR);
-    float[] cursorVertices = diamondVertices(cursor, 5f);
+    float[] cursorVertices = diamondVertices(cursor, 5f * scale);
     shapes.line(cursorVertices[0], cursorVertices[1], cursorVertices[2], cursorVertices[3]);
     shapes.line(cursorVertices[2], cursorVertices[3], cursorVertices[4], cursorVertices[5]);
     shapes.line(cursorVertices[4], cursorVertices[5], cursorVertices[6], cursorVertices[7]);
@@ -186,11 +268,11 @@ final class FlightMinimap {
     if (markers.selectedTarget() == null) return;
     MinimapProjection.Point locked = markers.selectedTarget();
     shapes.setColor(LOCK_COLOR);
-    shapes.circle(locked.x(), locked.y(), 7f, 16);
-    shapes.line(locked.x() - 10f, locked.y(), locked.x() - 5f, locked.y());
-    shapes.line(locked.x() + 5f, locked.y(), locked.x() + 10f, locked.y());
-    shapes.line(locked.x(), locked.y() - 10f, locked.x(), locked.y() - 5f);
-    shapes.line(locked.x(), locked.y() + 5f, locked.x(), locked.y() + 10f);
+    shapes.circle(locked.x(), locked.y(), 7f * scale, 16);
+    shapes.line(locked.x() - 10f * scale, locked.y(), locked.x() - 5f * scale, locked.y());
+    shapes.line(locked.x() + 5f * scale, locked.y(), locked.x() + 10f * scale, locked.y());
+    shapes.line(locked.x(), locked.y() - 10f * scale, locked.x(), locked.y() - 5f * scale);
+    shapes.line(locked.x(), locked.y() + 5f * scale, locked.x(), locked.y() + 10f * scale);
   }
 
   static AimMarkers aimMarkers(MinimapProjection projection, float aimX, float aimY,
@@ -198,9 +280,11 @@ final class FlightMinimap {
     if (projection == null || !Float.isFinite(aimX) || !Float.isFinite(aimY)) {
       throw new IllegalArgumentException("Projection and finite aim coordinates are required");
     }
-    MinimapProjection.Point cursor = projection.projectMarker(aimX, aimY, 7f);
+    float cursorMargin = markerMargin(projection, 7f);
+    float targetMargin = markerMargin(projection, 10f);
+    MinimapProjection.Point cursor = projection.projectMarker(aimX, aimY, cursorMargin);
     MinimapProjection.Point target = selectedTarget == null ? null
-        : projection.projectMarker(selectedTarget.x(), selectedTarget.y(), 8f);
+        : projection.projectMarker(selectedTarget.x(), selectedTarget.y(), targetMargin);
     return new AimMarkers(cursor, target);
   }
 
@@ -211,21 +295,25 @@ final class FlightMinimap {
 
   private static void drawBastionBomberMarker(ShapeRenderer shapes,
       MinimapProjection projection, BastionBomber bomber) {
-    MinimapProjection.Point point = projection.projectMarker(bomber.centerX(), bomber.centerY(), 7f);
+    float scale = projection.visualScale();
+    MinimapProjection.Point point = projection.projectMarker(bomber.centerX(), bomber.centerY(),
+        markerMargin(projection, 7f));
     shapes.setColor(BOMBER_COLOR);
-    shapes.circle(point.x(), point.y(), 5f, 16);
+    shapes.circle(point.x(), point.y(), 5f * scale, 16);
     shapes.setColor(BOMBER_CORE_COLOR);
-    shapes.circle(point.x(), point.y(), 2f, 12);
+    shapes.circle(point.x(), point.y(), 2f * scale, 12);
   }
 
   private static void drawEnemyBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
       float centerX, float centerY) {
-    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 8f);
+    float scale = projection.visualScale();
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY,
+        markerMargin(projection, 8f));
     shapes.setColor(ENEMY_BASE_COLOR);
-    drawThickLine(shapes, point.x() - 5f, point.y() - 5f,
-        point.x() + 5f, point.y() + 5f, 3f);
-    drawThickLine(shapes, point.x() - 5f, point.y() + 5f,
-        point.x() + 5f, point.y() - 5f, 3f);
+    drawThickLine(shapes, point.x() - 5f * scale, point.y() - 5f * scale,
+        point.x() + 5f * scale, point.y() + 5f * scale, 3f * scale);
+    drawThickLine(shapes, point.x() - 5f * scale, point.y() + 5f * scale,
+        point.x() + 5f * scale, point.y() - 5f * scale, 3f * scale);
   }
 
   private static void drawThickLine(ShapeRenderer shapes, float startX, float startY,
@@ -247,10 +335,11 @@ final class FlightMinimap {
   }
 
   private static void drawBaseMarker(ShapeRenderer shapes, MinimapProjection projection,
-      float centerX, float centerY) {
-    MinimapProjection.Point point = projection.projectMarker(centerX, centerY, 6f);
+      float scale, float centerX, float centerY) {
+    MinimapProjection.Point point = projection.projectMarker(centerX, centerY,
+        markerMargin(projection, 6f));
     shapes.setColor(BASE_COLOR);
-    shapes.circle(point.x(), point.y(), 4f, 16);
+    shapes.circle(point.x(), point.y(), 4f * scale, 16);
   }
 
   /**
@@ -264,10 +353,11 @@ final class FlightMinimap {
       return;
     }
     shapes.setColor(GROUP_COLOR);
+    float scale = projection.visualScale();
     for (GhostwingEncounter.Point group : ghostwingGroups) {
       MinimapProjection.Point point = projection.projectMarker(
-          group.x(), group.y(), GROUP_MARKER_HALF + 1f);
-      float[] diamond = diamondVertices(point, GROUP_MARKER_HALF);
+          group.x(), group.y(), markerMargin(projection, GROUP_MARKER_HALF + 1f));
+      float[] diamond = diamondVertices(point, GROUP_MARKER_HALF * scale);
       shapes.line(diamond[0], diamond[1], diamond[2], diamond[3]);
       shapes.line(diamond[2], diamond[3], diamond[4], diamond[5]);
       shapes.line(diamond[4], diamond[5], diamond[6], diamond[7]);
@@ -293,32 +383,38 @@ final class FlightMinimap {
   }
 
   private static void drawAstra(ShapeRenderer shapes, MinimapProjection projection, Astra astra) {
+    float scale = projection.visualScale();
     MinimapProjection.Point center = projection.projectMarker(
         astra.x() + astra.drawWidth() / 2f,
-        astra.y() + astra.drawHeight() / 2f, ASTRA_TIP_LENGTH + 1f);
+        astra.y() + astra.drawHeight() / 2f,
+        markerMargin(projection, ASTRA_TIP_LENGTH + 1f));
     MinimapProjection.Point direction = MinimapProjection.astraDirection(astra.yawDegrees());
     float perpendicularX = direction.y();
     float perpendicularY = -direction.x();
-    float tipX = center.x() + direction.x() * ASTRA_TIP_LENGTH;
-    float tipY = center.y() + direction.y() * ASTRA_TIP_LENGTH;
-    float baseX = center.x() - direction.x() * ASTRA_BASE_LENGTH;
-    float baseY = center.y() - direction.y() * ASTRA_BASE_LENGTH;
+    float tipX = center.x() + direction.x() * ASTRA_TIP_LENGTH * scale;
+    float tipY = center.y() + direction.y() * ASTRA_TIP_LENGTH * scale;
+    float baseX = center.x() - direction.x() * ASTRA_BASE_LENGTH * scale;
+    float baseY = center.y() - direction.y() * ASTRA_BASE_LENGTH * scale;
     shapes.setColor(ASTRA_COLOR);
     shapes.triangle(tipX, tipY,
-        baseX + perpendicularX * ASTRA_HALF_WIDTH,
-        baseY + perpendicularY * ASTRA_HALF_WIDTH,
-        baseX - perpendicularX * ASTRA_HALF_WIDTH,
-        baseY - perpendicularY * ASTRA_HALF_WIDTH);
+        baseX + perpendicularX * ASTRA_HALF_WIDTH * scale,
+        baseY + perpendicularY * ASTRA_HALF_WIDTH * scale,
+        baseX - perpendicularX * ASTRA_HALF_WIDTH * scale,
+        baseY - perpendicularY * ASTRA_HALF_WIDTH * scale);
   }
 
   private static void drawRaiderTrail(ShapeRenderer shapes, MinimapProjection projection,
       VesperRaider raider) {
+    float scale = projection.visualScale();
     MinimapProjection.Point center = projection.projectMarker(
         raider.x() + raider.drawWidth() / 2f,
-        raider.y() + raider.drawHeight() / 2f, 13f);
+        raider.y() + raider.drawHeight() / 2f,
+        markerMargin(projection, 13f));
     MinimapProjection.Point direction = MinimapProjection.raiderDirection(raider.headingDegrees());
     shapes.setColor(RAIDER_TRAIL_COLOR);
-    shapes.line(center.x() - direction.x() * 12f, center.y() - direction.y() * 12f,
-        center.x() - direction.x() * 4f, center.y() - direction.y() * 4f);
+    shapes.line(center.x() - direction.x() * 12f * scale,
+        center.y() - direction.y() * 12f * scale,
+        center.x() - direction.x() * 4f * scale,
+        center.y() - direction.y() * 4f * scale);
   }
 }

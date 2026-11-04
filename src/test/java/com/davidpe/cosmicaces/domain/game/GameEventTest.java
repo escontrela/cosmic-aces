@@ -42,11 +42,12 @@ class GameEventTest {
   void phaseCompletedDelegatesIdentityAndPhaseToItsResult() {
     PhaseResult result = new PhaseResult(GAME, GamePhase.PLAYING_PHASE_ONE, 150, 2);
 
-    PhaseCompleted completed = new PhaseCompleted(result);
+    PhaseCompleted completed = new PhaseCompleted(result, PhaseOutcome.WIN);
 
     assertEquals(GAME, completed.gameId());
     assertEquals(GamePhase.PLAYING_PHASE_ONE, completed.phase());
     assertSame(result, completed.result());
+    assertEquals(PhaseOutcome.WIN, completed.outcome());
   }
 
   @Test

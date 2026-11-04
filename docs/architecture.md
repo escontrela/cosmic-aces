@@ -9,7 +9,9 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 |---|---|---|
 | `boot` | Arranque y configuración de escritorio | Launcher, configuración LWJGL3 y futura lectura de configuración de arranque. |
 | `application` | Coordinación global y de cada fase | Transiciones, manejo de eventos y controladores que combinan reglas del dominio. |
+| `application.score` | Sesión de aplicación del Hall of Fame | Carga única del ranking, candidato terminal, vista consulta/entrada y confirmación persistida; sin LibGDX ni I/O por frame. |
 | `domain.game` | Estado, reglas y mensajes de la partida | Fases, puntos, vidas, resultados, límites de juego y eventos. `WorldBounds` representa las dimensiones finitas y el rango útil para cajas de naves. |
+| `domain.score` | Ranking local del Hall of Fame | Entrada confirmada, orden canónico, elegibilidad y alta del top 50; sin I/O, reloj, LibGDX ni pantallas. |
 | `domain.ship` | Comportamiento compartido por las naves | Posición, velocidad, movimiento, dibujo común e intención de movimiento. |
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
@@ -18,15 +20,112 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo y dibujo de instancias; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
+| `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes con sus nombres aprobados, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
 | `infrastructure.gdx.audio` | Adaptadores y recursos de audio de las fases | `PhaseOneAudio` encapsula `Gdx.audio`/`Gdx.files`; dueño único de Music/Sound de la fase, incluida la ignición del misil al confirmar un lanzamiento. El dominio y `PhaseOneGameController` no importan clases de audio. |
+| `infrastructure.persistence` | Persistencia local de datos de juego no gráficos | Ranking del Hall of Fame en JSON versionado, con límites, reemplazo atómico y recuperación segura; sin pantallas. |
 
 Ubica cada nueva clase según lo que hace. Extiende un paquete existente cuando
 su responsabilidad encaje ahí; crea un paquete nuevo cuando exista una necesidad
 concreta. No añadas clases base, interfaces ni paquetes vacíos para anticipar
 funcionalidades todavía sin definir.
+
+### Hall of Fame: sesión de aplicación (COS-122)
+
+`application.score.HallOfFameSession` es la sesión de aplicación del Hall of Fame. Recibe el
+`HallOfFameRepository`, un `Clock` y un generador de ids durables; no importa LibGDX. `load()` lee el
+ranking una sola vez por ejecución y conserva el `HallOfFameLoadResult`, incluido si los datos son
+reemplazables. `view()` es una consulta pura que devuelve `HallOfFameView`: modo `ENTRY` solo si el
+candidato pendiente clasificaría, o `CONSULT` para la tabla; nunca crea una partida ni reinicia
+puntos/vidas. `captureTerminalResult(PhaseResult, PhaseOutcome)` crea como máximo un
+`HallOfFameCandidate` por partida, con los puntos/vidas autoritativos del `PhaseResult`, la fecha del
+reloj y un id durable generado una vez. Solo un `PhaseCompleted` aceptado con `WIN`/`LOSE` captura;
+`IN_PROGRESS`, un abandono, un evento viejo y un duplicado no. Un candidato que clasifica no se
+sustituye por otra partida hasta confirmarse; uno que no clasifica no exige iniciales y puede
+sustituirse.
+
+`HallOfFameConfirmation confirm(String initials)` revalida la elegibilidad, construye el ranking
+nuevo, lo persiste y solo entonces lo publica en la sesión. Un `HallOfFameStorageException` (o un
+`loadResult` no escribible) devuelve `STORAGE_FAILURE`, conserva el ranking anterior y el candidato
+para reintentar con el mismo id y fecha. `REGISTERED` añade el id a las confirmaciones procesadas de
+la sesión, de modo que Enter repetido o un evento duplicado no guardan otra partida aunque el
+registro salga después del top 50. `INVALID_INITIALS`, `NOT_ELIGIBLE`, `NO_PENDING_ENTRY` y
+`ALREADY_CONFIRMED` completan el contrato tipado.
+
+`PhaseCompleted` incluye ahora el `PhaseOutcome` autoritativo. `GameCoordinator` reconcilia
+puntos/vidas con el `PhaseResult`; solo pasa a `HALL_OF_FAME` y captura el candidato cuando el outcome
+es terminal. `PhaseOneScreen.completeRun()` publica el snapshot y `controller.missionOutcome()`.
+`GameCoordinator(int)` sigue existiendo sin sesión para pruebas y usos que solo necesitan el estado;
+el arranque de escritorio construye la sesión en `DesktopLauncher` (boot), la inyecta en
+`CosmicAcesGame` y `ScreenFactory.loadSettings()` la carga una vez. La transición terminal la
+materializa `CosmicAcesGame` al final del frame como `HallOfFameScreen` (COS-124). La alternancia de
+reposo y el inicio con Y desde la consulta viven en `AttractCycle` y en la composición (COS-125).
+Antes del resultado, `GameAbandoned` vuelve a Welcome sin crear candidato; después del resultado se
+rechaza, de modo que una pantalla antigua no puede descartar el candidato pendiente.
+
+### Hall of Fame: registro de iniciales (COS-124)
+
+`GameCoordinator` cambia a `GamePhase.HALL_OF_FAME` en el único `PhaseCompleted` terminal aceptado y
+encola esa transición; `CosmicAcesGame.applyPendingTransition()` construye el Hall al terminar el
+frame, después de liberar `PhaseOneScreen`. Ya no existe el camino RESULT→`GameAbandoned`: el panel de
+resultado es solo el último frame congelado de la pantalla jugable. Un `GameAbandoned` posterior con la
+fase antigua se rechaza porque el estado ya no es `PLAYING_PHASE_ONE`.
+
+`HallOfFameScreen` recibe la `HallOfFameSession` compartida y su `HallOfFameScroll`. En modo `ENTRY`
+dibuja un panel arcade bajo la tabla con el outcome, los puntos, las tres iniciales y la ayuda; el
+scroll automático se suspende y no hay salida ni inicio mientras se edita. `HallOfFameInitials` es el
+estado puro del editor: tres posiciones, cursor acotado y ciclo A–Z con wrap. `HallOfFameEntryInput`
+traduce las teclas a acciones de flanco y solo se arma cuando todas las teclas relevantes se han
+soltado, de modo que SPACE o las flechas mantenidas desde la misión no confirman ni mueven el cursor;
+SPACE nunca es una acción. Enter llama a `HallOfFameSession.confirm(String)`: `REGISTERED` refresca la
+vista a `CONSULT`, reinicia el contador de consulta y revela/resalta la fila nueva; `STORAGE_FAILURE`
+mantiene candidato, iniciales y editor para reintentar; `NOT_ELIGIBLE`/`ALREADY_CONFIRMED` pasan a
+consulta sin insertar. Un terminal no elegible muestra la tabla sin editor y sin escribir. La fecha de
+la fila es la del candidato, no la del momento de confirmación.
+
+### Hall of Fame: pantalla de consulta (COS-123)
+
+`infrastructure.gdx.screen.HallOfFameScreen` presenta el ranking cargado por `HallOfFameSession`. Usa
+`ScreenViewport` y centra el arte 4:3 mediante `HallOfFameLayout`, igual que la
+bienvenida; la geometría pura calcula el área recortada de la tabla, alturas de fila proporcionales al
+arte, anclas estables de las columnas y los formatos `01`–`50`, puntos completos y fecha `DD/MM/YY`.
+Las filas se dibujan dentro de `ScissorStack` con `SpriteBatch.flush()` antes de empujar y restaurar
+el recorte, de modo que una fila parcial queda oculta y la cabecera permanece fija. El fondo, el panel,
+las fuentes y el `SpriteBatch` son propiedad de la pantalla y se liberan en `dispose()`; una carga
+fallida del PNG deja la tabla legible sobre negro en vez de impedir el arranque.
+
+`HallOfFameScroll` es el estado de presentación puro compartido por `ScreenFactory`: guarda el offset
+en filas (no en píxeles), avanza según el delta con velocidad independiente de FPS, limita un frame
+retrasado para no saltar la tabla y, al llegar al puesto 50, hace una pausa y un rebobinado visible
+antes de continuar. Al cambiar el tamaño se conserva la posición y se ajusta al nuevo número de filas
+visibles. La pantalla recibe la `HallOfFameSession` y distingue lista vacía, datos ilegibles y fallo de
+lectura; no carga el archivo desde `render`. La edición de iniciales (COS-124) añade el modo `ENTRY`,
+el panel de registro y el resaltado de la fila nueva. La alternancia de reposo y el inicio con Y
+desde la consulta se describen a continuación.
+
+### Atracción de reposo y ciclo de 10 s (COS-125)
+
+`application.AttractCycle` es el estado puro de la atracción: guarda la página visible
+(`WELCOME`/`HALL_OF_FAME`), el intervalo acumulado y la pausa; no importa LibGDX ni crea pantallas,
+partidas o eventos. `tick(delta)` acumula el delta real, cambia como máximo una vez por llamada al
+superar el umbral inclusivo de `INTERVAL_SECONDS` (10 s) y descarta el exceso tras un lag largo para
+no encadenar páginas. El delta inválido, cero o negativo se ignora. `setPaused(false)` rearma un
+intervalo completo, de modo que Ajustes o el editor abiertos más de diez segundos nunca reutilizan
+tiempo parcial. `enter(Page)` sincroniza el ciclo con una pantalla recién construida y empieza un
+intervalo completo; `restartInterval()` hace lo mismo sin cambiar de página.
+
+`CosmicAcesGame.render()` aplica primero la transición pendiente del coordinador (inicio, ajustes o
+confirmación de la pantalla activa) y solo si no hubo ninguna avanza el ciclo una vez con el delta
+del frame. Al cambiar a `HALL_OF_FAME` materializa `HallOfFameScreen`; al volver a `WELCOME` llama a
+`GameCoordinator.returnToAttractionLobby()`, que devuelve la partida terminada a un lobby nuevo y
+descarta un candidato no clasificado ya resuelto, pero nunca un candidato que aún espera iniciales.
+La partida en curso y la aplicación pausada detienen el ciclo; `WelcomeScreen` lo pausa con Ajustes
+abierto y `HallOfFameScreen` mientras el editor está activo. En la consulta, Y publica
+`StartRequested` con la identidad y fase de la visita: el coordinador lo acepta desde `WELCOME` o
+desde `HALL_OF_FAME` solo si no hay un candidato que clasifique, y crea exactamente una partida. Los
+eventos viejos de otra pantalla siguen rechazándose por identidad/fase. `HallOfFameScroll` se
+comparte entre visitas, así que cada regreso continúa la lectura en lugar de reiniciarla.
 
 LibGDX está permitido en el dominio: las naves y los elementos del escenario
 pueden encapsular su dibujo. El dominio no importa clases de `application`,
@@ -61,27 +160,44 @@ En PhaseOne, `FlightControls` separa ↑/↓/←/→ y la pulsación de P del
 `MovementIntent` cartesiano que aún usan otras naves. `Astra` posee posición,
 rumbo, velocidad instantánea, tiempo restante de Ultra y su uso único por fase.
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
-del recorrido y fija el mundo en 8192×12000: ocho anchos virtuales de 1024
-unidades. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
+del recorrido y fija el mundo en 8192×36000: ocho anchos virtuales de 1024
+unidades y el triple de la longitud original de 12000. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
 Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
 PhaseOne conserva un `PhaseOneScenery` determinista por ejecución en el controlador: un mapa de
-terreno y un campo de decoración con reserva para la base se generan una sola vez con semilla fija.
-La pista ocupa el extremo sur, Astra despega desde su umbral y cada reaparición vuelve allí, orientada
-al norte. `PhaseOneScreen` usa `TerrainSceneryRenderer` para repetir el césped, dibujar la base y
-dibujar árboles, arbustos, charcos y rocas dentro
-de la caja visible de la cámara. `PhaseOneTerrainPlanner.visibleBounds` calcula la caja conservadora
-de cámara con giro, zoom y dimensiones reales del `ScreenViewport`; así se consultan solo adornos
-cercanos y se recortan los sprites que cruzan el límite del mundo. El atlas compartido de una página
-se carga al crear la pantalla y se libera al salir. El terreno y la decoración se dibujan antes de
-naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame y
-la pantalla no abre los 128 PNG históricos. El minimapa conserva su marco y marcadores de Astra,
-Vesper, Ghostwing, las dos bases y el Bastion Bomber tras despegar. `WelcomeScreen`
+terreno y un campo de decoración con reservas para las bases y los pueblos se generan una sola vez
+con semilla fija. La pista ocupa el extremo sur, Astra despega desde su umbral y cada reaparición
+vuelve allí, orientada al norte. `PhaseOneScreen` usa `TerrainSceneryRenderer` para repetir el césped,
+dibujar los cinco parches de pueblo, las dos bases y árboles, arbustos, charcos y rocas dentro de la
+caja visible de la cámara. Los pueblos conservan las celdas `row-02-col-01/02`,
+`row-03-col-01/02` y `row-16-col-02` del mosaico retirado, a 1024×768 y sin estirar: su coordenada
+sur se multiplica por la relación entre el mundo nuevo y el original (`yNuevo = yAnterior × 3`), de
+modo que la fila 16 queda en 34560–35328. `PhaseOneScenery` centraliza ese mapeo y añade una reserva
+de 48 unidades para que la decoración procedural no cubra ningún pueblo.
+`PhaseOneTerrainPlanner.visibleBounds(camera, WorldBounds)` calcula la caja conservadora de cámara con
+giro, zoom y dimensiones reales del `ScreenViewport` y la recorta al mundo activo, no al catálogo
+retirado de 12000. Así se consultan solo adornos cercanos y se recortan los sprites que cruzan el
+límite del mundo. `TerrainSceneryRenderer` empaqueta el terreno y las bases en el atlas compartido de
+una página y carga los cinco PNG de pueblo como texturas opacas 1:1, todas propiedad de la pantalla y
+liberadas al salir. El terreno, los pueblos, las bases y la decoración se dibujan en ese orden antes
+de naves y efectos; el HUD mantiene su cámara independiente. No se genera ni carga terreno por frame
+y no se abre el mosaico completo de 128 PNG históricos. El minimapa conserva su marco y marcadores de
+Astra, Vesper, Ghostwing, las dos bases, los cinco pueblos y el Bastion Bomber tras despegar.
+`LegacyMapMilestoneCatalog` asocia a cada PNG de pueblo su nombre aprobado («Noia», «Muros»,
+«Betanzos», «Fisterra» y «Ribadeo») por id de asset, nunca por posición de lista. `VillageLabelLayout`
+resuelve esos nombres, proyecta cada marcador y calcula una escalera de etiquetas sin solapes dentro
+del rectángulo del mapa, con líneas guía solo cuando la etiqueta se desplaza de su marcador;
+`PhaseOneScreen` mide con su propia fuente HUD, la escala para que los nombres quepan, dibuja el texto
+y restaura escala y color, sin crear recursos por frame. `WelcomeScreen`
 mantiene el `Starfield` y redistribuye sus estrellas dentro del tamaño lógico nuevo cuando
-`WelcomeScreen.resize` cambia el viewport. La composición ASCII, su panel de fondo y el prompt se centran con las
-dimensiones efectivas; el arte y la tipografía mantienen su escala.
+`WelcomeScreen.resize` cambia el viewport; el campo queda visible únicamente en las franjas que
+deja el arte. La antigua composición ASCII se sustituyó por `welcome-background-v1.png` y el logo
+`cosmic-aces-logo-v1.png`, cargados una sola vez por pantalla. `WelcomeScreen.fitCentered` ajusta el
+fondo 4:3 sin deformarlo (letterbox/pillarbox centrado) y el logo se dibuja en la zona superior
+despejada del arte; el prompt `INSERT COIN (pulsa Y)` y `ESC: AJUSTES` se anclan a la franja
+inferior de la imagen. El arte y la tipografía mantienen su escala con las dimensiones efectivas.
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
@@ -189,7 +305,15 @@ oculta. Durante el combate normal, `PhaseOneScreen` oculta el minimapa mientras 
 intersecta el viewport, usando la misma comprobación de cámara rotada y zoom que decide dibujar al
 enemigo; durante el apuntado de misiles prevalece la visibilidad forzada. `MinimapProjection` adapta el `WorldBounds` completo al panel sin
 deformar la proporción; proyecta las isletas persistentes, la flecha de Astra y
-el punto rojo con estela direccional de Vesper Raider.
+el punto rojo con estela direccional de Vesper Raider. Desde COS-129 el panel
+aprovecha casi toda la altura útil sobre la banda HUD inferior (al menos el 85 %
+del viewport de 800×600), conserva la proporción 8192×36000 y recalcula su área en
+cada `resize`; su escala visual crece con el mapa hasta 1,6× para marcadores y
+etiquetas. `FlightMinimap` pinta el panel y el interior con relleno oscuro
+translúcido (`PANEL_ALPHA` 0,55 y `MAP_ALPHA` 0,30), activa el blending solo si
+estaba desactivado y restaura el estado GL y el color del renderer al terminar,
+de modo que el escenario se distingue detrás del overlay sin alterar la opacidad
+del resto de escena, HUD o pantallas.
 El estado global vive en GameState; el estado de un recorrido vive en el controlador
 de su fase y en los objetos que coordina. Una pantalla nueva se incorpora a
 ScreenFactory y al flujo de navegación de CosmicAcesGame y GameCoordinator.
@@ -791,11 +915,13 @@ El panel WIN/LOSE visible corresponde al hijo de flujo de pantalla.
 `infrastructure.gdx.screen.PhaseOneScreenFlow` es la regla pura (sin LibGDX) del ciclo de la
 pantalla: `Stage` = `INTRO` (panel de objetivo), `PLAYING` (misión activa) y `RESULT` (panel
 congelado). También posee el latch de ESPACIO: una pulsación solo actúa después de que la tecla se
-haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara y la que dispara el
-golpe final no confirma el panel. Gestiona además el modo de arma: F lo activa solo durante PLAYING;
+haya visto soltada, de modo que la pulsación que confirma el objetivo no dispara; el golpe final
+congela la pantalla y el Hall of Fame toma el relevo al terminar el frame. Gestiona además el modo de
+arma: F lo activa solo durante PLAYING;
 en ese modo ESPACIO acepta una sola pulsación nueva, las flechas producen dirección de mira y los
 controles de vuelo quedan neutros (incluido P/Ultra). ESC consume la entrada y vuelve al cañón; en
-modo cañón conserva el abandono de fase. Muerte, nueva vida y resultado limpian el modo y exigen
+modo cañón abandona la fase solo mientras no exista un resultado terminal. Muerte, nueva vida y
+resultado limpian el modo y exigen
 liberar ESPACIO antes de una nueva ráfaga. `ScreenFactory` ya no
 llama a `controller.start()` al construir la pantalla; el inicio ocurre en `PhaseOneScreen` al
 consumir la primera pulsación de ESPACIO, y ese mismo frame simula 0 segundos y no emite disparos.
@@ -819,10 +945,11 @@ de objetivo (COS-99) enumera las dos metas —destruir los Vesper Raider y derri
 su destino—, advierte del LOSE si el bombardero llega vivo y resume vidas y límite; se dibuja una
 fila por línea y la altura del panel crece con el número de filas (`overlayPanelHeight`), con
 `overlayPanelY` recortando el panel dentro del viewport para que ninguna fila choque. El de resultado
-lee `controller.missionOutcome()` y muestra `WIN`/`LOSE` con una sola fila. ESPACIO (pulsación nueva)
-publica `GameAbandoned` y vuelve a Welcome; ESC abandona desde cualquier estado. Al volver a Welcome,
-`CosmicAcesGame` libera PhaseOne y una partida nueva recibe un controlador y estado nuevos (3 vidas,
-0/3 bajas, 10:00).
+lee `controller.missionOutcome()` y muestra `WIN`/`LOSE` con una sola fila. Tras un resultado
+terminal ya no hay retorno a Welcome desde RESULT: `CosmicAcesGame` sustituye la pantalla por el Hall
+of Fame al terminar el frame y el panel es solo el último frame congelado. ESC abandona mientras no
+exista resultado terminal; entonces vuelve a Welcome, `CosmicAcesGame` libera PhaseOne y una partida
+nueva recibe un controlador y estado nuevos (3 vidas, 0/3 bajas, 10:00).
 
 ### HUD de misión en pantalla (COS-71)
 
@@ -1321,6 +1448,59 @@ Consulta posición y pose en la nave: `controller.astra().x()`,
 reenvíen estos getters. El enemigo puede ser null mientras espera su aparición;
 consulta su presencia antes de usarlo.
 
+### Hall of Fame: ranking puro (COS-120)
+
+`domain.score.HallOfFameEntry` es una fila confirmada e inmutable: id durable, iniciales
+exactas `[A-Z]{3}`, puntos `int >= 0` y `ZonedDateTime finishedAt`. La fecha conserva a la vez
+el instante (`finishedInstant()`, orden y desempate) y la fecha local del fin (`playedOn()`,
+DD/MM/YY estable aunque la aplicación se reinicie en otra zona). El dominio no lee el reloj:
+la aplicación aporta identidad y tiempo. `HallOfFameEntry.isValidInitials(String)` expone la
+misma validación que usa el constructor.
+
+`domain.score.HallOfFame` es un valor inmutable con como máximo `MAX_ENTRIES = 50` filas en
+orden canónico: puntos descendentes y, a igual puntuación, instante terminal ascendente. Con
+instantes idénticos decide el orden persistido de la lista (ordenación estable, sin UUID ni
+secuencia extra). `HallOfFame.of(Collection)` normaliza una colección cargada con ese mismo
+comparador, la trunca a 50 y rechaza ids duplicados; no muta la colección recibida y
+`entries()` devuelve una lista inmutable. `qualifies(entry)` consulta elegibilidad sin insertar
+ni reservar fila: con menos de 50 filas cualquier entrada válida clasifica (incluidos 0 puntos)
+y, con el ranking lleno, el candidato debe superar estrictamente el puesto 50, de modo que un
+empate conserva el registro antiguo. `register(entry)` devuelve
+`HallOfFameRegistration(Status, ranking)` con `REGISTERED`, `DID_NOT_QUALIFY` o
+`ALREADY_REGISTERED`; solo el primer caso publica una instantánea nueva y repetir el mismo id
+nunca duplica. La persistencia y los adaptadores pertenecen a las hijas siguientes.
+
+### Hall of Fame: persistencia local (COS-121)
+
+`application.score.HallOfFameRepository` es el contrato mínimo de persistencia del ranking:
+`load()` devuelve `HallOfFameLoadResult(Status, HallOfFame)` y `save(HallOfFame)` reemplaza la
+instantánea completa. `Status` distingue `LOADED` (documento válido), `EMPTY` (todavía no hay
+archivo), `INVALID_DATA` (JSON corrupto, versión desconocida o filas que incumplen el contrato) y
+`STORAGE_FAILURE` (error de E/S). `writable()` indica si el resultado permite reemplazar los datos.
+`save` lanza `HallOfFameStorageException` si no puede completar el reemplazo; nunca informa éxito
+parcial. El contrato exige `load()` una vez por sesión antes de `save()` y prohíbe leer o escribir
+por frame, cambio de pantalla o pulsación.
+
+`infrastructure.persistence.LocalHallOfFameRepository` implementa el contrato con un JSON versionado
+(`version: 1`) de como máximo 50 filas. Cada fila guarda id durable, iniciales, puntos y
+`finishedAt` ISO-8601 con zona, de modo que el instante y la fecha local del fin sobreviven al
+reinicio. La ruta se recibe por constructor; `defaultFilePath()` propone
+`<user.home>/.cosmic-aces/hall-of-fame-v1.json`, resuelta por `ScreenFactory`. La carga limita el
+archivo a 1 MiB, exige un objeto raíz con versión conocida y un array `entries`, y rechaza ids
+duplicados, iniciales inválidas, puntos negativos o fuera de `int`, fechas inválidas y más de 50
+filas. La validación es todo-o-nada: una fila inválida invalida el documento completo y no se
+descartan filas en silencio. Las filas válidas se normalizan con `HallOfFame.of`.
+
+La escritura usa un archivo temporal hermano, `force(true)`, cierre completo y
+`Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`; si el filesystem no soporta el movimiento atómico
+se usa un movimiento de reemplazo sobre el mismo directorio. Un fallo deja intacta la instantánea
+anterior y elimina el temporal. Si `load()` devuelve `INVALID_DATA` o `STORAGE_FAILURE`, el adaptador
+se niega a sobrescribir el archivo hasta que una carga válida lo permita. `ScreenFactory` construye
+el adaptador y carga una vez por sesión en `loadSettings()`; expone `hallOfFameRepository()` y
+`hallOfFameLoadResult()` para las pantallas y la sesión terminal de las hijas siguientes. Los tests
+y el smoke inyectan rutas bajo `target/` (o redirigen `user.home`), nunca el archivo real del
+jugador.
+
 ## Clases actuales y métodos principales
 
 Los métodos están enumerados por clase. Se omiten constructores y getters
@@ -1336,13 +1516,17 @@ com.davidpe.cosmicaces
 |       1. getInstance()  2. createConfiguration()
 |
 +-- application
-|   +-- CosmicAcesGame extends Game: conecta bus, coordinador y pantallas.
+|   +-- CosmicAcesGame extends Game: conecta bus, coordinador, ciclo de atracción y pantallas.
 |   |   1. create(): muestra WelcomeScreen y registra listeners.
-|   |   2. render(): dibuja la pantalla y aplica la transición pendiente.
-|   |   3. dispose(): libera pantalla y suscripciones.
+|   |   2. render(): dibuja la pantalla, aplica la transición pendiente y, si no hubo, avanza la atracción.
+|   |   3. pause()/resume(): pausa o rearma el ciclo de atracción.
+|   |   4. dispose(): libera pantalla y suscripciones.
+|   +-- AttractCycle: estado puro de la alternancia bienvenida/Hall cada 10 s.
+|   |   1. tick(delta)  2. page()  3. elapsedSeconds()
+|   |   4. setPaused()/pause()/resume()  5. enter(page)  6. restartInterval()
 |   +-- GameCoordinator: mantiene la partida global y decide transiciones.
 |   |   1. onEvent()  2. state()  3. snapshot()
-|   |   4. consumePendingTransition()
+|   |   4. consumePendingTransition()  5. returnToAttractionLobby()
 |   +-- GameController [abstracta]: reloj del recorrido y control de Astra.
 |   |   1. start()  2. advanceRun()  3. isRunFinished()
 |   |   4. astra()
@@ -1367,13 +1551,19 @@ com.davidpe.cosmicaces
 |   +-- PhaseOneScenery: mapa, decoración y reserva de base preparados una vez por ejecución.
 |       1. config()  2. terrainMap()  3. sceneryField()  4. operationsBasePlacement()
 |       5. operationsBaseSpawnCenterX()  6. operationsBaseSpawnCenterY()
+|   +-- score
+|   |   +-- HallOfFameRepository: contrato de carga y reemplazo del ranking persistido.
+|   |   |   1. load()  2. save()
+|   |   +-- HallOfFameLoadResult(status, ranking): resultado explícito de la carga.
+|   |   |   1. empty()  2. loaded()  3. invalidData()  4. storageFailure()  5. writable()
+|   |   +-- HallOfFameStorageException: fallo recuperable de escritura.
 |
 +-- domain
 |   +-- game
 |   |   +-- GameState: identidad, fase, puntos y vidas de la partida.
 |   |   |   1. changePhase()  2. addPoints()  3. loseLife()
 |   |   |   4. completePhase()  5. snapshot()
-|   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, GAME_OVER.
+|   |   +-- GamePhase [enum]: WELCOME, PLAYING_PHASE_ONE, HALL_OF_FAME.
 |   |   +-- PlayableRun: reloj del recorrido, límite de 10 minutos (600 s).
 |   |   |   1. start()  2. advance()  3. isFinished()  4. remainingSeconds()
 |   |   +-- PhaseOneMission: meta conjunta (3 bajas + Bastion derribado antes de llegar) en 600 s.
@@ -1397,6 +1587,14 @@ com.davidpe.cosmicaces
 |   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
 |   |   +-- Geran4Death(droneId, centerX, centerY, cause): destrucción de un UAV Geran-4,
 |   |       una sola vez y drenable para la presentación; Cause = SHOT | COLLISION.
+|   +-- score
+|   |   +-- HallOfFameEntry(id, initials, points, finishedAt): fila confirmada e inmutable.
+|   |   |   1. isValidInitials() [estático]  2. finishedInstant()  3. playedOn()
+|   |   +-- HallOfFame: ranking puro inmutable top 50 con orden canónico y elegibilidad.
+|   |   |   1. empty()  2. of()  3. entries()  4. size()  5. isEmpty()
+|   |   |   6. qualifies()  7. register()  8. MAX_ENTRIES
+|   |   +-- HallOfFameRegistration(status, ranking): resultado explícito del alta.
+|   |       +-- Status [enum]: REGISTERED | DID_NOT_QUALIFY | ALREADY_REGISTERED.
 |   +-- ship
 |   |   +-- Ship [abstracta]: posicion, velocidad, dimensiones y dibujo.
 |   |   |   1. advance() [protegido]  2. setPosition() [protegido]
@@ -1531,6 +1729,10 @@ com.davidpe.cosmicaces
 |       +-- WorldRect: rectángulo mundial inmutable, expansión de reserva e intersección.
 |
 +-- infrastructure
+    +-- persistence
+    |   +-- LocalHallOfFameRepository implements application.score.HallOfFameRepository: JSON v1
+    |       local con límites, reemplazo atómico y protección ante carga fallida.
+    |       1. load()  2. save()  3. defaultFilePath()  4. file()
     +-- gdx
         +-- scenery
         |   +-- TerrainAtlasCatalog: ids lógicos, dimensiones y ruta del atlas de una página.
@@ -1539,8 +1741,9 @@ com.davidpe.cosmicaces
         |   |   1. plan(WorldRect)
         |   +-- TerrainSceneryRenderer: repetición del césped, base y sprites visibles con SpriteBatch.
         |       1. drawGround()  2. drawOperationsBase()  3. drawScenery()  4. pageCount()  5. estimatedBytes()  6. dispose()
-        +-- ScreenFactory: construye pantallas, carga ajustes persistentes y comparte configuración.
+        +-- ScreenFactory: construye pantallas, carga ajustes y ranking persistentes y comparte configuración.
         |   1. loadSettings()  2. createWelcomeScreen()  3. createPhaseOneScreen()
+        |   4. createHallOfFameScreen() [sesión, scroll y ciclo de atracción compartidos]
         +-- GameSettingsStore: lee/escribe preferencias locales de presentación, vuelo y vídeo.
         |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
         |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
@@ -1570,11 +1773,41 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
-            |   1. render()  2. resize()  3. handleSettingsInput()  4. dispose()
+            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
+            |   1. render() [incluye pausa del ciclo con Ajustes abierto]  2. resize()
+            |   3. handleSettingsInput()  4. dispose()
             |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
+            |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
             |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
+            +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado, editor
+            |   de iniciales y consulta de atracción con Y. Usa la HallOfFameSession y no escribe
+            |   desde render; recibe el AttractCycle, el publisher y la identidad/fase de la visita.
+            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con Y]
+            |   2. resize()  3. dispose()
+            |   4. drawBackground()  5. drawPanel()  6. drawFixedText()
+            |   7. drawRows()  8. drawEmptyState()  9. handleEntryInput()
+            |   10. confirmEntry() [reinicia el intervalo tras REGISTERED]
+            |   11. drawEntryEditor()  12. drawNonQualifyingNotice()
+            +-- HallOfFameInitials: estado puro de las tres iniciales y el cursor.
+            |   1. initials()  2. cursor()  3. letterAt()  4. isSelected()
+            |   5. moveCursor()  6. cycleLetter()  7. reset()  8. LENGTH
+            +-- HallOfFameEntryInput: flancos y armado del editor, sin LibGDX.
+            |   1. poll()  2. armed()
+            |   +-- Action: PREVIOUS_POSITION | NEXT_POSITION | PREVIOUS_LETTER | NEXT_LETTER | CONFIRM.
+            |   +-- Keys(left, right, up, down, confirm, space): estado físico de un frame.
+            +-- HallOfFameScroll: estado puro del scroll compartido entre visitas.
+            |   1. sync()  2. advance()  3. reset()  4. revealRow()  5. firstVisibleRow()
+            |   6. fractionalOffset()  7. atEnd()  8. maxOffsetRows()
+            |   +-- Phase: SCROLLING | HOLDING_AT_END | REWINDING.
+            +-- HallOfFameLayout: geometría y formatos puros de fondo, tabla, columnas y editor.
+            |   1. fitCentered()  2. tableArea()  3. entryPanelArea()  4. columns()  5. artScale()
+            |   6. rowHeight()  7. visibleRows()  8. visibleRowRange()  9. rowBaseline()
+            |   10. positionLabel()  11. scoreLabel()  12. dateLabel()
+            |   13. entryTitleBaselineY() / entryScoreBaselineY() / entryInitialsBaselineY()
+            |   14. entryHelpBaselineY() / entryCursorBaselineY() / entryInitialCellX()
+            |   15. entryInitialCellWidth()
+            |   +-- Fit / Area / Columns / RowRange [rectángulos y anclas].
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
             |   de los ajustes y crea su FlightCamera por partida.
             |   1. render()  2. resize()  3. dispose()
@@ -1590,7 +1823,7 @@ com.davidpe.cosmicaces
             |   1. observeSpace()  2. consumeStartPress()  3. armMissile()
             |   4. consumeMissileLaunch()  5. consumeMissileEscape()  6. fireTrigger()
             |   7. aimDirection()  8. flightControls()  9. resetWeaponMode()
-            |   10. showResult()  11. consumeResultConfirm()  12. stage()
+            |   10. showResult()  11. stage()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
@@ -1630,6 +1863,9 @@ com.davidpe.cosmicaces
             +-- MinimapProjection: adaptación y proyección del mundo al panel.
             |   1. fit()  2. project()  3. astraDirection()  4. raiderDirection()
             |   5. BOTTOM_MARGIN [banda HUD inferior compartida con el indicador]
+            |   6. visualScale() [marcadores 1–1,6× según la altura del mapa] (COS-129)
+            +-- VillageLabelLayout: nombres y escalera sin solapes de los cinco pueblos (COS-128).
+            |   1. seeds()  2. place()  3. MARKER_MARGIN/LABEL_GAP/EDGE_INSET/LINE_GAP
             +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
                 1. compute()  2. avoidReservations()  3. draw()
 ```
@@ -1638,9 +1874,15 @@ com.davidpe.cosmicaces
 
 PlayableRun fija la duración en 600 segundos (el límite de 10 minutos de la misión de PhaseOne).
 PhaseOne arranca en el panel de objetivo y empieza al pulsar ESPACIO; al terminar, GameCoordinator
-cambia el estado a GAME_OVER y PhaseOneScreen permanece visible con el panel WIN/LOSE hasta que una
-pulsación nueva de ESPACIO (o ESC) vuelve a Welcome. Todavía no existe una pantalla de game over ni
-hall of fame.
+pasa a `HALL_OF_FAME` y, al final del frame, CosmicAcesGame sustituye PhaseOneScreen por el Hall of
+Fame. Si la partida clasifica, el Hall abre el editor de tres iniciales y solo persiste al confirmar
+con Enter; si no clasifica, muestra la tabla sin editor. Antes del resultado, ESC/abandono vuelve a
+Welcome sin crear candidato. En reposo, `AttractCycle` alterna Welcome y la consulta del Hall cada
+diez segundos; Ajustes, el editor y una partida activa lo pausan, y Y inicia una única partida desde
+cualquiera de las dos páginas de reposo. Tras registrar o resolver una partida no clasificada, la
+consulta dispone de diez segundos completos y luego vuelve a Welcome con un lobby nuevo. El ranking
+puro está modelado en `domain.score` (COS-120) y la persistencia local en `application.score` e
+`infrastructure.persistence` (COS-121).
 El bus actual es propio y síncrono, sin Guava. ScreenFactory se instancia con sus
 dependencias; no es un singleton.
 
