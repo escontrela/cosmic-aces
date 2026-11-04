@@ -16,7 +16,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos, metadatos (`GuidedMissileSheet`) y su layout gráfico puro (`GuidedMissileSpriteLayout`). |
-| `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión y recursos compartidos; sin reglas de daño/reaparición. |
+| `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión, destellos y flujo de aire de Astra; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
@@ -1250,6 +1250,67 @@ dibujo de Astra y Vesper por este wrapper con la intensidad del controlador; exp
 proyectiles, minimapa, HUD y fondo conservan su shader/color habituales. No hay sprites nuevos ni
 cambio de daño, cadencia, puntuación o controles.
 
+### Flujo de aire de Astra exclusivamente durante Ultra (COS-135)
+
+`domain.effect.AstraAirflowParticles` es un modelo puramente presentacional del aire que recorre el
+contorno de Astra desde la proa hacia la cola mientras el llamador declara el flujo activo. No
+importa LibGDX, input, cámara ni reglas de vuelo: recibe el delta y un booleano de elegibilidad, y
+entrega muestras locales que la capa gráfica transforma con el marco actual del casco.
+
+El pool se crea una sola vez con `MAX_PARTICLES = 48` (tres carriles por banda) y se recicla; no
+crece con el tiempo ni asigna objetos por frame. `update(deltaSeconds, speedElevated)` activa el
+flujo en la primera llamada elevada, reparte las muestras de inmediato y avanza cada una por una
+trayectoria longitudinal con abombamiento sobre las alas. Para acotar el trabajo, un frame aporta
+como máximo 0,25 s y se integra en pasos de 1/60 s; deltas no finitos o no positivos no alteran las
+muestras. Cuando la elegibilidad deja de cumplirse, `clear()` detiene y descarta todo el estado, de
+modo que muerte, reaparición, abandono, fin de misión o nueva partida no heredan partículas. Una
+nueva activación vuelve a repartir el pool desde el principio con la misma semilla determinista.
+
+`isSpeedElevated(flightSpeed, speeds)` es el contrato de velocidad real del modelo: exige que la
+velocidad supere `speeds.normal()` con una tolerancia numérica de 0,01 u/s, rechaza muestras no
+finitas y no interpreta teclas, `accelerating()` ni el temporizador de Ultra. El modelo se limita a
+avanzar mientras el llamador lo declara elegible; decidir cuándo cuenta esa velocidad pertenece al
+adaptador gráfico, que añade la ventana activa de Ultra. Así Turbo por sí solo no activa el flujo y
+la expiración de Ultra lo limpia en el mismo frame aunque la nave siga rápida o mantenga Turbo.
+
+Cada `Particle` expone `localX`/`localY` (cabeza), `tailX`/`tailY` (extremo hacia proa), `alpha`,
+`width` y `progress` en coordenadas normalizadas a la caja estable de Astra: `x` de -0,5 a 0,5 y `y`
+de -0,5 (cola) a 0,5 (proa). El alfa se desvanece en los extremos y el ancho es una fracción del
+ancho de la caja; densidad, longitud de trazo y parámetros estéticos pueden afinarse en la pantalla
+sin cambiar este contrato. El estado no depende de la posición mundial, del modelo de Astra ni del
+modo de cámara, por lo que la transformación posterior puede acompañar posición, guiñada y tamaño en
+ambos modos.
+
+`infrastructure.gdx.screen.AstraAirflowEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
+Posee una única instancia de `AstraAirflowParticles`, no crea texturas, shaders ni otros recursos
+nativos y por tanto no implementa `Disposable` ni añade limpieza ficticia. `isEligible(missionPlaying,
+astraActive, astra)` exige partida en curso, Astra viva/activa, la ventana autoritativa de Ultra
+(`ultraRemainingSeconds() > 0`) y el contrato de velocidad real del modelo. No lee teclas,
+`accelerating()`, `ultraUsed()` —que sigue verdadero tras agotarse— ni umbrales numéricos de
+Turbo/Ultra, porque las preferencias pueden ser iguales y un valor de velocidad no identifica el
+modo. `update(delta, missionPlaying, astraActive, astra)` avanza con el tramo autorizado por la
+pantalla y limpia el flujo en cuanto deja de ser elegible: expiración de Ultra incluso con Turbo
+sostenido o velocidad aún elevada, frenado a normal o inferior, muerte, reaparición, fin de misión,
+abandono o nueva partida no heredan muestras.
+
+`transform(particle, centerX, centerY, boxWidth, boxHeight, yawDegrees, streak)` es la transformación
+pura local→mundo: aplica el vector derecho `(cos yaw, -sin yaw)` al eje local `x` y el vector de avance
+`(sin yaw, cos yaw)` al eje local `y`, ambos escalados por la caja estable del casco. Así los trazos
+acompañan posición, orientación, tamaño y virajes con cualquier modelo de Astra y en ambos modos de
+cámara; el ancho de trazo se acota a un mínimo legible y el alfa procede del modelo. `drawWorldPass(gl,
+shapes, astra)` abre su propia sesión `ShapeRenderer.ShapeType.Filled` en proyección de mundo y la
+cierra (volcando los vértices) antes de devolver el control. La composición alfa se limita a esa pasada
+mediante `AlphaBlendPass`: `SpriteBatch.end()` deja `GL_BLEND` deshabilitado, así que el helper
+consulta y conserva la habilitación previa y los cuatro factores independientes RGB/alfa, habilita
+`GL_BLEND` con `SRC_ALPHA/ONE_MINUS_SRC_ALPHA` para RGB y `ONE/ONE_MINUS_SRC_ALPHA` para alfa, y
+restaura el estado exacto en `finally` después de que la pasada haya hecho `shapes.end()`. Cambiar GL
+tras emitir vértices pero antes de volcarlos no compondría el alfa; por eso el orden
+habilitar→emitir→volcar→restaurar es parte del contrato. Los trazadores y el HUD se dibujan en pasadas
+separadas y conservan su estado de blending histórico. `PhaseOneScreen` llama a `update(...)` con
+`activeSeconds` antes de dibujar y a `drawWorldPass(...)` después del casco y del halo de motor,
+compartiendo `astraVisible(invulnerabilityRemaining)` para que el parpadeo solo oculte el dibujo sin
+reiniciar el flujo. El halo de motor existente se conserva con su propio ciclo y recursos.
+
 `infrastructure.gdx.screen.AstraLightEffect` es un POC de iluminación de motor propiedad de
 `PhaseOneScreen`: genera una textura radial pequeña en memoria, aplica filtrado lineal y la libera
 en `dispose()`. Antes de dibujar el sprite coloca un halo cian y una estela azul detrás de Astra con
@@ -1776,6 +1837,10 @@ com.davidpe.cosmicaces
 |   |       1. region()  2. draw()  3. dispose()
 |   |   +-- ShipHitFlash: pulso temporal puro de destello por impacto (0,10 s).
 |   |       1. trigger()  2. advance()  3. intensity()  4. clear()
+|   |   +-- AstraAirflowParticles: flujo acotado de aire local al casco (COS-136).
+|   |       1. isSpeedElevated()  2. update()  3. clear()
+|   |       4. isEngaged()  5. particleCount()  6. particle()
+|   |       +-- Particle: cabeza, cola, alfa, ancho y progreso proa→cola.
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
@@ -1911,7 +1976,12 @@ com.davidpe.cosmicaces
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
-                1. update()  2. draw()  3. dispose()
+            |   1. update()  2. draw()  3. dispose()
+            +-- AstraAirflowEffect: trazos de aire procedurales anclados al casco (COS-137).
+            |   1. isEligible()  2. update()  3. drawWorldPass()  4. reset()
+            |   +-- Streak: destino mutable reutilizado por el dibujo, sin asignación por frame.
+            +-- AlphaBlendPass: blending alfa acotado a una pasada y restauración de GL (COS-138).
+            |   1. run(gl, pass)  2. factores RGB/alfa independientes preservados
             +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable
             |   con norte arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()
