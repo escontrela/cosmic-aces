@@ -12,10 +12,10 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
  * CameraVisibility#localFrame} (identical formulas to the shared visibility rule), hides whenever
  * {@link CameraVisibility#shipVisible} reports the enemy inside the view, and never scales itself
  * with the world zoom. The triangle tip sits on the interior rectangle edge; the base lies toward
- * the screen centre, so no part of the triangle enters the reserved bottom band (the flight
- * readings at y≈34/58 stay below {@link MinimapProjection#BOTTOM_MARGIN}). While the player keeps
- * the minimap open, its real panel rectangle is passed as a reservation and the placement slides
- * along the same edge to the nearest free segment, preserving the direction.
+ * the screen centre, so no part of the triangle enters the reserved bottom band (the pilot console
+ * occupies it). While the player keeps the minimap open, its real panel rectangle is passed as a
+ * reservation and the placement slides along the same edge to the nearest free segment, preserving
+ * the direction.
  *
  * <p>The class owns no native resources and never opens or closes a {@link ShapeRenderer} session:
  * the caller supplies the opened renderer, exactly like {@code GunBurstVisual}.
@@ -152,7 +152,7 @@ final class OffscreenEnemyIndicator {
     }
   }
 
-  /** Interior rectangle's bottom: the shared fixed HUD band above every flight reading. */
+  /** Interior rectangle's bottom: the shared fixed pilot console band above every reading. */
   private static float bottomBand() {
     return MinimapProjection.BOTTOM_MARGIN;
   }

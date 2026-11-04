@@ -81,8 +81,8 @@ class VillageLabelLayoutTest {
   void tallerNominalMapKeepsAllFiveLabelsInsideAndUnoverlapped() {
     MinimapProjection projection = MinimapProjection.fit(EXTENDED, 800f, 600f);
     MinimapProjection.Rectangle map = projection.map();
-    assertTrue(map.height() >= 0.85f * 600f,
-        "the COS-129 map uses almost the whole viewport height");
+    assertTrue(map.height() >= 0.85f * (600f - MinimapProjection.BOTTOM_MARGIN),
+        "the COS-129 map uses almost the whole band above the pilot console");
 
     List<VillageLabelLayout.Seed> seeds = VillageLabelLayout.seeds(
         projection, VILLAGES, name -> name.length() * 8f);

@@ -84,13 +84,13 @@ class MinimapProjectionTest {
     MinimapProjection.Rectangle map = projection.map();
     float usableHeight = 600f - MinimapProjection.BOTTOM_MARGIN;
 
-    assertTrue(map.height() >= 0.85f * 600f,
-        "the map covers at least 85% of the nominal 600 px viewport height");
     assertTrue(map.height() >= 0.85f * usableHeight,
-        "the map also covers at least 85% of the band above the bottom HUD");
+        "the map covers at least 85% of the band above the pilot console");
     assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
     assertEquals(MinimapProjection.BOTTOM_MARGIN, panel.y(), 0.0001f,
-        "the panel starts exactly above the fixed bottom HUD band");
+        "the panel starts exactly above the fixed pilot console");
+    assertEquals(FlightConsoleLayout.HEIGHT, panel.y(), 0.0001f,
+        "the console owns the shared bottom band");
     assertTrue(panel.y() + panel.height() <= 600f);
     assertTrue(panel.x() >= 0f);
     assertTrue(panel.x() + panel.width() <= 800f);
@@ -105,9 +105,11 @@ class MinimapProjectionTest {
       MinimapProjection projection = MinimapProjection.fit(extended, size[0], size[1]);
       MinimapProjection.Rectangle panel = projection.panel();
       MinimapProjection.Rectangle map = projection.map();
+      float usableHeight = size[1] - MinimapProjection.BOTTOM_MARGIN;
 
-      assertTrue(map.height() >= 0.85f * size[1],
-          "the map fills at least 85% of " + size[0] + "x" + size[1]);
+      assertTrue(map.height() >= 0.85f * usableHeight,
+          "the map fills at least 85% of the band above the console at "
+              + size[0] + "x" + size[1]);
       assertTrue(map.height() > previousHeight, "the map grows with the viewport height");
       assertEquals(extended.width() / extended.height(), map.width() / map.height(), 0.00001f);
       assertEquals(size[0] - 24f, panel.x() + panel.width(), 0.001f,

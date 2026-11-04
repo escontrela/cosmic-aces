@@ -597,9 +597,13 @@ public final class PhaseOneScreen extends ScreenAdapter {
         drawVillageLabels();
       }
     }
-    hud.draw(batch, hudFont, controller.astra().yawDegrees(),
+    // The pilot console owns the fixed bottom band shared with the minimap and the off-screen
+    // arrow. It is drawn after the map and draws its own panel plus the current readings, so no
+    // overlay can cover it and the fixed HUD projection never scrolls with the world.
+    hud.draw(batch, shapes, hudFont, controller.astra().yawDegrees(),
         controller.astra().flightSpeed(), controller.astraGun().isFiring(),
-        controller.astraCombat().energyPercent(), hudViewport.getWorldWidth(), flow.isMissileArmed(),
+        controller.astraCombat().energyPercent(),
+        hudViewport.getWorldWidth(), hudViewport.getWorldHeight(), flow.isMissileArmed(),
         controller.astraMissilesRemaining(), controller.astraMissileCapacity(),
         missileTargetLabel());
     PhaseResult snapshot = phaseSnapshot.get();

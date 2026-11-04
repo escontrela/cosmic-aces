@@ -5,7 +5,7 @@ import com.davidpe.cosmicaces.domain.game.WorldBounds;
 /**
  * Pure world-to-screen transform for the fixed PhaseOne minimap. COS-129 grows the panel to almost
  * the whole usable height instead of a fixed 232×360 box: the map keeps the world aspect ratio and
- * is anchored above the bottom HUD band, so the taller panel never covers the flight readings.
+ * is anchored above the bottom pilot console, so the taller panel never covers the flight readings.
  */
 final class MinimapProjection {
   /** Interior gap between the panel border and the map, kept small to use the height. */
@@ -18,11 +18,11 @@ final class MinimapProjection {
   private static final float REFERENCE_MAP_HEIGHT = 360f;
   private static final float MAX_VISUAL_SCALE = 1.6f;
   /**
-   * Height of the fixed bottom HUD band: the minimap panel starts above it and the off-screen
-   * enemy indicator keeps its interior rectangle above it, so no overlay ever covers the flight
-   * readings (y≈34/58 plus font height). Shared by {@link OffscreenEnemyIndicator}.
+   * Height of the fixed bottom band: the minimap panel starts above it and the off-screen enemy
+   * indicator keeps its interior rectangle above it, so no overlay ever covers the pilot console.
+   * The band is owned by {@link FlightConsoleLayout} and shared with {@link OffscreenEnemyIndicator}.
    */
-  static final float BOTTOM_MARGIN = 76f;
+  static final float BOTTOM_MARGIN = FlightConsoleLayout.HEIGHT;
 
   record Point(float x, float y) {}
   record Rectangle(float x, float y, float width, float height) {}
