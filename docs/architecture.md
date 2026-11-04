@@ -1167,13 +1167,12 @@ dibujo de Astra y Vesper por este wrapper con la intensidad del controlador; exp
 proyectiles, minimapa, HUD y fondo conservan su shader/color habituales. No hay sprites nuevos ni
 cambio de daño, cadencia, puntuación o controles.
 
-### Flujo de aire de Astra en Turbo y Ultra (COS-136)
+### Flujo de aire de Astra en Turbo y Ultra (COS-135)
 
 `domain.effect.AstraAirflowParticles` es un modelo puramente presentacional del aire que recorre el
 contorno de Astra desde la proa hacia la cola mientras vuela por encima de su velocidad normal. No
 importa LibGDX, input, cámara ni reglas de vuelo: recibe el delta y un booleano de elegibilidad, y
-entrega muestras locales que la capa gráfica transforma con el marco actual del casco. La integración
-en pantalla y el renderer corresponden a la hija 02 de COS-135.
+entrega muestras locales que la capa gráfica transforma con el marco actual del casco.
 
 El pool se crea una sola vez con `MAX_PARTICLES = 48` (tres carriles por banda) y se recicla; no
 crece con el tiempo ni asigna objetos por frame. `update(deltaSeconds, speedElevated)` activa el
@@ -1197,6 +1196,27 @@ ancho de la caja; densidad, longitud de trazo y parámetros estéticos pueden af
 sin cambiar este contrato. El estado no depende de la posición mundial, del modelo de Astra ni del
 modo de cámara, por lo que la transformación posterior puede acompañar posición, guiñada y tamaño en
 ambos modos.
+
+`infrastructure.gdx.screen.AstraAirflowEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
+Posee una única instancia de `AstraAirflowParticles`, no crea texturas, shaders ni otros recursos
+nativos y por tanto no implementa `Disposable` ni añade limpieza ficticia. `isEligible(missionPlaying,
+astraActive, astra)` combina la partida en curso, Astra viva/activa y el mismo contrato de velocidad
+real de la hija 01, sin leer teclas, `accelerating()` ni el temporizador de Ultra. `update(delta,
+missionPlaying, astraActive, astra)` avanza con el tramo autorizado por la pantalla y limpia el flujo
+en cuanto deja de ser elegible, de modo que muerte, reaparición, fin de misión, abandono o nueva
+partida no heredan muestras.
+
+`transform(particle, centerX, centerY, boxWidth, boxHeight, yawDegrees, streak)` es la transformación
+pura local→mundo: aplica el vector derecho `(cos yaw, -sin yaw)` al eje local `x` y el vector de avance
+`(sin yaw, cos yaw)` al eje local `y`, ambos escalados por la caja estable del casco. Así los trazos
+acompañan posición, orientación, tamaño y virajes con cualquier modelo de Astra y en ambos modos de
+cámara; el ancho de trazo se acota a un mínimo legible y el alfa procede del modelo. `draw(shapes,
+astra)` escribe sobre la sesión `ShapeRenderer.ShapeType.Filled` que la pantalla ya abre en proyección
+de mundo, restaura el color previo y no cambia blending, shader ni proyección. `PhaseOneScreen` llama a
+`update(...)` con `activeSeconds` antes de dibujar y a `draw(...)` junto a los trazadores, después del
+casco y del halo de motor, compartiendo `astraVisible(invulnerabilityRemaining)` para que el parpadeo
+solo oculte el dibujo sin reiniciar el flujo. El halo de motor existente se conserva con su propio
+ciclo y recursos.
 
 `infrastructure.gdx.screen.AstraLightEffect` es un POC de iluminación de motor propiedad de
 `PhaseOneScreen`: genera una textura radial pequeña en memoria, aplica filtrado lineal y la libera
@@ -1862,7 +1882,10 @@ com.davidpe.cosmicaces
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
             |   1. draw()  2. dispose()
             +-- AstraLightEffect: halo de motor y halos alares proporcionales a la guiñada.
-                1. update()  2. draw()  3. dispose()
+            |   1. update()  2. draw()  3. dispose()
+            +-- AstraAirflowEffect: trazos de aire procedurales anclados al casco (COS-137).
+                1. isEligible()  2. update()  3. draw()  4. reset()
+                +-- Streak: destino mutable reutilizado por el dibujo, sin asignación por frame.
             +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable
             |   con norte arriba), zoom y encuadre de combate según el viewport efectivo.
             |   1. update() [3 sobrecargas]  2. x()  3. y()  4. yawDegrees()  5. zoom()

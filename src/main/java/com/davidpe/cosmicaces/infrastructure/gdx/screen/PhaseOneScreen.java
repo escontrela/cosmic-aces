@@ -143,6 +143,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final ShipExplosionVisuals explosionVisuals;
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final AstraLightEffect astraLightEffect;
+  private final AstraAirflowEffect astraAirflowEffect = new AstraAirflowEffect();
   private final PhaseOneAudio audio;
   private final BitmapFont font;
   private final BitmapFont hudFont;
@@ -476,6 +477,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
         !flow.isPlaying(), controller.astra().flightSpeed()));
     astraLightEffect.update(controller.astra(), delta,
         flow.isPlaying() && controller.isAstraActive());
+    // Airflow advances only during the playable mission and while Astra is alive; it keeps running
+    // through deceleration above cruise and is cleared once the configured normal speed is back.
+    astraAirflowEffect.update(activeSeconds, flow.isPlaying(), controller.isAstraActive(),
+        controller.astra());
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     drawTerrain(terrainBounds);
@@ -495,12 +500,14 @@ public final class PhaseOneScreen extends ScreenAdapter {
           controller.astra().x() + controller.astra().drawWidth() / 2f,
           controller.astra().y() + controller.astra().drawHeight() / 2f);
     }
-    if (controller.isAstraActive()
-        && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
+    // One visibility read for the hull and every effect attached to it: the invulnerability blink
+    // hides the airflow drawing too, but never restarts its bounded state.
+    boolean astraDrawable = controller.isAstraActive()
+        && astraVisible(controller.astraCombat().invulnerabilityRemaining());
+    if (astraDrawable) {
       astraLightEffect.draw(batch, controller.astra());
     }
-    if (controller.isAstraActive()
-        && astraVisible(controller.astraCombat().invulnerabilityRemaining())) {
+    if (astraDrawable) {
       hitFlashRenderer.draw(batch, controller.astra(), -controller.astra().yawDegrees(),
           controller.astraHitFlashIntensity());
     }
@@ -550,6 +557,11 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // ship heading or camera to orient an already-fired shot.
     shapes.setProjectionMatrix(camera.combined);
     shapes.begin(ShapeRenderer.ShapeType.Filled);
+    // Procedural airflow streaks over the hull, in the same world pass as the tracers. They reuse
+    // the current hull frame and stay hidden during the invulnerability blink.
+    if (astraDrawable) {
+      astraAirflowEffect.draw(shapes, controller.astra());
+    }
     for (GunProjectile projectile : controller.astraGun().projectiles()) {
       tracer.draw(shapes, projectile.x(), projectile.y(),
           projectile.forwardX(), projectile.forwardY());
