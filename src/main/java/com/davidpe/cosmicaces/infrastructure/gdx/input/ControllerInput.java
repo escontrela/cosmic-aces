@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -13,9 +14,11 @@ import java.util.Set;
  * Frame-based adapter for one explicitly selected gamepad.
  *
  * <p>The source is polled once per frame. Only value data from the selected device is retained
- * between frames: a disconnected device object is never kept, and reconnecting requires the same
- * backend identifier plus a neutral sample. There is no automatic adoption of another device and
- * combined Joy-Con pairs are never selectable.
+ * between frames: a disconnected device object is never kept. The desktop backend assigns a new
+ * ephemeral identifier each time a device is recreated, so an individual Joy-Con recovers its
+ * previous selection only when exactly one connected device matches the remembered side and name;
+ * a different side, a combined pair or an ambiguous set is never adopted and requires an explicit
+ * selection. Every reconnection still needs a full neutral sample.
  *
  * <p>Every button edge is computed against the previous frame, so holding a button never repeats an
  * action. After a selection, reset, focus change or screen transition the adapter waits for all
@@ -32,6 +35,7 @@ public final class ControllerInput {
 
   private String selectedUniqueId;
   private DeviceView selectedView;
+  private SelectionIdentity selectionIdentity;
   private Map<Integer, Boolean> previousButtons = Map.of();
   private StickDirection previousStick = StickDirection.NEUTRAL;
   private boolean neutralRequired = true;
@@ -45,7 +49,6 @@ public final class ControllerInput {
   public ControllerSnapshot poll() {
     List<GamepadDevice> devices = readDevices();
     Map<String, GamepadDevice> byId = new LinkedHashMap<>();
-    List<DeviceView> views = new ArrayList<>(devices.size());
     for (GamepadDevice device : devices) {
       if (device == null) {
         continue;
@@ -55,7 +58,11 @@ public final class ControllerInput {
         continue;
       }
       byId.put(id, device);
-      views.add(viewOf(device, id.equals(selectedUniqueId)));
+    }
+    recoverRecreatedSelection(byId);
+    List<DeviceView> views = new ArrayList<>(byId.size());
+    for (Map.Entry<String, GamepadDevice> entry : byId.entrySet()) {
+      views.add(viewOf(entry.getValue(), entry.getKey().equals(selectedUniqueId)));
     }
 
     GamepadDevice selectedDevice =
@@ -136,6 +143,7 @@ public final class ControllerInput {
       }
       selectedUniqueId = uniqueId;
       selectedView = view;
+      selectionIdentity = identityOf(view);
       reset();
       return true;
     }
@@ -145,10 +153,14 @@ public final class ControllerInput {
   public void clearSelection() {
     selectedUniqueId = null;
     selectedView = null;
+    selectionIdentity = null;
     reset();
   }
 
-  /** Backend identifier of the explicit selection, or null. */
+  /**
+   * Current backend identifier of the explicit selection, or null. It changes when the backend
+   * recreates an individual Joy-Con and the adapter recovers the unambiguous selection.
+   */
   public String selectedUniqueId() {
     return selectedUniqueId;
   }
@@ -211,6 +223,49 @@ public final class ControllerInput {
     lastSnapshot = ControllerSnapshot.empty();
   }
 
+  /**
+   * Re-binds a selection whose backend identifier disappeared, but only when exactly one connected
+   * individual Joy-Con matches the remembered side and name. The native instance is never retained:
+   * the new identifier and the edge state are rebuilt from this frame, and the full neutral gate
+   * still applies before any action is reported.
+   */
+  private void recoverRecreatedSelection(Map<String, GamepadDevice> byId) {
+    if (selectedUniqueId == null || selectionIdentity == null
+        || byId.containsKey(selectedUniqueId)) {
+      return;
+    }
+    GamepadDevice match = null;
+    for (GamepadDevice candidate : byId.values()) {
+      DeviceView view = viewOf(candidate, false);
+      if (!view.individualJoyCon() || view.side() != selectionIdentity.side()
+          || !normalizedName(view.name()).equals(selectionIdentity.normalizedName())) {
+        continue;
+      }
+      if (match != null) {
+        // Two candidates are ambiguous: keep the disconnected selection and wait for the player.
+        return;
+      }
+      match = candidate;
+    }
+    if (match == null) {
+      return;
+    }
+    selectedUniqueId = match.uniqueId();
+    selectedView = viewOf(match, true);
+    previousButtons = Map.of();
+    previousStick = StickDirection.NEUTRAL;
+    neutralRequired = true;
+  }
+
+  private static SelectionIdentity identityOf(DeviceView view) {
+    return view.individualJoyCon()
+        ? new SelectionIdentity(view.side(), normalizedName(view.name())) : null;
+  }
+
+  private static String normalizedName(String name) {
+    return name == null ? "" : name.strip().toLowerCase(Locale.ROOT);
+  }
+
   private List<GamepadDevice> readDevices() {
     List<GamepadDevice> devices = source.devices();
     return devices == null ? List.of() : devices;
@@ -255,4 +310,7 @@ public final class ControllerInput {
       return 0f;
     }
   }
+
+  /** Value-only description of the selected Joy-Con, used when the backend identifier changes. */
+  private record SelectionIdentity(ControllerSide side, String normalizedName) {}
 }

@@ -32,6 +32,36 @@ class StickSettingsTest {
   }
 
   @Test
+  void crossAxisNoiseDoesNotInventADiagonal() {
+    StickSettings settings = StickSettings.DEFAULTS;
+
+    assertEquals(new StickDirection(false, true, false, false),
+        settings.translate(0.8f, 0.01f));
+    assertEquals(new StickDirection(false, false, true, false),
+        settings.translate(0.01f, 0.8f));
+    assertEquals(new StickDirection(true, false, false, false),
+        settings.translate(-0.8f, -0.01f));
+    assertEquals(new StickDirection(false, false, false, true),
+        settings.translate(-0.01f, -0.8f));
+
+    StickSettings withoutDeadZone = new StickSettings(false, false, false, 0f);
+    assertEquals(new StickDirection(false, true, false, false),
+        withoutDeadZone.translate(0.8f, 0.01f));
+  }
+
+  @Test
+  void deliberateOffAxisTiltsRemainDiagonal() {
+    StickSettings settings = new StickSettings(false, false, false, 0.2f);
+
+    assertEquals(new StickDirection(false, true, true, false),
+        settings.translate(0.8f, 0.3f));
+    assertEquals(new StickDirection(true, false, false, true),
+        settings.translate(-0.7f, -0.5f));
+    assertEquals(new StickDirection(false, true, true, false),
+        settings.translate(0.2f, 0.2f), "a small but clear diagonal stays diagonal");
+  }
+
+  @Test
   void swapsAxesAndInvertsThemIndependently() {
     StickSettings swapped = new StickSettings(true, false, false, 0.2f);
     assertEquals(new StickDirection(false, false, true, false),

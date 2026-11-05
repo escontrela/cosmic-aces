@@ -4,14 +4,20 @@ package com.davidpe.cosmicaces.infrastructure.gdx.input;
  * Pure stick orientation and dead-zone rules.
  *
  * <p>The raw axes are optionally swapped and inverted, then converted to the four digital
- * directions used by flight, aim and menu navigation. Values inside the dead zone are neutral; at
- * the boundary the result is neutral too, so a noisy resting stick never produces a command.
+ * directions used by flight, aim and menu navigation. Values inside the radial dead zone are
+ * neutral; at the boundary the result is neutral too, so a noisy resting stick never produces a
+ * command. Outside the dead zone a secondary axis only counts when it reaches a fraction of the
+ * dominant axis, keeping a small cross-axis wobble from inventing a diagonal while a deliberate
+ * diagonal keeps both directions.
  */
 public record StickSettings(boolean swapAxes, boolean invertX, boolean invertY, float deadZone) {
 
   public static final float MIN_DEAD_ZONE = 0f;
   public static final float MAX_DEAD_ZONE = 0.9f;
   public static final float DEFAULT_DEAD_ZONE = 0.25f;
+
+  /** Minimum secondary/dominant axis ratio before the quieter axis becomes a direction. */
+  static final float AXIS_SECTOR_RATIO = 0.25f;
 
   public static final StickSettings DEFAULTS =
       new StickSettings(false, false, false, DEFAULT_DEAD_ZONE);
@@ -45,6 +51,7 @@ public record StickSettings(boolean swapAxes, boolean invertX, boolean invertY, 
     if (Math.hypot(x, y) <= deadZone) {
       return StickDirection.NEUTRAL;
     }
-    return new StickDirection(x < 0f, x > 0f, y > 0f, y < 0f);
+    float axisFloor = Math.max(Math.abs(x), Math.abs(y)) * AXIS_SECTOR_RATIO;
+    return new StickDirection(x < -axisFloor, x > axisFloor, y > axisFloor, y < -axisFloor);
   }
 }

@@ -222,6 +222,57 @@ class GameInputTest {
   }
 
   @Test
+  void recreatedJoyConRecoversTheSelectionAndKeepsKeyboardAvailable() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("session-a", "Joy-Con (L)"));
+    FakeKeyState keys = new FakeKeyState();
+    GameInput input = new GameInput(source, new KeyboardInput(keys));
+    input.selectDevice("session-a");
+    input.poll();
+
+    source.clear();
+    assertFalse(input.poll().held(InputAction.FIRE));
+    assertFalse(input.selectedDevice().connected());
+
+    FakeGamepadDevice recreated = joyCon("session-b", "Joy-Con (L)");
+    recreated.setButton(0, true);
+    source.add(recreated);
+    keys.press(Input.Keys.M);
+    ActionSnapshot gated = input.poll();
+
+    assertTrue(input.selectedDevice().connected());
+    assertEquals("session-b", input.selectedDevice().uniqueId());
+    assertFalse(gated.held(InputAction.FIRE), "a held trigger waits for the neutral gate");
+    assertTrue(gated.held(InputAction.MINIMAP), "keyboard keeps working during the gate");
+    assertTrue(input.neutralRequired());
+
+    recreated.setButton(0, false);
+    keys.releaseAll();
+    input.poll();
+    recreated.setButton(0, true);
+    assertTrue(input.poll().justPressed(InputAction.FIRE));
+  }
+
+  @Test
+  void savedProfileRecoversARecreatedJoyConWithANewBackendId() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("session-a", "Joy-Con (L)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+    input.poll();
+    assertEquals("session-a", input.selectedDevice().uniqueId());
+
+    source.clear();
+    input.poll();
+    source.add(joyCon("session-b", "Joy-Con (L)"));
+    input.poll();
+
+    assertEquals("session-b", input.selectedDevice().uniqueId());
+    assertTrue(input.selectedDevice().connected());
+  }
+
+  @Test
   void exposesTheRawPhysicalEdgeUsedByTheCapturePage() {
     FakeGamepadSource source = new FakeGamepadSource();
     FakeGamepadDevice device = joyCon("joycon-l", "Joy-Con (L)");

@@ -2068,12 +2068,20 @@ Joy-Cons` se enumera como no seleccionable.
 y la puerta de neutralidad. Cada flanco se calcula contra el frame anterior; mantener un botón no
 repite la acción. Tras seleccionar, resetear, perder foco, desconectar/reconectar o cambiar de
 pantalla se exige que todos los botones estén sueltos y el stick dentro de la zona muerta antes de
-volver a actuar. No hay adopción automática de otro mando: la reconexión se resuelve por el mismo
-identificador y, si cambia, el jugador debe seleccionarlo de nuevo.
+volver a actuar. El backend de escritorio asigna un identificador efímero nuevo a cada instancia de
+mando, por lo que la reconexión de un Joy-Con individual recupera la selección solo cuando existe
+exactamente una instancia conectada con el mismo lado y nombre recordados. Un lado distinto, una
+pareja combinada o varios candidatos no se adoptan automáticamente y requieren selección explícita;
+la recuperación no conserva el objeto nativo, reinicia los flancos y vuelve a exigir neutralidad
+completa. La identidad física durable no está disponible en este backend, así que dos Joy-Con del
+mismo lado y nombre conectados de forma alternativa no pueden distinguirse.
 
 `StickSettings` es la regla pura de orientación (intercambio de ejes e inversión independiente) y
-zona muerta acotada; `StickDirection` conserva la semántica digital de cuatro direcciones del
-pilotaje actual. `ActionBindings` traduce acciones lógicas (`FIRE`, `ARM_MISSILE`, `ULTRA`,
+zona muerta radial acotada. Fuera de ella, un eje secundario solo produce dirección si alcanza una
+fracción del eje dominante (sector digital), de modo que un ruido transversal mínimo no inventa una
+diagonal mientras una inclinación diagonal deliberada conserva ambos sentidos. `StickDirection`
+mantiene la semántica digital de cuatro direcciones del pilotaje actual. `ActionBindings` traduce
+acciones lógicas (`FIRE`, `ARM_MISSILE`, `ULTRA`,
 `MINIMAP`, `START_GAME`, `CONFIRM`, `BACK`, `SETTINGS`) a índices físicos, con valores
 predeterminados recuperables derivados del `ControllerMapping` y fallback a índices libres. La
 persistencia y la captura/validación por contexto corresponden a COS-142.

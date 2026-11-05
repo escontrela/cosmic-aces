@@ -192,6 +192,78 @@ class ControllerInputTest {
   }
 
   @Test
+  void recreatedJoyConWithANewIdRecoversTheSelectionAfterNeutralising() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("session-a", "Joy-Con (L)"));
+    ControllerInput input = new ControllerInput(source);
+    input.select("session-a");
+    input.poll();
+
+    source.clear();
+    ControllerSnapshot disconnected = input.poll();
+    assertFalse(disconnected.selected().connected());
+    assertEquals("session-a", input.selectedUniqueId());
+
+    FakeGamepadDevice recreated = joyCon("session-b", "Joy-Con (L)");
+    recreated.setButton(0, true);
+    source.add(recreated);
+    ControllerSnapshot adopted = input.poll();
+    assertTrue(adopted.selected().connected());
+    assertEquals("session-b", adopted.selected().uniqueId());
+    assertEquals("session-b", input.selectedUniqueId());
+    assertTrue(adopted.heldButtons().isEmpty(), "the held trigger waits for the neutral gate");
+    assertTrue(adopted.neutralRequired());
+    assertFalse(adopted.actions(input.bindings()).held(InputAction.FIRE));
+
+    recreated.setButton(0, false);
+    ControllerSnapshot neutral = input.poll();
+    assertFalse(neutral.neutralRequired());
+    assertTrue(neutral.heldButtons().isEmpty());
+
+    recreated.setButton(0, true);
+    assertTrue(input.poll().justPressedButton(0));
+  }
+
+  @Test
+  void ambiguousRecreatedJoyConsAreNotAdoptedAutomatically() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("session-a", "Joy-Con (L)"));
+    ControllerInput input = new ControllerInput(source);
+    input.select("session-a");
+    input.poll();
+
+    source.clear();
+    input.poll();
+    source.add(joyCon("session-b", "Joy-Con (L)"));
+    source.add(joyCon("session-c", "Joy-Con (L)"));
+
+    ControllerSnapshot ambiguous = input.poll();
+    assertFalse(ambiguous.selected().connected());
+    assertEquals("session-a", input.selectedUniqueId());
+    assertTrue(ambiguous.heldButtons().isEmpty());
+    assertTrue(ambiguous.neutralRequired());
+  }
+
+  @Test
+  void recreatedSelectionDoesNotAdoptADifferentSideOrName() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("session-a", "Joy-Con (L)"));
+    ControllerInput input = new ControllerInput(source);
+    input.select("session-a");
+    input.poll();
+
+    source.clear();
+    input.poll();
+    source.add(joyCon("session-b", "Joy-Con (R)"));
+    assertFalse(input.poll().selected().connected());
+
+    source.clear();
+    source.add(joyCon("session-c", "Nintendo Switch Left Joy-Con"));
+    assertFalse(input.poll().selected().connected());
+    assertEquals("session-a", input.selectedUniqueId());
+  }
+
+  @Test
   void doesNotAdoptAnotherDeviceAutomatically() {
     FakeGamepadSource source = new FakeGamepadSource();
     FakeGamepadDevice left = joyCon("joycon-l", "Joy-Con (L)");
