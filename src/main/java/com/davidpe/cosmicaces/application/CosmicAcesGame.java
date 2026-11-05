@@ -64,6 +64,9 @@ public final class CosmicAcesGame extends Game {
 
   @Override
   public void render() {
+    // One shared sample per frame: screens consume the same logical actions and no screen polls a
+    // physical device on its own.
+    screenFactory.pollInput();
     super.render();
     // A start, settings change or confirmation handled by the screen wins over a timeout that
     // expires in this same frame.
@@ -75,12 +78,14 @@ public final class CosmicAcesGame extends Game {
 
   @Override
   public void pause() {
+    screenFactory.resetInput();
     super.pause();
     attractCycle.pause();
   }
 
   @Override
   public void resume() {
+    screenFactory.resetInput();
     super.resume();
     attractCycle.resume();
   }
@@ -92,6 +97,7 @@ public final class CosmicAcesGame extends Game {
     if (activeScreen != null) {
       activeScreen.dispose();
     }
+    screenFactory.gameInput().dispose();
     subscriptions.forEach(Subscription::cancel);
     subscriptions.clear();
   }
@@ -155,5 +161,7 @@ public final class CosmicAcesGame extends Game {
     if (previousScreen != null) {
       previousScreen.dispose();
     }
+    // A button held across a transition must not leak into the new context.
+    screenFactory.resetInput();
   }
 }

@@ -20,6 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
+| `infrastructure.gdx.input` | Entrada de mandos y acciones independientes de dispositivo | Enumeración/selección de un Joy-Con individual, estado por frame, orientación y zona muerta del stick, bindings lógicos y fusión con teclado. Sin pantallas ni reglas de juego. |
 | `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes con sus nombres aprobados, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -2037,6 +2038,38 @@ com.davidpe.cosmicaces
             +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
                 1. compute()  2. avoidReservations()  3. draw()
 ```
+
+### Entrada de mandos y acciones (COS-141)
+
+`infrastructure.gdx.input` concentra la entrada independiente del dispositivo. `GdxGamepadSource`
+envuelve `Controllers.getControllers()` y convierte cada `Controller` en un `GamepadDevice` de solo
+valores; no expone el objeto nativo ni registra listeners globales. La lista se consulta una vez por
+frame desde el hilo de render, de modo que cambiar de pantalla no acumula callbacks y un mando
+desconectado no se conserva. El backend desktop es gdx-controllers 2.2.4 (SDL/Jamepad) y su base de
+mapeos incluye `Joy-Con (L)` y `Joy-Con (R)` individuales para macOS. Un dispositivo `Combined
+Joy-Cons` se enumera como no seleccionable.
+
+`ControllerInput` posee la selección explícita por `uniqueId`, el estado anterior de botones y stick,
+y la puerta de neutralidad. Cada flanco se calcula contra el frame anterior; mantener un botón no
+repite la acción. Tras seleccionar, resetear, perder foco, desconectar/reconectar o cambiar de
+pantalla se exige que todos los botones estén sueltos y el stick dentro de la zona muerta antes de
+volver a actuar. No hay adopción automática de otro mando: la reconexión se resuelve por el mismo
+identificador y, si cambia, el jugador debe seleccionarlo de nuevo.
+
+`StickSettings` es la regla pura de orientación (intercambio de ejes e inversión independiente) y
+zona muerta acotada; `StickDirection` conserva la semántica digital de cuatro direcciones del
+pilotaje actual. `ActionBindings` traduce acciones lógicas (`FIRE`, `ARM_MISSILE`, `ULTRA`,
+`MINIMAP`, `START_GAME`, `CONFIRM`, `BACK`, `SETTINGS`) a índices físicos, con valores
+predeterminados recuperables derivados del `ControllerMapping` y fallback a índices libres. La
+persistencia y la captura/validación por contexto corresponden a COS-142.
+
+`KeyboardInput` traduce las teclas actuales a las mismas acciones y direcciones; su `reset()` aplica
+la misma espera de neutralidad. `ActionSnapshot.merge` combina teclado y mando por acción: el estado
+mantenido se conserva mientras cualquiera de las dos fuentes lo mantenga y un flanco simultáneo sigue
+siendo un único flanco lógico. `GameInput` es el servicio compartido por `ScreenFactory`; se
+inicializa en `loadSettings()` tras crear el contexto LibGDX, `CosmicAcesGame` toma una muestra por
+frame antes de renderizar y resetea en pausa, reanudación y transición de pantalla. Si el backend
+nativo no carga, el error se registra y el juego continúa con teclado.
 
 ## Comportamiento provisional actual
 
