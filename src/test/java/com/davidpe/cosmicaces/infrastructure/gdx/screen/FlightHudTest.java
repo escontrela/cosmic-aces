@@ -73,7 +73,7 @@ class FlightHudTest {
   }
 
   @Test void missileHelpLineStaysAvailableForTheConsoleFooter() {
-    assertEquals("ESPACIO LANZAR · ESC RÁFAGAS", FlightHud.missileHelpLabel());
+    assertEquals("DISPARO LANZAR · VOLVER RÁFAGAS", FlightHud.missileHelpLabel());
   }
 
   @Test void footerReadsOwnMissilesInFlightAndKeepsTheEmergencyLabel() {

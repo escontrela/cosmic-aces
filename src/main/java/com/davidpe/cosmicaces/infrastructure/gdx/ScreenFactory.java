@@ -90,7 +90,7 @@ public final class ScreenFactory {
     PhaseOneGameController controller = createPhaseOneController(settingsStore);
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
-        presentationSettings);
+        presentationSettings, gameInput);
   }
 
   /**

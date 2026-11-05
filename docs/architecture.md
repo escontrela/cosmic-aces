@@ -1963,8 +1963,8 @@ com.davidpe.cosmicaces
             |   15. entryInitialCellWidth()
             |   +-- Fit / Area / Columns / RowRange [rectángulos y anclas].
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
-            |   de los ajustes y crea su FlightCamera por partida.
-            |   1. render()  2. resize()  3. dispose()
+            |   de los ajustes y crea su FlightCamera por partida; lee el GameInput compartido.
+            |   1. render()  2. resize()  3. hide()  4. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
             |   8. drawGeran4Uavs()  9. spawnGeran4Explosions()
@@ -1973,9 +1973,13 @@ com.davidpe.cosmicaces
             |   15. drawObjectivePanel()  16. drawResultPanel()  17. drawOverlayPanel()
             |   18. objectiveDetailLines() [copy puro]
             |   19. overlayPanelHeight() / overlayPanelY() [geometría pura de ambos paneles]
+            +-- MissionInput: lectura inmutable del snapshot fusionado para la misión (COS-143).
+            |   1. from()  2. fireHeld()/fireJustPressed()  3. armMissileJustPressed()
+            |   4. ultraJustPressed()  5. minimapJustPressed()  6. backJustPressed()
+            |   7. anyButtonJustPressed()  8. stick()  9. left()/right()/up()/down()
             +-- PhaseOneScreenFlow: ciclo de pantalla y selección input cañón/misil, sin LibGDX.
-            |   1. observeSpace()  2. consumeStartPress()  3. armMissile()
-            |   4. consumeMissileLaunch()  5. consumeMissileEscape()  6. fireTrigger()
+            |   1. observeTrigger()  2. consumeStartPress()  3. armMissile()
+            |   4. consumeMissileLaunch()  5. consumeMissileCancel()  6. fireTrigger()
             |   7. aimDirection()  8. flightControls()  9. resetWeaponMode()
             |   10. showResult()  11. stage()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
@@ -2100,6 +2104,25 @@ La captura consume el primer flanco físico de `GameInput`, muestra nombre/estad
 se cancela con ESC sin ejecutar la acción recién asignada; aplicar la configuración reinicia la
 puerta de neutralidad. Un perfil guardado se intenta restaurar una sola vez al arrancar y solo si hay
 exactamente un Joy-Con individual de ese lado; después no se adopta otro mando automáticamente.
+
+### Integración del Joy-Con en la misión (COS-143)
+
+`PhaseOneScreen` recibe el `GameInput` compartido desde `ScreenFactory.createPhaseOneScreen()` y lo
+lee una vez al inicio de cada `render()` sin instalar listeners. `MissionInput.from(ActionSnapshot)`
+traduce ese único snapshot fusionado a las decisiones de misión: gatillo mantenido, flanco de
+disparo, armado, Ultra, minimapa, volver y los cuatro sentidos digitales del stick. Así el teclado y
+el mando comparten exactamente el mismo camino y las secuencias se prueban con snapshots simulados
+sin ventana. Los constructores antiguos que no reciben el servicio conservan un lector de teclado
+local; la composición de producción siempre inyecta `GameInput`.
+
+`PhaseOneScreenFlow` conserva las protecciones de la intro y del cañón: un flanco de disparo inicia
+la misión sin disparar, el gatillo debe soltarse antes de volver a actuar, el lanzamiento de misil es
+único y la cancelación solo devuelve a cañón cuando hay un misil armado. Armado, lanzamiento,
+cancelación, Ultra y minimapa usan exclusivamente el flanco del snapshot; el cañón usa el estado
+mantenido. El stick ya transformado por `StickSettings` alimenta tanto la mira del misil como el
+`FlightControls` digital, sin introducir velocidad proporcional ni reglas nuevas. `hide()` resetea el
+servicio compartido para exigir una muestra neutra al volver a mostrar la pantalla; `dispose()` sigue
+siendo dueño solo de los recursos de la pantalla y no libera el input compartido.
 
 ## Comportamiento provisional actual
 
