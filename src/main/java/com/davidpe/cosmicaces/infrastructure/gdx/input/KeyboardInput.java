@@ -67,6 +67,7 @@ public final class KeyboardInput {
     bind(held, justPressed, InputAction.MINIMAP, Input.Keys.M);
     bind(held, justPressed, InputAction.START_GAME, Input.Keys.Y);
     bind(held, justPressed, InputAction.CONFIRM, Input.Keys.ENTER);
+    bind(held, justPressed, InputAction.CONFIRM, Input.Keys.NUMPAD_ENTER);
     bind(held, justPressed, InputAction.BACK, Input.Keys.ESCAPE);
     bind(held, justPressed, InputAction.SETTINGS, Input.Keys.ESCAPE);
 
@@ -84,6 +85,7 @@ public final class KeyboardInput {
     return keys.pressed(Input.Keys.SPACE) || keys.pressed(Input.Keys.F)
         || keys.pressed(Input.Keys.P) || keys.pressed(Input.Keys.M)
         || keys.pressed(Input.Keys.Y) || keys.pressed(Input.Keys.ENTER)
+        || keys.pressed(Input.Keys.NUMPAD_ENTER)
         || keys.pressed(Input.Keys.ESCAPE) || keys.pressed(Input.Keys.LEFT)
         || keys.pressed(Input.Keys.RIGHT) || keys.pressed(Input.Keys.UP)
         || keys.pressed(Input.Keys.DOWN);

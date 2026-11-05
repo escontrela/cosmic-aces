@@ -81,6 +81,14 @@ public final class GameInput implements Disposable {
     return current;
   }
 
+  /**
+   * Raw keyboard edge for the few video controls that have no logical action yet. It honors the
+   * keyboard neutral gate, so a key held across a transition cannot act in the new screen.
+   */
+  public boolean keyJustPressed(int key) {
+    return !keyboard.neutralRequired() && Gdx.input.isKeyJustPressed(key);
+  }
+
   /** Connected devices for the settings UI; empty when the backend is unavailable. */
   public List<DeviceView> devices() {
     return controllers == null ? List.of() : controllers.devices();

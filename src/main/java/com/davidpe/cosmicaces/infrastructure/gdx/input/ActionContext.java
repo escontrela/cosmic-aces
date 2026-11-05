@@ -11,7 +11,8 @@ import java.util.Set;
  * trigger and the menu confirm). Inside one context, two incompatible actions sharing a button would
  * execute together from a single press, so settings rejects that combination. {@code BACK} and
  * {@code SETTINGS} may share a button in menus because the keyboard already uses ESC for both and
- * they perform the same navigation gesture.
+ * they perform the same navigation gesture. The video page reuses three mission actions for its own
+ * auxiliary controls, so it declares them together with confirm to keep that page unambiguous.
  */
 public enum ActionContext {
 
@@ -21,7 +22,15 @@ public enum ActionContext {
 
   /** Welcome, settings and Hall of Fame navigation. */
   MENU(EnumSet.of(InputAction.CONFIRM, InputAction.START_GAME, InputAction.BACK,
-      InputAction.SETTINGS));
+      InputAction.SETTINGS)),
+
+  /**
+   * Video settings page, which reinterprets the mission buttons as its own auxiliary controls.
+   * Confirm and those three actions must stay distinct there even though they belong to different
+   * contexts elsewhere.
+   */
+  VIDEO(EnumSet.of(InputAction.CONFIRM, InputAction.ARM_MISSILE, InputAction.ULTRA,
+      InputAction.MINIMAP));
 
   private final Set<InputAction> actions;
 

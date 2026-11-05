@@ -1925,9 +1925,9 @@ com.davidpe.cosmicaces
         +-- screen
             +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo/controles e input de bienvenida.
             |   1. render() [incluye pausa del ciclo con Ajustes abierto]  2. resize()
-            |   3. handleSettingsInput()  4. dispose()
-            |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
-            |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
+            |   3. handleSettingsInput(MenuInput)  4. menuInput()  5. dispose()
+            |   6. rootOptions(hasSettingsStore) [menú raíz tipado]  7. cycleCameraMode() [lógica pura ←/→]
+            |   8. fitCentered() [ajuste 4:3 puro]  9. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
             |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/ARMAMENT/CAMERA/CONTROLS.
             +-- ControlsSettingsState: estado puro de la página Controles (selección, perfil, captura,
@@ -1935,9 +1935,10 @@ com.davidpe.cosmicaces
             |   1. moveSelection()  2. beginCapture()  3. handleCaptureInput()  4. changeProfile()
             |   5. selectNextDevice()  6. adjustSelected()  7. resetDefaults()  8. toSettings()
             +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado, editor
-            |   de iniciales y consulta de atracción con Y. Usa la HallOfFameSession y no escribe
-            |   desde render; recibe el AttractCycle, el publisher y la identidad/fase de la visita.
-            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con Y]
+            |   de iniciales y consulta de atracción con la acción de inicio. Usa la HallOfFameSession
+            |   y no escribe desde render; recibe el AttractCycle, el publisher, el GameInput
+            |   compartido y la identidad/fase de la visita.
+            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con la acción de inicio]
             |   2. resize()  3. dispose()
             |   4. drawBackground()  5. drawPanel()  6. drawFixedText()
             |   7. drawRows()  8. drawEmptyState()  9. handleEntryInput()
@@ -1950,6 +1951,12 @@ com.davidpe.cosmicaces
             |   1. poll()  2. armed()
             |   +-- Action: PREVIOUS_POSITION | NEXT_POSITION | PREVIOUS_LETTER | NEXT_LETTER | CONFIRM.
             |   +-- Keys(left, right, up, down, confirm, space): estado físico de un frame.
+            |   +-- Keys.from(ActionSnapshot): adapta teclado y Joy-Con al mismo contrato.
+            +-- MenuInput: lectura inmutable del snapshot fusionado para bienvenida, ajustes y Hall
+            |   (COS-144); solo flancos de acciones y stick.
+            |   1. from()  2. startGame()/confirm()/back()/settings()
+            |   3. up()/down()/left()/right()  4. videoToggleDestination()/videoRestoreWindow()/
+            |      videoRefreshModes()
             +-- HallOfFameScroll: estado puro del scroll compartido entre visitas.
             |   1. sync()  2. advance()  3. reset()  4. revealRow()  5. firstVisibleRow()
             |   6. fractionalOffset()  7. atEnd()  8. maxOffsetRows()
@@ -2098,7 +2105,8 @@ los bindings no están personalizados, el adaptador conserva los predeterminados
 del dispositivo.
 
 `ActionContext` define los grupos que deben usar botones distintos: `MISSION` (disparo, misil, Ultra,
-minimapa y volver) y `MENU` (confirmar, iniciar, volver y ajustes). Un botón puede reutilizarse entre
+minimapa y volver), `MENU` (confirmar, iniciar, volver y ajustes) y `VIDEO` (confirmar junto a los
+tres controles auxiliares que la página Vídeo reinterpreta). Un botón puede reutilizarse entre
 contextos; `BACK` y `SETTINGS` pueden compartirlo en menús porque el teclado ya usa ESC para ambos.
 La captura consume el primer flanco físico de `GameInput`, muestra nombre/estado e índices físicos y
 se cancela con ESC sin ejecutar la acción recién asignada; aplicar la configuración reinicia la
@@ -2123,6 +2131,35 @@ mantenido. El stick ya transformado por `StickSettings` alimenta tanto la mira d
 `FlightControls` digital, sin introducir velocidad proporcional ni reglas nuevas. `hide()` resetea el
 servicio compartido para exigir una muestra neutra al volver a mostrar la pantalla; `dispose()` sigue
 siendo dueño solo de los recursos de la pantalla y no libera el input compartido.
+
+### Menús, ajustes y Hall of Fame con Joy-Con (COS-144)
+
+`WelcomeScreen` y `HallOfFameScreen` reciben el `GameInput` compartido desde `ScreenFactory` y leen
+`current()` una vez por `render()`, sin instalar listeners ni consultar el dispositivo físico.
+`MenuInput.from(ActionSnapshot)` traduce ese único snapshot a decisiones de menú: inicio, confirmar,
+volver, ajustes y las cuatro direcciones del stick por flanco. La navegación de todas las páginas de
+Ajustes, la apertura/cierre del modal, la captura de controles y el inicio desde la bienvenida o la
+consulta del Hall comparten así el mismo camino que el teclado. Los constructores antiguos sin
+`GameInput` conservan un lector de teclado de respaldo para pruebas y usos aislados.
+
+La página Vídeo mantiene intactos F/W/R del teclado. Para que el mando alcance esas funciones sin
+añadir acciones nuevas ni cambiar la persistencia `controller.*`, interpreta en su propio contexto
+los flancos existentes: armar cambia el destino (F), Ultra restaura la ventana (W) y minimapa
+actualiza los modos (R); confirmar aplica y volver sale. Fuera de esa página no se ejecuta ninguna
+acción de misión. `GameInput.keyJustPressed` conserva W/R por teclado respetando la puerta de
+neutralidad del teclado.
+
+`HallOfFameScreen` construye el estado del editor con `HallOfFameEntryInput.Keys.from(ActionSnapshot)`:
+las direcciones y confirmar mantenidos cuentan como entradas activas, y cualquier otra acción
+mantenida o pulsada —incluido disparo— bloquea el armado hasta que se suelte. Así el disparo o el
+stick que terminaron la misión no mueven las iniciales ni confirman, confirmar consume un solo flanco
+aunque teclado y mando coincidan, y el reintento tras un fallo de almacenamiento sigue disponible. La
+consulta no escribe y conserva las reglas de ranking y atracción.
+
+La pérdida y recuperación de foco del escritorio se reenvían desde el `Lwjgl3WindowListener` de
+`DesktopLauncher` a `CosmicAcesGame.resetInputAfterFocusChange()`, que resetea el servicio compartido.
+Junto con el reset de transición y pausa/reanudación, esto exige una muestra neutra antes de volver a
+actuar; no se crean listeners por pantalla ni se conserva estado de pantallas descartadas.
 
 ## Comportamiento provisional actual
 

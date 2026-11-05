@@ -103,6 +103,19 @@ class ActionBindingsTest {
   }
 
   @Test
+  void keepsConfirmAndTheVideoAuxiliaryActionsDistinct() {
+    ActionBindings bindings = ActionBindings.genericDefaults()
+        .withBinding(InputAction.FIRE, 9);
+
+    assertEquals(InputAction.CONFIRM,
+        bindings.conflictingAction(InputAction.ARM_MISSILE,
+            bindings.buttonFor(InputAction.CONFIRM)));
+    assertEquals(InputAction.ULTRA,
+        bindings.conflictingAction(InputAction.CONFIRM,
+            bindings.buttonFor(InputAction.ULTRA)));
+  }
+
+  @Test
   void allowsTheExistingBackAndSettingsNavigationGesture() {
     ActionBindings bindings = ActionBindings.genericDefaults();
 

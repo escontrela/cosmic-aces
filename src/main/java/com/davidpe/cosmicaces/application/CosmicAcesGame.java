@@ -90,6 +90,15 @@ public final class CosmicAcesGame extends Game {
     attractCycle.resume();
   }
 
+  /**
+   * Clears held input and edge state when the desktop window loses or regains focus. LWJGL3 reports
+   * focus through the window listener, not through {@link #pause()}; the boot adapter forwards both
+   * events here so a held trigger or stick cannot act in the screen that regains focus.
+   */
+  public void resetInputAfterFocusChange() {
+    screenFactory.resetInput();
+  }
+
   @Override
   public void dispose() {
     Screen activeScreen = getScreen();

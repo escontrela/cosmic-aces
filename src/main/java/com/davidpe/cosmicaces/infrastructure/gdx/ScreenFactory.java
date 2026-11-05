@@ -104,7 +104,7 @@ public final class ScreenFactory {
   public Screen createHallOfFameScreen() {
     GameState state = coordinator.state();
     return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll, attractCycle,
-        publisher, state.gameId(), state.phase());
+        publisher, state.gameId(), state.phase(), gameInput);
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */

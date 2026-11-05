@@ -35,6 +35,16 @@ class KeyboardInputTest {
   }
 
   @Test
+  void numpadEnterConfirmsLikeTheMainEnter() {
+    FakeKeyState keys = new FakeKeyState();
+    keys.press(Input.Keys.NUMPAD_ENTER);
+    ActionSnapshot snapshot = new KeyboardInput(keys).poll();
+
+    assertTrue(snapshot.held(InputAction.CONFIRM));
+    assertTrue(snapshot.justPressed(InputAction.CONFIRM));
+  }
+
+  @Test
   void escapeProducesBothBackAndSettingsForContextualUse() {
     FakeKeyState keys = new FakeKeyState();
     keys.press(Input.Keys.ESCAPE);

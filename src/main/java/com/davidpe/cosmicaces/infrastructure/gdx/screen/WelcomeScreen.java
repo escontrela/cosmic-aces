@@ -172,11 +172,11 @@ public final class WelcomeScreen extends ScreenAdapter {
   @Override
   public void render(float delta) {
     ScreenUtils.clear(Color.BLACK);
-    handleSettingsInput();
-    // Ajustes owns the keyboard and the attraction loop while it is open.
+    MenuInput menu = menuInput();
+    handleSettingsInput(menu);
+    // Ajustes owns the merged input and the attraction loop while it is open.
     attractCycle.setPaused(settingsPage != SettingsPage.CLOSED);
-    if (settingsPage == SettingsPage.CLOSED && !startRequested
-        && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+    if (settingsPage == SettingsPage.CLOSED && !startRequested && menu.startGame()) {
       startRequested = true;
       publisher.publish(new StartRequested(gameId, phase));
       return;
@@ -247,7 +247,7 @@ public final class WelcomeScreen extends ScreenAdapter {
           art.y() + art.height() * PROMPT_BOTTOM_FRACTION);
     }
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "ESC: AJUSTES", art.x() + 18f, art.y() + 28f);
+    settingsFont.draw(batch, "ESC / AJUSTES DEL MANDO", art.x() + 18f, art.y() + 28f);
     batch.end();
   }
 
@@ -282,9 +282,32 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
-  private void handleSettingsInput() {
+  /**
+   * Reads the shared merged sample once per frame. The legacy constructor without {@link GameInput}
+   * keeps the previous keyboard-only behavior.
+   */
+  private MenuInput menuInput() {
+    if (gameInput != null) {
+      return MenuInput.from(gameInput.current());
+    }
+    return new MenuInput(
+        Gdx.input.isKeyJustPressed(Input.Keys.Y),
+        Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+            || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER),
+        Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE),
+        Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE),
+        Gdx.input.isKeyJustPressed(Input.Keys.UP),
+        Gdx.input.isKeyJustPressed(Input.Keys.DOWN),
+        Gdx.input.isKeyJustPressed(Input.Keys.LEFT),
+        Gdx.input.isKeyJustPressed(Input.Keys.RIGHT),
+        Gdx.input.isKeyJustPressed(Input.Keys.F),
+        Gdx.input.isKeyJustPressed(Input.Keys.P),
+        Gdx.input.isKeyJustPressed(Input.Keys.M));
+  }
+
+  private void handleSettingsInput(MenuInput menu) {
     if (settingsPage == SettingsPage.CLOSED) {
-      if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+      if (menu.settings()) {
         settingsPage = SettingsPage.ROOT;
       }
       return;
@@ -295,14 +318,14 @@ public final class WelcomeScreen extends ScreenAdapter {
       if (controlsState.capturing()) {
         int button = gameInput == null ? -1 : gameInput.firstJustPressedButton();
         ControlsSettingsState.CaptureOutcome outcome = controlsState.handleCaptureInput(
-            Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE), button);
+            menu.back(), button);
         if (outcome == ControlsSettingsState.CaptureOutcome.APPLIED) {
           persistControls();
         }
         return;
       }
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+    if (menu.back()) {
       if (settingsPage == SettingsPage.ROOT) {
         settingsPage = SettingsPage.CLOSED;
       } else {
@@ -311,28 +334,27 @@ public final class WelcomeScreen extends ScreenAdapter {
       return;
     }
     switch (settingsPage) {
-      case ROOT -> handleRootInput();
-      case VIDEO -> handleVideoInput();
-      case ASTRA -> handleAstraInput();
-      case ASTRA_MODEL -> handleAstraModelInput();
-      case SPEEDS -> handleSpeedInput();
-      case ARMAMENT -> handleArmamentInput();
-      case CAMERA -> handleCameraInput();
-      case CONTROLS -> handleControlsInput();
+      case ROOT -> handleRootInput(menu);
+      case VIDEO -> handleVideoInput(menu);
+      case ASTRA -> handleAstraInput(menu);
+      case ASTRA_MODEL -> handleAstraModelInput(menu);
+      case SPEEDS -> handleSpeedInput(menu);
+      case ARMAMENT -> handleArmamentInput(menu);
+      case CAMERA -> handleCameraInput(menu);
+      case CONTROLS -> handleControlsInput(menu);
       case CLOSED -> { }
     }
   }
 
-  private void handleControlsInput() {
+  private void handleControlsInput(MenuInput menu) {
     ControlsSettingsState state = controlsState;
-    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+    if (menu.up()) {
       state.moveSelection(-1);
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+    if (menu.down()) {
       state.moveSelection(1);
     }
-    int horizontal = Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1
-        : Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1 : 0;
+    int horizontal = menu.left() ? -1 : menu.right() ? 1 : 0;
     if (horizontal != 0) {
       switch (state.selectedRow()) {
         case PROFILE -> {
@@ -348,7 +370,7 @@ public final class WelcomeScreen extends ScreenAdapter {
         }
       }
     }
-    if (!Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+    if (!menu.confirm()) {
       return;
     }
     switch (state.selectedRow()) {
@@ -436,13 +458,12 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
-  private void handleRootInput() {
-    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)
-        || Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
-      rootSelection = Math.floorMod(rootSelection
-          + (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : -1), rootOptions().size());
+  private void handleRootInput(MenuInput menu) {
+    if (menu.up() || menu.down()) {
+      rootSelection = Math.floorMod(rootSelection + (menu.down() ? 1 : -1),
+          rootOptions().size());
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+    if (menu.confirm()) {
       RootOption selected = rootOptions().get(rootSelection);
       if (selected == RootOption.VIDEO) {
         openVideoSettings();
@@ -460,26 +481,26 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsPage = SettingsPage.VIDEO;
   }
 
-  private void handleVideoInput() {
+  private void handleVideoInput(MenuInput menu) {
     List<VideoDisplaySettings.VideoMode> modes = currentModes();
-    if (Gdx.input.isKeyJustPressed(Input.Keys.UP) && !modes.isEmpty()) {
+    if (menu.up() && !modes.isEmpty()) {
       selectedVideoMode = Math.floorMod(selectedVideoMode - 1, modes.size());
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN) && !modes.isEmpty()) {
+    if (menu.down() && !modes.isEmpty()) {
       selectedVideoMode = Math.floorMod(selectedVideoMode + 1, modes.size());
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+    if (menu.videoToggleDestination()) {
       targetFullscreen = !targetFullscreen;
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.W)) {
+    if (menu.videoRestoreWindow() || keyJustPressed(Input.Keys.W)) {
       showApplyResult(videoSettings.applyWindowed());
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+    if (menu.videoRefreshModes() || keyJustPressed(Input.Keys.R)) {
       refreshVideoCatalog();
       selectedVideoMode = Math.min(selectedVideoMode, Math.max(0, currentModes().size() - 1));
       settingsMessage = "Lista de modos actualizada para el monitor actual.";
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+    if (menu.confirm()) {
       if (targetFullscreen) {
         VideoDisplaySettings.VideoMode requested = modes.isEmpty()
             ? null : modes.get(selectedVideoMode);
@@ -490,27 +511,31 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
-  private void handleAstraInput() {
-    if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+  /** W/R keep their current keyboard behavior but respect the shared neutral gate. */
+  private boolean keyJustPressed(int key) {
+    return gameInput == null ? Gdx.input.isKeyJustPressed(key) : gameInput.keyJustPressed(key);
+  }
+
+  private void handleAstraInput(MenuInput menu) {
+    if (menu.left()) {
       presentationSettings.adjustAstraBottomFraction(-GamePresentationSettings.ASTRA_BOTTOM_STEP);
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+    if (menu.right()) {
       presentationSettings.adjustAstraBottomFraction(GamePresentationSettings.ASTRA_BOTTOM_STEP);
     }
   }
 
-  private void handleAstraModelInput() {
-    if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+  private void handleAstraModelInput(MenuInput menu) {
+    if (menu.left()) {
       presentationSettings.cycleAstraVariant(-1);
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+    if (menu.right()) {
       presentationSettings.cycleAstraVariant(1);
     }
   }
 
-  private void handleCameraInput() {
-    int direction = Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1
-        : Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1 : 0;
+  private void handleCameraInput(MenuInput menu) {
+    int direction = menu.left() ? -1 : menu.right() ? 1 : 0;
     if (direction == 0) {
       return;
     }
@@ -537,16 +562,16 @@ public final class WelcomeScreen extends ScreenAdapter {
     return hasSettingsStore ? ROOT_OPTIONS : ROOT_OPTIONS_NO_STORE;
   }
 
-  private void handleSpeedInput() {
-    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+  private void handleSpeedInput(MenuInput menu) {
+    if (menu.up()) {
       speedSelection = Math.floorMod(speedSelection - 1, 3);
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+    if (menu.down()) {
       speedSelection = Math.floorMod(speedSelection + 1, 3);
     }
-    int adjustment = Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)
+    int adjustment = menu.right()
         ? FlightSpeeds.ADJUSTMENT_STEP
-        : Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -FlightSpeeds.ADJUSTMENT_STEP : 0;
+        : menu.left() ? -FlightSpeeds.ADJUSTMENT_STEP : 0;
     if (adjustment == 0) return;
     flightSpeeds = switch (speedSelection) {
       case 0 -> flightSpeeds.withNormal(flightSpeeds.normal() + adjustment);
@@ -556,14 +581,12 @@ public final class WelcomeScreen extends ScreenAdapter {
     if (settingsStore != null) settingsStore.saveFlightSpeeds(flightSpeeds);
   }
 
-  private void handleArmamentInput() {
-    int selectionAdjustment = Gdx.input.isKeyJustPressed(Input.Keys.UP) ? -1
-        : Gdx.input.isKeyJustPressed(Input.Keys.DOWN) ? 1 : 0;
+  private void handleArmamentInput(MenuInput menu) {
+    int selectionAdjustment = menu.up() ? -1 : menu.down() ? 1 : 0;
     if (selectionAdjustment != 0) {
       armamentSelection = cycleArmamentSelection(armamentSelection, selectionAdjustment);
     }
-    int adjustment = Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1
-        : Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1 : 0;
+    int adjustment = menu.right() ? 1 : menu.left() ? -1 : 0;
     if (adjustment == 0) return;
     if (armamentSelection == 0) {
       int next = adjustMissilesPerLife(astraMissilesPerLife, adjustment);
@@ -650,7 +673,8 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.setColor(Color.CYAN);
     settingsFont.draw(batch, settingsTitle(), left, top);
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "ESC: volver    Flechas: seleccionar/ajustar    ENTER: abrir o aplicar",
+    settingsFont.draw(batch,
+        "ESC/VOLVER: atrás    Flechas/stick: elegir    ENTER/CONFIRMAR: abrir o aplicar",
         left, top - 34f);
     if (settingsPage == SettingsPage.ROOT) {
       drawRootSettings(left, top - 112f);
@@ -799,9 +823,9 @@ public final class WelcomeScreen extends ScreenAdapter {
 
     settingsFont.setColor(Color.LIGHT_GRAY);
     settingsFont.draw(batch,
-        "↑/↓ mover   ←/→ cambiar   ENTER seleccionar o capturar   ESC volver",
+        "↑/↓ o stick: mover   ←/→ cambiar   ENTER/CONFIRMAR: elegir o capturar   ESC/VOLVER: atrás",
         left, panelY + 62f);
-    settingsFont.draw(batch, "El teclado no cambia; ESC cancela una captura sin salir.",
+    settingsFont.draw(batch, "El teclado no cambia; ESC/VOLVER cancela una captura sin salir.",
         left, panelY + 38f);
   }
 
@@ -871,7 +895,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, "Destino: " + (targetFullscreen ? "Pantalla completa" : "Ventana"),
         left, top - 58f);
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "F cambiar destino | R actualizar modos del monitor",
+    settingsFont.draw(batch, "F o ARMAR cambiar destino | R o MINIMAPA actualizar modos",
         left, top - 88f);
 
     if (targetFullscreen) {
@@ -882,7 +906,8 @@ public final class WelcomeScreen extends ScreenAdapter {
           modes.size() - visibleRows));
       first = Math.max(0, first);
       settingsFont.setColor(Color.CYAN);
-      settingsFont.draw(batch, "ENTER aplicar | W volver a ventana | Modos anunciados (↑/↓):",
+      settingsFont.draw(batch,
+          "ENTER/CONFIRMAR aplicar | W o ULTRA volver a ventana | Modos anunciados (↑/↓):",
           left, top - 126f);
       for (int row = 0; row < visibleRows && first + row < modes.size(); row++) {
         int index = first + row;
@@ -896,7 +921,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       }
     } else {
       settingsFont.setColor(Color.CYAN);
-      settingsFont.draw(batch, "ENTER o W restaurar la ventana redimensionable anterior.",
+      settingsFont.draw(batch, "ENTER/CONFIRMAR o W/ULTRA restaurar la ventana anterior.",
           left, top - 126f);
     }
     settingsFont.setColor(Color.LIGHT_GRAY);
