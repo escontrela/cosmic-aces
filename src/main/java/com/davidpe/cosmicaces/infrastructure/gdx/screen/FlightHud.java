@@ -41,7 +41,7 @@ final class FlightHud {
   private static final String MISSILE_LABEL = "AIM-120 AMRAAM";
   /** Separate marker that tells effective cannon fire apart from the selected weapon. */
   private static final String FIRING_MARKER = " · DISPARO";
-  private static final String MISSILE_HELP = "ESPACIO LANZAR · ESC RÁFAGAS";
+  private static final String MISSILE_HELP = "DISPARO LANZAR · VOLVER RÁFAGAS";
   /** Energy percentage at or below which Astra's own reading becomes an emergency. */
   static final int LOW_ENERGY_PERCENT = 25;
   /** Prefix kept on every emergency label during both blink phases so it stays identifiable. */

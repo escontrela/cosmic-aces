@@ -40,6 +40,24 @@
             <classifier>natives-desktop</classifier>
         </dependency>
 
+        <!--
+          Gamepad detection through SDL/Jamepad. The desktop artifact carries the macOS
+          arm64/x86_64 natives and the controller mapping database, including individual
+          Joy-Con (L)/(R) entries. It is a runtime adapter: application code only imports
+          the gdx-controllers core API.
+        -->
+        <dependency>
+            <groupId>com.badlogicgames.gdx-controllers</groupId>
+            <artifactId>gdx-controllers-core</artifactId>
+            <version>2.2.4</version>
+        </dependency>
+        <dependency>
+            <groupId>com.badlogicgames.gdx-controllers</groupId>
+            <artifactId>gdx-controllers-desktop</artifactId>
+            <version>2.2.4</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

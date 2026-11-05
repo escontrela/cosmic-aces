@@ -20,6 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
+| `infrastructure.gdx.input` | Entrada de mandos y acciones independientes de dispositivo | Enumeración/selección de un Joy-Con individual, estado por frame, orientación y zona muerta del stick, bindings lógicos, conflictos por contexto y fusión con teclado. Sin pantallas ni reglas de juego. |
 | `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes con sus nombres aprobados, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -1922,17 +1923,22 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
+            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo/controles e input de bienvenida.
             |   1. render() [incluye pausa del ciclo con Ajustes abierto]  2. resize()
-            |   3. handleSettingsInput()  4. dispose()
-            |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
-            |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
+            |   3. handleSettingsInput(MenuInput)  4. menuInput()  5. dispose()
+            |   6. rootOptions(hasSettingsStore) [menú raíz tipado]  7. cycleCameraMode() [lógica pura ←/→]
+            |   8. fitCentered() [ajuste 4:3 puro]  9. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
-            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
+            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/ARMAMENT/CAMERA/CONTROLS.
+            +-- ControlsSettingsState: estado puro de la página Controles (selección, perfil, captura,
+            |   conflictos, stick y restauración); la pantalla aporta layout y persistencia (COS-142).
+            |   1. moveSelection()  2. beginCapture()  3. handleCaptureInput()  4. changeProfile()
+            |   5. selectNextDevice()  6. adjustSelected()  7. resetDefaults()  8. toSettings()
             +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado, editor
-            |   de iniciales y consulta de atracción con Y. Usa la HallOfFameSession y no escribe
-            |   desde render; recibe el AttractCycle, el publisher y la identidad/fase de la visita.
-            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con Y]
+            |   de iniciales y consulta de atracción con la acción de inicio. Usa la HallOfFameSession
+            |   y no escribe desde render; recibe el AttractCycle, el publisher, el GameInput
+            |   compartido y la identidad/fase de la visita.
+            |   1. render() [pausa el ciclo en ENTRY y publica StartRequested con la acción de inicio]
             |   2. resize()  3. dispose()
             |   4. drawBackground()  5. drawPanel()  6. drawFixedText()
             |   7. drawRows()  8. drawEmptyState()  9. handleEntryInput()
@@ -1945,6 +1951,12 @@ com.davidpe.cosmicaces
             |   1. poll()  2. armed()
             |   +-- Action: PREVIOUS_POSITION | NEXT_POSITION | PREVIOUS_LETTER | NEXT_LETTER | CONFIRM.
             |   +-- Keys(left, right, up, down, confirm, space): estado físico de un frame.
+            |   +-- Keys.from(ActionSnapshot): adapta teclado y Joy-Con al mismo contrato.
+            +-- MenuInput: lectura inmutable del snapshot fusionado para bienvenida, ajustes y Hall
+            |   (COS-144); solo flancos de acciones y stick.
+            |   1. from()  2. startGame()/confirm()/back()/settings()
+            |   3. up()/down()/left()/right()  4. videoToggleDestination()/videoRestoreWindow()/
+            |      videoRefreshModes()
             +-- HallOfFameScroll: estado puro del scroll compartido entre visitas.
             |   1. sync()  2. advance()  3. reset()  4. revealRow()  5. firstVisibleRow()
             |   6. fractionalOffset()  7. atEnd()  8. maxOffsetRows()
@@ -1958,8 +1970,8 @@ com.davidpe.cosmicaces
             |   15. entryInitialCellWidth()
             |   +-- Fit / Area / Columns / RowRange [rectángulos y anclas].
             +-- PhaseOneScreen: input, dibujo de mundo/HUD/explosiones, recursos; captura el CameraMode
-            |   de los ajustes y crea su FlightCamera por partida.
-            |   1. render()  2. resize()  3. dispose()
+            |   de los ajustes y crea su FlightCamera por partida; lee el GameInput compartido.
+            |   1. render()  2. resize()  3. hide()  4. dispose()
             |   4. drawGhostwingDrones()  5. spawnGhostwingExplosions()
             |   6. ghostwingExplosionPeak()  7. ghostwingGroupPoints()
             |   8. drawGeran4Uavs()  9. spawnGeran4Explosions()
@@ -1968,9 +1980,13 @@ com.davidpe.cosmicaces
             |   15. drawObjectivePanel()  16. drawResultPanel()  17. drawOverlayPanel()
             |   18. objectiveDetailLines() [copy puro]
             |   19. overlayPanelHeight() / overlayPanelY() [geometría pura de ambos paneles]
+            +-- MissionInput: lectura inmutable del snapshot fusionado para la misión (COS-143).
+            |   1. from()  2. fireHeld()/fireJustPressed()  3. armMissileJustPressed()
+            |   4. ultraJustPressed()  5. minimapJustPressed()  6. backJustPressed()
+            |   7. anyButtonJustPressed()  8. stick()  9. left()/right()/up()/down()
             +-- PhaseOneScreenFlow: ciclo de pantalla y selección input cañón/misil, sin LibGDX.
-            |   1. observeSpace()  2. consumeStartPress()  3. armMissile()
-            |   4. consumeMissileLaunch()  5. consumeMissileEscape()  6. fireTrigger()
+            |   1. observeTrigger()  2. consumeStartPress()  3. armMissile()
+            |   4. consumeMissileLaunch()  5. consumeMissileCancel()  6. fireTrigger()
             |   7. aimDirection()  8. flightControls()  9. resetWeaponMode()
             |   10. showResult()  11. stage()
             +-- ShipHitFlashRenderer: shader blanco compartido para el destello de impacto.
@@ -2037,6 +2053,121 @@ com.davidpe.cosmicaces
             +-- OffscreenEnemyIndicator: flecha HUD hacia el Vesper fuera de cámara.
                 1. compute()  2. avoidReservations()  3. draw()
 ```
+
+### Entrada de mandos y acciones (COS-141)
+
+`infrastructure.gdx.input` concentra la entrada independiente del dispositivo. `GdxGamepadSource`
+envuelve `Controllers.getControllers()` y convierte cada `Controller` en un `GamepadDevice` de solo
+valores; no expone el objeto nativo ni registra listeners globales. La lista se consulta una vez por
+frame desde el hilo de render, de modo que cambiar de pantalla no acumula callbacks y un mando
+desconectado no se conserva. El backend desktop es gdx-controllers 2.2.4 (SDL/Jamepad) y su base de
+mapeos incluye `Joy-Con (L)` y `Joy-Con (R)` individuales para macOS. Un dispositivo `Combined
+Joy-Cons` se enumera como no seleccionable.
+
+`ControllerInput` posee la selección explícita por `uniqueId`, el estado anterior de botones y stick,
+y la puerta de neutralidad. Cada flanco se calcula contra el frame anterior; mantener un botón no
+repite la acción. Tras seleccionar, resetear, perder foco, desconectar/reconectar o cambiar de
+pantalla se exige que todos los botones estén sueltos y el stick dentro de la zona muerta antes de
+volver a actuar. El backend de escritorio asigna un identificador efímero nuevo a cada instancia de
+mando, por lo que la reconexión de un Joy-Con individual recupera la selección solo cuando existe
+exactamente una instancia conectada con el mismo lado y nombre recordados. Un lado distinto, una
+pareja combinada o varios candidatos no se adoptan automáticamente y requieren selección explícita;
+la recuperación no conserva el objeto nativo, reinicia los flancos y vuelve a exigir neutralidad
+completa. La identidad física durable no está disponible en este backend, así que dos Joy-Con del
+mismo lado y nombre conectados de forma alternativa no pueden distinguirse.
+
+`StickSettings` es la regla pura de orientación (intercambio de ejes e inversión independiente) y
+zona muerta radial acotada. Fuera de ella, un eje secundario solo produce dirección si alcanza una
+fracción del eje dominante (sector digital), de modo que un ruido transversal mínimo no inventa una
+diagonal mientras una inclinación diagonal deliberada conserva ambos sentidos. `StickDirection`
+mantiene la semántica digital de cuatro direcciones del pilotaje actual. `ActionBindings` traduce
+acciones lógicas (`FIRE`, `ARM_MISSILE`, `ULTRA`,
+`MINIMAP`, `START_GAME`, `CONFIRM`, `BACK`, `SETTINGS`) a índices físicos, con valores
+predeterminados recuperables derivados del `ControllerMapping` y fallback a índices libres. La
+persistencia y la captura/validación por contexto corresponden a COS-142.
+
+`KeyboardInput` traduce las teclas actuales a las mismas acciones y direcciones; su `reset()` aplica
+la misma espera de neutralidad. `ActionSnapshot.merge` combina teclado y mando por acción: el estado
+mantenido se conserva mientras cualquiera de las dos fuentes lo mantenga y un flanco simultáneo sigue
+siendo un único flanco lógico. `GameInput` es el servicio compartido por `ScreenFactory`; se
+inicializa en `loadSettings()` tras crear el contexto LibGDX, `CosmicAcesGame` toma una muestra por
+frame antes de renderizar y resetea en pausa, reanudación y transición de pantalla. Si el backend
+nativo no carga, el error se registra y el juego continúa con teclado.
+
+### Configuración de controles (COS-142)
+
+La página `Controles` de `WelcomeScreen` reutiliza el layout de Ajustes y delega su estado puro en
+`infrastructure.gdx.screen.ControlsSettingsState`: selección de fila, perfil guardado, captura de un
+botón físico, conflictos y ajustes del stick. La pantalla aporta presentación, el teclado y el estado
+de captura; `GameInput` sigue siendo el único que enumera dispositivos, detecta flancos y traduce
+acciones. `ScreenFactory` inyecta el servicio y aplica `ControllerSettings` en `loadSettings()` antes
+de la primera pantalla.
+
+`ControllerSettings` guarda un perfil lógico `left`/`right`/`any` (nunca un `uniqueId` de conexión),
+los bindings y `StickSettings`, con una marca de bindings personalizados. `GameSettingsStore` los
+persiste bajo claves versionadas `controller.*`: versión no soportada, campos ausentes o corruptos y
+zona muerta fuera de rango vuelven a valores recuperables, y las asignaciones guardadas se sanean
+para no dejar dos acciones incompatibles en el mismo contexto. Restaurar los controles
+predeterminados elimina solo esas claves; vídeo, Astra, armamento y ranking permanecen intactos. Si
+los bindings no están personalizados, el adaptador conserva los predeterminados derivados del mapeo
+del dispositivo.
+
+`ActionContext` define los grupos que deben usar botones distintos: `MISSION` (disparo, misil, Ultra,
+minimapa y volver), `MENU` (confirmar, iniciar, volver y ajustes) y `VIDEO` (confirmar junto a los
+tres controles auxiliares que la página Vídeo reinterpreta). Un botón puede reutilizarse entre
+contextos; `BACK` y `SETTINGS` pueden compartirlo en menús porque el teclado ya usa ESC para ambos.
+La captura consume el primer flanco físico de `GameInput`, muestra nombre/estado e índices físicos y
+se cancela con ESC sin ejecutar la acción recién asignada; aplicar la configuración reinicia la
+puerta de neutralidad. Un perfil guardado se intenta restaurar una sola vez al arrancar y solo si hay
+exactamente un Joy-Con individual de ese lado; después no se adopta otro mando automáticamente.
+
+### Integración del Joy-Con en la misión (COS-143)
+
+`PhaseOneScreen` recibe el `GameInput` compartido desde `ScreenFactory.createPhaseOneScreen()` y lo
+lee una vez al inicio de cada `render()` sin instalar listeners. `MissionInput.from(ActionSnapshot)`
+traduce ese único snapshot fusionado a las decisiones de misión: gatillo mantenido, flanco de
+disparo, armado, Ultra, minimapa, volver y los cuatro sentidos digitales del stick. Así el teclado y
+el mando comparten exactamente el mismo camino y las secuencias se prueban con snapshots simulados
+sin ventana. Los constructores antiguos que no reciben el servicio conservan un lector de teclado
+local; la composición de producción siempre inyecta `GameInput`.
+
+`PhaseOneScreenFlow` conserva las protecciones de la intro y del cañón: un flanco de disparo inicia
+la misión sin disparar, el gatillo debe soltarse antes de volver a actuar, el lanzamiento de misil es
+único y la cancelación solo devuelve a cañón cuando hay un misil armado. Armado, lanzamiento,
+cancelación, Ultra y minimapa usan exclusivamente el flanco del snapshot; el cañón usa el estado
+mantenido. El stick ya transformado por `StickSettings` alimenta tanto la mira del misil como el
+`FlightControls` digital, sin introducir velocidad proporcional ni reglas nuevas. `hide()` resetea el
+servicio compartido para exigir una muestra neutra al volver a mostrar la pantalla; `dispose()` sigue
+siendo dueño solo de los recursos de la pantalla y no libera el input compartido.
+
+### Menús, ajustes y Hall of Fame con Joy-Con (COS-144)
+
+`WelcomeScreen` y `HallOfFameScreen` reciben el `GameInput` compartido desde `ScreenFactory` y leen
+`current()` una vez por `render()`, sin instalar listeners ni consultar el dispositivo físico.
+`MenuInput.from(ActionSnapshot)` traduce ese único snapshot a decisiones de menú: inicio, confirmar,
+volver, ajustes y las cuatro direcciones del stick por flanco. La navegación de todas las páginas de
+Ajustes, la apertura/cierre del modal, la captura de controles y el inicio desde la bienvenida o la
+consulta del Hall comparten así el mismo camino que el teclado. Los constructores antiguos sin
+`GameInput` conservan un lector de teclado de respaldo para pruebas y usos aislados.
+
+La página Vídeo mantiene intactos F/W/R del teclado. Para que el mando alcance esas funciones sin
+añadir acciones nuevas ni cambiar la persistencia `controller.*`, interpreta en su propio contexto
+los flancos existentes: armar cambia el destino (F), Ultra restaura la ventana (W) y minimapa
+actualiza los modos (R); confirmar aplica y volver sale. Fuera de esa página no se ejecuta ninguna
+acción de misión. `GameInput.keyJustPressed` conserva W/R por teclado respetando la puerta de
+neutralidad del teclado.
+
+`HallOfFameScreen` construye el estado del editor con `HallOfFameEntryInput.Keys.from(ActionSnapshot)`:
+las direcciones y confirmar mantenidos cuentan como entradas activas, y cualquier otra acción
+mantenida o pulsada —incluido disparo— bloquea el armado hasta que se suelte. Así el disparo o el
+stick que terminaron la misión no mueven las iniciales ni confirman, confirmar consume un solo flanco
+aunque teclado y mando coincidan, y el reintento tras un fallo de almacenamiento sigue disponible. La
+consulta no escribe y conserva las reglas de ranking y atracción.
+
+La pérdida y recuperación de foco del escritorio se reenvían desde el `Lwjgl3WindowListener` de
+`DesktopLauncher` a `CosmicAcesGame.resetInputAfterFocusChange()`, que resetea el servicio compartido.
+Junto con el reset de transición y pausa/reanudación, esto exige una muestra neutra antes de volver a
+actuar; no se crean listeners por pantalla ni se conserva estado de pantallas descartadas.
 
 ## Comportamiento provisional actual
 

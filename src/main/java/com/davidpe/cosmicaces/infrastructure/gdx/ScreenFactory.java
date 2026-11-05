@@ -8,6 +8,7 @@ import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.domain.game.GameState;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.GameInput;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScreen;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.HallOfFameScroll;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneScreen;
@@ -30,6 +31,7 @@ public final class ScreenFactory {
   private final HallOfFameSession hallOfFameSession;
   private final HallOfFameScroll hallOfFameScroll = new HallOfFameScroll();
   private final AttractCycle attractCycle;
+  private final GameInput gameInput = new GameInput();
 
   public ScreenFactory(GameCoordinator coordinator, GameEventPublisher publisher,
       HallOfFameSession hallOfFameSession, AttractCycle attractCycle) {
@@ -45,10 +47,28 @@ public final class ScreenFactory {
    */
   public void loadSettings() {
     settingsStore.initialize();
+    gameInput.initialize();
+    // Custom bindings, stick rules and the saved logical profile apply before the first screen.
+    gameInput.applyControllerSettings(settingsStore.controllerSettings());
     presentationSettings.loadFrom(settingsStore);
     videoSettings.useSettingsStore(settingsStore);
     videoSettings.restoreSavedPreference();
     hallOfFameSession.load();
+  }
+
+  /** Shared input service: one merged keyboard/gamepad sample per frame. */
+  public GameInput gameInput() {
+    return gameInput;
+  }
+
+  /** Polls input once for the frame; the composition root calls this before rendering. */
+  public void pollInput() {
+    gameInput.poll();
+  }
+
+  /** Clears held state and requires a neutral sample after a transition or focus change. */
+  public void resetInput() {
+    gameInput.reset();
   }
 
   /** Creates the welcome screen for the current welcome state. */
@@ -56,7 +76,7 @@ public final class ScreenFactory {
     GameState state = coordinator.state();
     return new WelcomeScreen(
         publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore,
-        attractCycle);
+        attractCycle, gameInput);
   }
 
   /**
@@ -70,7 +90,7 @@ public final class ScreenFactory {
     PhaseOneGameController controller = createPhaseOneController(settingsStore);
     return new PhaseOneScreen(
         publisher, controller, state.gameId(), state.phase(), coordinator::snapshot,
-        presentationSettings);
+        presentationSettings, gameInput);
   }
 
   /**
@@ -84,7 +104,7 @@ public final class ScreenFactory {
   public Screen createHallOfFameScreen() {
     GameState state = coordinator.state();
     return new HallOfFameScreen(hallOfFameSession, hallOfFameScroll, attractCycle,
-        publisher, state.gameId(), state.phase());
+        publisher, state.gameId(), state.phase(), gameInput);
   }
 
   /** Capture gameplay preferences once for a new run; subsequent edits affect future runs. */

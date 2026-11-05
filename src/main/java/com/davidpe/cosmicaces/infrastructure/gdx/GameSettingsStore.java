@@ -5,11 +5,26 @@ import com.badlogic.gdx.Preferences;
 import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ActionBindings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSettings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSide;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.InputAction;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.StickSettings;
+import java.util.EnumMap;
 
 /** File-backed, device-local storage for user-selected game settings. */
 public final class GameSettingsStore {
 
   private static final String PREFERENCES_FILE = "cosmic-aces-settings";
+  private static final String CONTROLLER_VERSION = "controller.version";
+  private static final int CONTROLLER_VERSION_VALUE = 1;
+  private static final String CONTROLLER_PROFILE = "controller.profile";
+  private static final String CONTROLLER_BINDINGS_CUSTOM = "controller.bindings.custom";
+  private static final String CONTROLLER_BINDING_PREFIX = "controller.binding.";
+  private static final String CONTROLLER_STICK_SWAP = "controller.stick.swapAxes";
+  private static final String CONTROLLER_STICK_INVERT_X = "controller.stick.invertX";
+  private static final String CONTROLLER_STICK_INVERT_Y = "controller.stick.invertY";
+  private static final String CONTROLLER_STICK_DEAD_ZONE = "controller.stick.deadZone";
   private static final String ASTRA_BOTTOM_FRACTION = "presentation.astraBottomFraction";
   private static final String CAMERA_MODE = "presentation.cameraMode";
   private static final String VIDEO_FULLSCREEN = "video.fullscreen";
@@ -122,6 +137,132 @@ public final class GameSettingsStore {
 
   public void saveAstraVariant(AstraVariant variant) {
     preferences().putString(ASTRA_VARIANT, variant.id()).flush();
+  }
+
+  /**
+   * Saved controller profile, bindings and stick rules. A missing, unknown or corrupt version and
+   * every invalid field fall back to recoverable defaults without rewriting the stored values.
+   */
+  public ControllerSettings controllerSettings() {
+    Preferences prefs = preferences();
+    try {
+      if (!prefs.contains(CONTROLLER_VERSION)
+          || readInteger(prefs, CONTROLLER_VERSION, -1) != CONTROLLER_VERSION_VALUE) {
+        return ControllerSettings.DEFAULTS;
+      }
+      ControllerSide profile = ControllerSide.fromId(readString(prefs, CONTROLLER_PROFILE,
+          ControllerSide.UNKNOWN.id()));
+      boolean custom = readBoolean(prefs, CONTROLLER_BINDINGS_CUSTOM, false);
+      ActionBindings bindings = custom
+          ? readControllerBindings(prefs) : ControllerSettings.DEFAULTS.bindings();
+      boolean swap = readBoolean(prefs, CONTROLLER_STICK_SWAP,
+          StickSettings.DEFAULTS.swapAxes());
+      boolean invertX = readBoolean(prefs, CONTROLLER_STICK_INVERT_X,
+          StickSettings.DEFAULTS.invertX());
+      boolean invertY = readBoolean(prefs, CONTROLLER_STICK_INVERT_Y,
+          StickSettings.DEFAULTS.invertY());
+      float deadZone = readFloat(prefs, CONTROLLER_STICK_DEAD_ZONE,
+          StickSettings.DEFAULT_DEAD_ZONE);
+      if (!Float.isFinite(deadZone) || deadZone < StickSettings.MIN_DEAD_ZONE
+          || deadZone > StickSettings.MAX_DEAD_ZONE) {
+        deadZone = StickSettings.DEFAULT_DEAD_ZONE;
+      }
+      return new ControllerSettings(profile, bindings,
+          new StickSettings(swap, invertX, invertY, deadZone), custom);
+    } catch (RuntimeException invalidSavedControllerData) {
+      return ControllerSettings.DEFAULTS;
+    }
+  }
+
+  public void saveControllerSettings(ControllerSettings settings) {
+    Preferences prefs = preferences();
+    prefs.putInteger(CONTROLLER_VERSION, CONTROLLER_VERSION_VALUE)
+        .putString(CONTROLLER_PROFILE, settings.profile().id())
+        .putBoolean(CONTROLLER_BINDINGS_CUSTOM, settings.bindingsCustomised());
+    settings.bindings().asMap().forEach((action, button) ->
+        prefs.putInteger(CONTROLLER_BINDING_PREFIX + action.name(), button));
+    StickSettings stick = settings.stickSettings();
+    prefs.putBoolean(CONTROLLER_STICK_SWAP, stick.swapAxes())
+        .putBoolean(CONTROLLER_STICK_INVERT_X, stick.invertX())
+        .putBoolean(CONTROLLER_STICK_INVERT_Y, stick.invertY())
+        .putFloat(CONTROLLER_STICK_DEAD_ZONE, stick.deadZone())
+        .flush();
+  }
+
+  /** Removes only controller keys; video, Astra, armament and ranking settings stay untouched. */
+  public void resetControllerSettings() {
+    Preferences prefs = preferences();
+    prefs.remove(CONTROLLER_VERSION);
+    prefs.remove(CONTROLLER_PROFILE);
+    prefs.remove(CONTROLLER_BINDINGS_CUSTOM);
+    for (InputAction action : InputAction.values()) {
+      prefs.remove(CONTROLLER_BINDING_PREFIX + action.name());
+    }
+    prefs.remove(CONTROLLER_STICK_SWAP);
+    prefs.remove(CONTROLLER_STICK_INVERT_X);
+    prefs.remove(CONTROLLER_STICK_INVERT_Y);
+    prefs.remove(CONTROLLER_STICK_DEAD_ZONE);
+    prefs.flush();
+  }
+
+  /**
+   * Reads every saved binding, falling back to the generic default per missing/invalid action and
+   * replacing only the later action of an incompatible duplicate. Values from different contexts
+   * may share a button.
+   */
+  private static ActionBindings readControllerBindings(Preferences prefs) {
+    ActionBindings defaults = ActionBindings.genericDefaults();
+    EnumMap<InputAction, Integer> accepted = new EnumMap<>(InputAction.class);
+    for (InputAction action : InputAction.values()) {
+      int candidate = readButton(prefs, action, defaults.buttonFor(action));
+      int fallback = defaults.buttonFor(action);
+      if (ActionBindings.conflictIn(accepted, action, candidate) != null) {
+        candidate = fallback;
+      }
+      while (ActionBindings.conflictIn(accepted, action, candidate) != null) {
+        candidate++;
+      }
+      accepted.put(action, candidate);
+    }
+    return ActionBindings.ofCompleteMap(accepted);
+  }
+
+  private static int readButton(Preferences prefs, InputAction action, int defaultValue) {
+    String key = CONTROLLER_BINDING_PREFIX + action.name();
+    int button = readInteger(prefs, key, defaultValue);
+    return button >= 0 ? button : defaultValue;
+  }
+
+  private static int readInteger(Preferences prefs, String key, int defaultValue) {
+    try {
+      return prefs.getInteger(key, defaultValue);
+    } catch (RuntimeException invalidStoredValue) {
+      return defaultValue;
+    }
+  }
+
+  private static float readFloat(Preferences prefs, String key, float defaultValue) {
+    try {
+      return prefs.getFloat(key, defaultValue);
+    } catch (RuntimeException invalidStoredValue) {
+      return defaultValue;
+    }
+  }
+
+  private static boolean readBoolean(Preferences prefs, String key, boolean defaultValue) {
+    try {
+      return prefs.getBoolean(key, defaultValue);
+    } catch (RuntimeException invalidStoredValue) {
+      return defaultValue;
+    }
+  }
+
+  private static String readString(Preferences prefs, String key, String defaultValue) {
+    try {
+      return prefs.getString(key, defaultValue);
+    } catch (RuntimeException invalidStoredValue) {
+      return defaultValue;
+    }
   }
 
   public SavedVideoPreference savedVideoPreference() {

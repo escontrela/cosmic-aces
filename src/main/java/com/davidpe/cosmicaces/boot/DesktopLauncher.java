@@ -1,6 +1,8 @@
 package com.davidpe.cosmicaces.boot;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
+import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import com.badlogic.gdx.backends.lwjgl3.Lwjgl3WindowAdapter;
 import com.davidpe.cosmicaces.application.CosmicAcesGame;
 import com.davidpe.cosmicaces.application.score.HallOfFameSession;
 import com.davidpe.cosmicaces.infrastructure.persistence.LocalHallOfFameRepository;
@@ -14,9 +16,23 @@ public final class DesktopLauncher {
 
   public static void main(String[] args) {
 
-    new Lwjgl3Application(
-        new CosmicAcesGame(createHallOfFameSession()),
-        DesktopConfiguration.getInstance().createConfiguration());
+    CosmicAcesGame game = new CosmicAcesGame(createHallOfFameSession());
+    Lwjgl3ApplicationConfiguration configuration =
+        DesktopConfiguration.getInstance().createConfiguration();
+    // Focus loss is a window event, not an application pause: require neutral input on both edges so
+    // a held Joy-Con button or stick cannot act in the screen that regains focus.
+    configuration.setWindowListener(new Lwjgl3WindowAdapter() {
+      @Override
+      public void focusLost() {
+        game.resetInputAfterFocusChange();
+      }
+
+      @Override
+      public void focusGained() {
+        game.resetInputAfterFocusChange();
+      }
+    });
+    new Lwjgl3Application(game, configuration);
   }
 
   /**
