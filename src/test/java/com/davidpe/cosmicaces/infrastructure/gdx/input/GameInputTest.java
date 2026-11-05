@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.badlogic.gdx.Input;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Facade behavior: merged samples, keyboard-only operation and graceful backend failure. */
@@ -115,6 +116,125 @@ class GameInputTest {
     assertFalse(input.neutralRequired());
     device.setButton(0, true);
     assertTrue(input.poll().justPressed(InputAction.FIRE));
+  }
+
+  @Test
+  void appliesCustomBindingsAndStickAndClearsThemBackToDerivedDefaults() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("joycon-l", "Joy-Con (L)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.selectDevice("joycon-l");
+    input.poll();
+    ActionBindings custom = ActionBindings.genericDefaults()
+        .withBinding(InputAction.FIRE, 9);
+    StickSettings stick = new StickSettings(true, true, false, 0.4f);
+
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT, custom, stick, true));
+
+    assertEquals(9, input.bindings().buttonFor(InputAction.FIRE));
+    assertEquals(stick, input.stickSettings());
+
+    input.applyControllerSettings(ControllerSettings.DEFAULTS);
+    input.poll();
+
+    assertEquals(ActionBindings.defaults(JOYCON_MAPPING).asMap(), input.bindings().asMap());
+    assertEquals(StickSettings.DEFAULTS, input.stickSettings());
+  }
+
+  @Test
+  void restoresTheSavedProfileOnlyOnceWhenExactlyOneMatchingJoyConExists() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("joycon-l", "Joy-Con (L)"));
+    source.add(joyCon("joycon-r", "Joy-Con (R)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+
+    input.poll();
+    assertEquals("joycon-l", input.selectedDevice().uniqueId());
+
+    source.clear();
+    source.add(joyCon("joycon-r", "Joy-Con (R)"));
+    input.poll();
+    assertEquals("joycon-l", input.selectedDevice().uniqueId(),
+        "a reconnected or different device is never adopted automatically");
+    assertFalse(input.selectedDevice().connected());
+  }
+
+  @Test
+  void explicitSelectionWinsOverTheSavedProfile() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("joycon-l", "Joy-Con (L)"));
+    source.add(joyCon("joycon-r", "Joy-Con (R)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.selectDevice("joycon-r");
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+
+    input.poll();
+
+    assertEquals("joycon-r", input.selectedDevice().uniqueId());
+  }
+
+  @Test
+  void ambiguousMatchingProfilesAreNotSelectedAutomatically() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("joycon-l-1", "Joy-Con (L)"));
+    source.add(joyCon("joycon-l-2", "Joy-Con (L)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+
+    input.poll();
+
+    assertNull(input.selectedDevice());
+  }
+
+  @Test
+  void profileRestoreWaitsForADeviceAndThenSelectsIt() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+    input.poll();
+    assertNull(input.selectedDevice());
+
+    source.add(joyCon("joycon-l", "Joy-Con (L)"));
+    input.poll();
+
+    assertEquals("joycon-l", input.selectedDevice().uniqueId());
+  }
+
+  @Test
+  void savedProfileWaitsForItsSideWithoutAdoptingAnotherDevice() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    source.add(joyCon("joycon-r", "Joy-Con (R)"));
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.applyControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+
+    input.poll();
+    assertNull(input.selectedDevice());
+
+    source.add(joyCon("joycon-l", "Joy-Con (L)"));
+    input.poll();
+    assertEquals("joycon-l", input.selectedDevice().uniqueId());
+  }
+
+  @Test
+  void exposesTheRawPhysicalEdgeUsedByTheCapturePage() {
+    FakeGamepadSource source = new FakeGamepadSource();
+    FakeGamepadDevice device = joyCon("joycon-l", "Joy-Con (L)");
+    source.add(device);
+    GameInput input = new GameInput(source, new KeyboardInput(new FakeKeyState()));
+    input.selectDevice("joycon-l");
+    input.poll();
+
+    device.setButton(7, true);
+    input.poll();
+
+    assertEquals(7, input.firstJustPressedButton());
+    assertEquals(Set.of(7), input.controllerSnapshot().justPressedButtons());
   }
 
   @Test

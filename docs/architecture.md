@@ -20,7 +20,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
-| `infrastructure.gdx.input` | Entrada de mandos y acciones independientes de dispositivo | Enumeración/selección de un Joy-Con individual, estado por frame, orientación y zona muerta del stick, bindings lógicos y fusión con teclado. Sin pantallas ni reglas de juego. |
+| `infrastructure.gdx.input` | Entrada de mandos y acciones independientes de dispositivo | Enumeración/selección de un Joy-Con individual, estado por frame, orientación y zona muerta del stick, bindings lógicos, conflictos por contexto y fusión con teclado. Sin pantallas ni reglas de juego. |
 | `infrastructure.gdx.scenery` | Catálogo, propiedad de atlas y dibujo reutilizable del escenario | Repetición del suelo, parches de pueblo 1:1 desde los PNG existentes con sus nombres aprobados, dibujo de instancias y bases; las pantallas son dueñas del renderer y lo liberan en `dispose()`. |
 | `infrastructure.gdx.screen` | Pantallas concretas y catálogos de geometría de la pantalla | Input, cámara, viewport, layout, fuentes, geometría de tiles y ciclo de vida de recursos. |
 | `infrastructure.gdx.event` | Distribución de eventos | Bus, publicación y cancelación de suscripciones. |
@@ -1923,13 +1923,17 @@ com.davidpe.cosmicaces
         |       4. burstsSince() [helper puro del delta de emisiones]  5. playExplosions()
         |       6. explosionCues() [helper puro de destrucciones frescas]  7. dispose()
         +-- screen
-            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo e input de bienvenida.
+            +-- WelcomeScreen: inicio con fondo/logo PNG, estrellas, ajustes de vídeo/cámara/encuadre/velocidades/modelo/controles e input de bienvenida.
             |   1. render() [incluye pausa del ciclo con Ajustes abierto]  2. resize()
             |   3. handleSettingsInput()  4. dispose()
             |   5. rootOptions(hasSettingsStore) [menú raíz tipado]  6. cycleCameraMode() [lógica pura ←/→]
             |   7. fitCentered() [ajuste 4:3 puro]  8. Fit [rectángulo del arte]
             |   +-- RootOption: entrada del menú raíz con etiqueta y página destino.
-            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/CAMERA.
+            |   +-- SettingsPage: páginas CLOSED/ROOT/VIDEO/ASTRA/ASTRA_MODEL/SPEEDS/ARMAMENT/CAMERA/CONTROLS.
+            +-- ControlsSettingsState: estado puro de la página Controles (selección, perfil, captura,
+            |   conflictos, stick y restauración); la pantalla aporta layout y persistencia (COS-142).
+            |   1. moveSelection()  2. beginCapture()  3. handleCaptureInput()  4. changeProfile()
+            |   5. selectNextDevice()  6. adjustSelected()  7. resetDefaults()  8. toSettings()
             +-- HallOfFameScreen: Hall arcade con fondo PNG, tabla top 50, scroll recortado, editor
             |   de iniciales y consulta de atracción con Y. Usa la HallOfFameSession y no escribe
             |   desde render; recibe el AttractCycle, el publisher y la identidad/fase de la visita.
@@ -2070,6 +2074,32 @@ siendo un único flanco lógico. `GameInput` es el servicio compartido por `Scre
 inicializa en `loadSettings()` tras crear el contexto LibGDX, `CosmicAcesGame` toma una muestra por
 frame antes de renderizar y resetea en pausa, reanudación y transición de pantalla. Si el backend
 nativo no carga, el error se registra y el juego continúa con teclado.
+
+### Configuración de controles (COS-142)
+
+La página `Controles` de `WelcomeScreen` reutiliza el layout de Ajustes y delega su estado puro en
+`infrastructure.gdx.screen.ControlsSettingsState`: selección de fila, perfil guardado, captura de un
+botón físico, conflictos y ajustes del stick. La pantalla aporta presentación, el teclado y el estado
+de captura; `GameInput` sigue siendo el único que enumera dispositivos, detecta flancos y traduce
+acciones. `ScreenFactory` inyecta el servicio y aplica `ControllerSettings` en `loadSettings()` antes
+de la primera pantalla.
+
+`ControllerSettings` guarda un perfil lógico `left`/`right`/`any` (nunca un `uniqueId` de conexión),
+los bindings y `StickSettings`, con una marca de bindings personalizados. `GameSettingsStore` los
+persiste bajo claves versionadas `controller.*`: versión no soportada, campos ausentes o corruptos y
+zona muerta fuera de rango vuelven a valores recuperables, y las asignaciones guardadas se sanean
+para no dejar dos acciones incompatibles en el mismo contexto. Restaurar los controles
+predeterminados elimina solo esas claves; vídeo, Astra, armamento y ranking permanecen intactos. Si
+los bindings no están personalizados, el adaptador conserva los predeterminados derivados del mapeo
+del dispositivo.
+
+`ActionContext` define los grupos que deben usar botones distintos: `MISSION` (disparo, misil, Ultra,
+minimapa y volver) y `MENU` (confirmar, iniciar, volver y ajustes). Un botón puede reutilizarse entre
+contextos; `BACK` y `SETTINGS` pueden compartirlo en menús porque el teclado ya usa ESC para ambos.
+La captura consume el primer flanco físico de `GameInput`, muestra nombre/estado e índices físicos y
+se cancela con ESC sin ejecutar la acción recién asignada; aplicar la configuración reinicia la
+puerta de neutralidad. Un perfil guardado se intenta restaurar una sola vez al arrancar y solo si hay
+exactamente un Joy-Con individual de ese lado; después no se adopta otro mando automáticamente.
 
 ## Comportamiento provisional actual
 

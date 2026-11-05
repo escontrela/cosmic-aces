@@ -2,6 +2,7 @@ package com.davidpe.cosmicaces.infrastructure.gdx.input;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,5 +82,57 @@ class ActionBindingsTest {
 
     assertEquals(Set.of(InputAction.FIRE, InputAction.CONFIRM),
         bindings.actionsFor(bindings.buttonFor(InputAction.FIRE)));
+  }
+
+  @Test
+  void rejectsIncompatibleActionsInsideMissionAndMenuContexts() {
+    ActionBindings bindings = ActionBindings.genericDefaults();
+
+    assertEquals(InputAction.MINIMAP,
+        bindings.conflictingAction(InputAction.FIRE,
+            bindings.buttonFor(InputAction.MINIMAP)));
+    assertEquals(InputAction.BACK,
+        bindings.conflictingAction(InputAction.ARM_MISSILE,
+            bindings.buttonFor(InputAction.BACK)));
+    assertEquals(InputAction.BACK,
+        bindings.conflictingAction(InputAction.CONFIRM,
+            bindings.buttonFor(InputAction.BACK)));
+    assertEquals(InputAction.START_GAME,
+        bindings.conflictingAction(InputAction.SETTINGS,
+            bindings.buttonFor(InputAction.START_GAME)));
+  }
+
+  @Test
+  void allowsTheExistingBackAndSettingsNavigationGesture() {
+    ActionBindings bindings = ActionBindings.genericDefaults();
+
+    assertNull(bindings.conflictingAction(InputAction.BACK,
+        bindings.buttonFor(InputAction.SETTINGS)));
+    assertNull(bindings.conflictingAction(InputAction.SETTINGS,
+        bindings.buttonFor(InputAction.BACK)));
+  }
+
+  @Test
+  void allowsReusingAButtonAcrossDifferentContexts() {
+    ActionBindings bindings = ActionBindings.genericDefaults();
+
+    assertNull(bindings.conflictingAction(InputAction.FIRE,
+        bindings.buttonFor(InputAction.CONFIRM)));
+    assertNull(bindings.conflictingAction(InputAction.FIRE,
+        bindings.buttonFor(InputAction.START_GAME)));
+    assertNull(bindings.conflictingAction(InputAction.ULTRA,
+        bindings.buttonFor(InputAction.SETTINGS)));
+  }
+
+  @Test
+  void completeMapsMustCoverEveryActionWithNonNegativeButtons() {
+    ActionBindings bindings = ActionBindings.genericDefaults();
+
+    assertEquals(bindings.asMap(),
+        ActionBindings.ofCompleteMap(bindings.asMap()).asMap());
+    assertThrows(IllegalArgumentException.class,
+        () -> ActionBindings.ofCompleteMap(java.util.Map.of(InputAction.FIRE, 0)));
+    assertThrows(IllegalArgumentException.class,
+        () -> ActionBindings.ofCompleteMap(java.util.Map.of(InputAction.FIRE, -1)));
   }
 }

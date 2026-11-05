@@ -15,6 +15,27 @@ public enum ControllerSide {
   RIGHT,
   UNKNOWN;
 
+  /** Stable identifier persisted in preferences; never derived from a connection index. */
+  public String id() {
+    return switch (this) {
+      case LEFT -> "left";
+      case RIGHT -> "right";
+      case UNKNOWN -> "any";
+    };
+  }
+
+  /** Restores a saved profile; a missing or unknown value resolves to {@link #UNKNOWN}. */
+  public static ControllerSide fromId(String id) {
+    if (id == null) {
+      return UNKNOWN;
+    }
+    return switch (id.trim().toLowerCase(Locale.ROOT)) {
+      case "left" -> LEFT;
+      case "right" -> RIGHT;
+      default -> UNKNOWN;
+    };
+  }
+
   /** Classifies a device name without depending on a particular backend spelling. */
   public static ControllerSide fromName(String deviceName) {
     if (!isJoyCon(deviceName) || isCombined(deviceName)) {

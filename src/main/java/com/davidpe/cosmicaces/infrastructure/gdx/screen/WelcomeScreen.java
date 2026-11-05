@@ -28,6 +28,11 @@ import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.VideoDisplaySettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ActionBindings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ActionSnapshot;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSettings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.GameInput;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.StickSettings;
 import java.util.List;
 import java.util.Objects;
 
@@ -54,11 +59,13 @@ public final class WelcomeScreen extends ScreenAdapter {
   private static final float BLINK_PERIOD = 0.45f;
   private static final float SETTINGS_ROW_HEIGHT = 27f;
   private static final int MAX_VISIBLE_VIDEO_MODES = 10;
+  private static final float CONTROLS_ROW_HEIGHT = 24f;
   private static final List<RootOption> ROOT_OPTIONS_NO_STORE =
-      List.of(RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.CAMERA);
+      List.of(RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.CAMERA,
+          RootOption.CONTROLS);
   private static final List<RootOption> ROOT_OPTIONS = List.of(
       RootOption.VIDEO, RootOption.ASTRA_FRAMING, RootOption.ASTRA_SPEEDS,
-      RootOption.ASTRA_MODEL, RootOption.ARMAMENT, RootOption.CAMERA);
+      RootOption.ASTRA_MODEL, RootOption.ARMAMENT, RootOption.CAMERA, RootOption.CONTROLS);
 
   private final GameEventPublisher publisher;
   private final GameId gameId;
@@ -77,6 +84,8 @@ public final class WelcomeScreen extends ScreenAdapter {
   private final GamePresentationSettings presentationSettings;
   private final GameSettingsStore settingsStore;
   private final AttractCycle attractCycle;
+  private final GameInput gameInput;
+  private ControlsSettingsState controlsState;
   private SettingsPage settingsPage = SettingsPage.CLOSED;
   private VideoDisplaySettings.DisplayCatalog videoCatalog;
   private int rootSelection;
@@ -110,6 +119,13 @@ public final class WelcomeScreen extends ScreenAdapter {
   public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
       VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
       GameSettingsStore settingsStore, AttractCycle attractCycle) {
+    this(publisher, gameId, phase, videoSettings, presentationSettings, settingsStore,
+        attractCycle, null);
+  }
+
+  public WelcomeScreen(GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      VideoDisplaySettings videoSettings, GamePresentationSettings presentationSettings,
+      GameSettingsStore settingsStore, AttractCycle attractCycle, GameInput gameInput) {
     this.publisher = publisher;
     this.gameId = gameId;
     this.phase = phase;
@@ -117,6 +133,7 @@ public final class WelcomeScreen extends ScreenAdapter {
     this.presentationSettings = presentationSettings;
     this.settingsStore = settingsStore;
     this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
+    this.gameInput = gameInput;
     if (settingsStore != null) {
       flightSpeeds = settingsStore.flightSpeeds();
       astraMissilesPerLife = settingsStore.astraMissilesPerLife();
@@ -272,6 +289,19 @@ public final class WelcomeScreen extends ScreenAdapter {
       }
       return;
     }
+    if (settingsPage == SettingsPage.CONTROLS) {
+      ensureControlsState();
+      refreshControls();
+      if (controlsState.capturing()) {
+        int button = gameInput == null ? -1 : gameInput.firstJustPressedButton();
+        ControlsSettingsState.CaptureOutcome outcome = controlsState.handleCaptureInput(
+            Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE), button);
+        if (outcome == ControlsSettingsState.CaptureOutcome.APPLIED) {
+          persistControls();
+        }
+        return;
+      }
+    }
     if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
       if (settingsPage == SettingsPage.ROOT) {
         settingsPage = SettingsPage.CLOSED;
@@ -288,7 +318,121 @@ public final class WelcomeScreen extends ScreenAdapter {
       case SPEEDS -> handleSpeedInput();
       case ARMAMENT -> handleArmamentInput();
       case CAMERA -> handleCameraInput();
+      case CONTROLS -> handleControlsInput();
       case CLOSED -> { }
+    }
+  }
+
+  private void handleControlsInput() {
+    ControlsSettingsState state = controlsState;
+    if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+      state.moveSelection(-1);
+    }
+    if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+      state.moveSelection(1);
+    }
+    int horizontal = Gdx.input.isKeyJustPressed(Input.Keys.LEFT) ? -1
+        : Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) ? 1 : 0;
+    if (horizontal != 0) {
+      switch (state.selectedRow()) {
+        case PROFILE -> {
+          if (state.changeProfile(horizontal)) {
+            persistControls();
+          }
+        }
+        case DEVICE -> selectControlsDevice(horizontal);
+        default -> {
+          if (state.adjustSelected(horizontal)) {
+            persistControls();
+          }
+        }
+      }
+    }
+    if (!Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+      return;
+    }
+    switch (state.selectedRow()) {
+      case DEVICE -> selectControlsDevice(1);
+      case PROFILE -> {
+        if (state.changeProfile(1)) {
+          persistControls();
+        }
+      }
+      case RESET_DEFAULTS -> resetControlsToDefaults();
+      default -> {
+        if (state.beginCapture() && gameInput != null) {
+          // The button that opened the capture must not also complete it.
+          gameInput.reset();
+        }
+      }
+    }
+  }
+
+  private void selectControlsDevice(int delta) {
+    if (gameInput == null) {
+      controlsState.noteSelectionFailure();
+      return;
+    }
+    String uniqueId = controlsState.selectNextDevice(delta);
+    if (uniqueId == null) {
+      return;
+    }
+    if (!gameInput.selectDevice(uniqueId)) {
+      controlsState.noteSelectionFailure();
+      return;
+    }
+    persistControls();
+  }
+
+  private void ensureControlsState() {
+    if (controlsState != null) {
+      return;
+    }
+    ControllerSettings stored = settingsStore == null
+        ? ControllerSettings.DEFAULTS : settingsStore.controllerSettings();
+    ActionBindings effectiveBindings = gameInput == null
+        ? stored.bindings() : gameInput.bindings();
+    StickSettings effectiveStick = gameInput == null
+        ? stored.stickSettings() : gameInput.stickSettings();
+    controlsState = ControlsSettingsState.from(stored, effectiveBindings, effectiveStick);
+  }
+
+  private void refreshControls() {
+    if (controlsState == null) {
+      return;
+    }
+    if (gameInput == null) {
+      controlsState.refresh(List.of(), null, null, ActionSnapshot.EMPTY);
+      return;
+    }
+    controlsState.refresh(gameInput.devices(), gameInput.selectedDevice(),
+        gameInput.controllerError(), gameInput.current());
+    if (!controlsState.customBindings()) {
+      controlsState.syncEffectiveBindings(gameInput.bindings());
+    }
+  }
+
+  private void persistControls() {
+    if (controlsState == null) {
+      return;
+    }
+    ControllerSettings settings = controlsState.toSettings();
+    if (gameInput != null) {
+      gameInput.applyControllerSettings(settings);
+    }
+    if (settingsStore != null) {
+      settingsStore.saveControllerSettings(settings);
+    }
+  }
+
+  private void resetControlsToDefaults() {
+    controlsState.resetDefaults();
+    if (gameInput != null) {
+      gameInput.applyControllerSettings(controlsState.toSettings());
+    }
+    if (settingsStore != null) {
+      // Removes only controller keys; other settings sections are preserved.
+      settingsStore.resetControllerSettings();
     }
   }
 
@@ -522,6 +666,8 @@ public final class WelcomeScreen extends ScreenAdapter {
       drawArmamentSettings(left, top - 112f);
     } else if (settingsPage == SettingsPage.CAMERA) {
       drawCameraSettings(left, top - 112f);
+    } else if (settingsPage == SettingsPage.CONTROLS) {
+      drawControlsSettings(left, top - 112f, panelY, panelWidth);
     }
     batch.end();
   }
@@ -535,6 +681,7 @@ public final class WelcomeScreen extends ScreenAdapter {
       case SPEEDS -> "AJUSTES  >  VELOCIDADES DE ASTRA";
       case ARMAMENT -> "AJUSTES  >  ARMAMENTO";
       case CAMERA -> "AJUSTES  >  CÁMARA";
+      case CONTROLS -> "AJUSTES  >  CONTROLES";
       case CLOSED -> "";
     };
   }
@@ -619,6 +766,61 @@ public final class WelcomeScreen extends ScreenAdapter {
         left, hintTop - 60f);
   }
 
+  private void drawControlsSettings(float left, float top, float panelY, float panelWidth) {
+    ensureControlsState();
+    refreshControls();
+    ControlsSettingsState state = controlsState;
+    settingsFont.setColor(Color.WHITE);
+    settingsFont.draw(batch, "Mando: " + state.selectedStatus(), left, top);
+    settingsFont.draw(batch, "Perfil: " + ControlsSettingsState.profileLabel(state.profile()),
+        left, top - 22f);
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch, "Dispositivos: " + state.deviceSummary(), left, top - 44f);
+    settingsFont.draw(batch, state.inputSummary(), left, top - 66f);
+    if (!state.message().isBlank()) {
+      settingsFont.setColor(state.capturing() ? Color.CYAN : Color.YELLOW);
+      settingsFont.draw(batch, state.message(), left, top - 90f);
+    }
+
+    float rowsTop = top - 118f;
+    float right = left + Math.max(340f, panelWidth / 2f);
+    ControlsSettingsState.Row[] rows = ControlsSettingsState.Row.values();
+    int leftRows = 10;
+    for (int index = 0; index < rows.length; index++) {
+      ControlsSettingsState.Row row = rows[index];
+      boolean inLeftColumn = index < leftRows;
+      float rowX = inLeftColumn ? left : right;
+      float rowY = rowsTop - (inLeftColumn ? index : index - leftRows) * CONTROLS_ROW_HEIGHT;
+      settingsFont.setColor(index == state.selection() ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, (index == state.selection() ? ">  " : "   ")
+          + ControlsSettingsState.rowLabel(row) + ": " + controlsRowValue(state, row),
+          rowX, rowY);
+    }
+
+    settingsFont.setColor(Color.LIGHT_GRAY);
+    settingsFont.draw(batch,
+        "↑/↓ mover   ←/→ cambiar   ENTER seleccionar o capturar   ESC volver",
+        left, panelY + 62f);
+    settingsFont.draw(batch, "El teclado no cambia; ESC cancela una captura sin salir.",
+        left, panelY + 38f);
+  }
+
+  private static String controlsRowValue(ControlsSettingsState state,
+      ControlsSettingsState.Row row) {
+    return switch (row) {
+      case DEVICE -> state.selectedDevice() == null ? "ninguno"
+          : state.selectedDevice().name();
+      case PROFILE -> ControlsSettingsState.profileLabel(state.profile());
+      case SWAP_AXES -> state.stickSettings().swapAxes() ? "sí" : "no";
+      case INVERT_X -> state.stickSettings().invertX() ? "sí" : "no";
+      case INVERT_Y -> state.stickSettings().invertY() ? "sí" : "no";
+      case DEAD_ZONE -> Math.round(state.stickSettings().deadZone() * 100f) + "%";
+      case RESET_DEFAULTS -> "ENTER";
+      default -> state.capturingAction() == row.action()
+          ? "pulsa un botón…" : "botón " + state.actionButton(row.action());
+    };
+  }
+
   /** User-facing camera mode names used only by the settings overlay. */
   private static String cameraModeLabel(CameraMode mode) {
     return switch (mode) {
@@ -701,7 +903,9 @@ public final class WelcomeScreen extends ScreenAdapter {
     settingsFont.draw(batch, settingsMessage, left, panelY + 36f);
   }
 
-  enum SettingsPage { CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, ARMAMENT, CAMERA }
+  enum SettingsPage {
+    CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, ARMAMENT, CAMERA, CONTROLS
+  }
 
   /**
    * A root settings entry. Each option owns its destination page so adding one cannot fall through
@@ -713,7 +917,8 @@ public final class WelcomeScreen extends ScreenAdapter {
     ASTRA_SPEEDS("Velocidades de Astra", SettingsPage.SPEEDS),
     ASTRA_MODEL("Nave de Astra", SettingsPage.ASTRA_MODEL),
     ARMAMENT("Armamento", SettingsPage.ARMAMENT),
-    CAMERA("Cámara", SettingsPage.CAMERA);
+    CAMERA("Cámara", SettingsPage.CAMERA),
+    CONTROLS("Controles", SettingsPage.CONTROLS);
 
     private final String label;
     private final SettingsPage page;

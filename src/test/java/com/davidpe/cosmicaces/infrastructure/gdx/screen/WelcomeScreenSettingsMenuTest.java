@@ -12,9 +12,9 @@ class WelcomeScreenSettingsMenuTest {
   @Test
   void keepsTheExistingSectionsAndAddsTheCameraSelectorInBothModes() {
     assertEquals(List.of("Vídeo", "Encuadre de Astra", "Velocidades de Astra", "Nave de Astra",
-            "Armamento", "Cámara"),
+            "Armamento", "Cámara", "Controles"),
         labels(WelcomeScreen.rootOptions(true)));
-    assertEquals(List.of("Vídeo", "Encuadre de Astra", "Cámara"),
+    assertEquals(List.of("Vídeo", "Encuadre de Astra", "Cámara", "Controles"),
         labels(WelcomeScreen.rootOptions(false)));
   }
 
@@ -29,6 +29,8 @@ class WelcomeScreenSettingsMenuTest {
         "the camera page must be reachable from the root menu");
     assertTrue(pages.contains(WelcomeScreen.SettingsPage.ARMAMENT),
         "the armament page must be reachable when settings are persisted");
+    assertTrue(pages.contains(WelcomeScreen.SettingsPage.CONTROLS),
+        "the controls page must be reachable from the root menu");
   }
 
   @Test

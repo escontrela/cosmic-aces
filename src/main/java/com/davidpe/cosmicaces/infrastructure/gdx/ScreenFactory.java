@@ -48,6 +48,8 @@ public final class ScreenFactory {
   public void loadSettings() {
     settingsStore.initialize();
     gameInput.initialize();
+    // Custom bindings, stick rules and the saved logical profile apply before the first screen.
+    gameInput.applyControllerSettings(settingsStore.controllerSettings());
     presentationSettings.loadFrom(settingsStore);
     videoSettings.useSettingsStore(settingsStore);
     videoSettings.restoreSavedPreference();
@@ -74,7 +76,7 @@ public final class ScreenFactory {
     GameState state = coordinator.state();
     return new WelcomeScreen(
         publisher, state.gameId(), state.phase(), videoSettings, presentationSettings, settingsStore,
-        attractCycle);
+        attractCycle, gameInput);
   }
 
   /**

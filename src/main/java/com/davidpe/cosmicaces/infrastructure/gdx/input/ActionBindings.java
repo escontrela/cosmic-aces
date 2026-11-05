@@ -54,10 +54,64 @@ public final class ActionBindings {
     return defaults(ControllerMappingView.unknown());
   }
 
+  /**
+   * Builds a complete immutable mapping. Every action must be present with a non-negative index;
+   * used by persistence after validating and resolving conflicting saved values.
+   */
+  public static ActionBindings ofCompleteMap(Map<InputAction, Integer> values) {
+    Objects.requireNonNull(values, "values");
+    EnumMap<InputAction, Integer> copy = new EnumMap<>(InputAction.class);
+    for (InputAction action : InputAction.values()) {
+      Integer button = values.get(action);
+      if (button == null || button < 0) {
+        throw new IllegalArgumentException("Falta el botón físico de " + action);
+      }
+      copy.put(action, button);
+    }
+    return new ActionBindings(copy);
+  }
+
   /** Physical button bound to the action, or {@link ControllerMappingView#UNDEFINED}. */
   public int buttonFor(InputAction action) {
     Objects.requireNonNull(action, "action");
     return byAction.getOrDefault(action, ControllerMappingView.UNDEFINED);
+  }
+
+  /**
+   * First action that would execute together with {@code action} if both used {@code button}.
+   *
+   * @return the conflicting action, or {@code null} when the binding is compatible
+   */
+  public InputAction conflictingAction(InputAction action, int button) {
+    return conflictIn(byAction, action, button);
+  }
+
+  /**
+   * Pure conflict check over any mapping, including a partially built one.
+   *
+   * @return the conflicting action, or {@code null}
+   */
+  public static InputAction conflictIn(Map<InputAction, Integer> bindings, InputAction action,
+      int button) {
+    Objects.requireNonNull(bindings, "bindings");
+    Objects.requireNonNull(action, "action");
+    if (button < 0) {
+      return null;
+    }
+    for (ActionContext context : ActionContext.values()) {
+      if (!context.contains(action)) {
+        continue;
+      }
+      for (InputAction other : context.actions()) {
+        if (other == action || context.allowsSharedGesture(action, other)) {
+          continue;
+        }
+        if (Integer.valueOf(button).equals(bindings.get(other))) {
+          return other;
+        }
+      }
+    }
+    return null;
   }
 
   /** Returns a new mapping with one action rebound; the receiver is unchanged. */

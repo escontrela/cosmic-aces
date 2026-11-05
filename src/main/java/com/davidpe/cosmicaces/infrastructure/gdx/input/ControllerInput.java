@@ -165,6 +165,13 @@ public final class ControllerInput {
     reset();
   }
 
+  /** Drops the saved custom bindings and returns to mapping-derived defaults on the next poll. */
+  public void clearBindings() {
+    customBindings = null;
+    effectiveBindings = ActionBindings.genericDefaults();
+    reset();
+  }
+
   public ActionBindings bindings() {
     return effectiveBindings;
   }
