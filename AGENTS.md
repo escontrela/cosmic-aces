@@ -58,6 +58,7 @@ domain/enemy/                 VesperRaider, VesperRaiderSheet, RaiderEncounter
 domain/scenery/               Starfield y futuros elementos del escenario
 application/                  CosmicAcesGame, GameCoordinator, GameController, PhaseOneGameController
 infrastructure/gdx/           VirtualScreenSize, ScreenFactory y bus de eventos
+infrastructure/gdx/input/     GameInput, ControllerInput, GdxGamepadSource y bindings de acciones
 infrastructure/gdx/screen/    WelcomeScreen, PhaseOneScreen
 boot/                         DesktopLauncher y configuración de escritorio LWJGL3
 ```

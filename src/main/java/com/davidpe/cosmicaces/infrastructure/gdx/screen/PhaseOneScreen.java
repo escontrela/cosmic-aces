@@ -1,7 +1,6 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -53,6 +52,9 @@ import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 import com.davidpe.cosmicaces.infrastructure.gdx.audio.PhaseOneAudio;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.GameInput;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.GdxKeyState;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.KeyboardInput;
 import com.davidpe.cosmicaces.infrastructure.gdx.scenery.LegacyMapMilestoneCatalog;
 import com.davidpe.cosmicaces.infrastructure.gdx.scenery.TerrainSceneryRenderer;
 import java.util.ArrayList;
@@ -73,7 +75,7 @@ import java.util.function.Supplier;
  */
 public final class PhaseOneScreen extends ScreenAdapter {
 
-  private static final String START_PROMPT = "PULSA ESPACIO PARA EMPEZAR";
+  private static final String START_PROMPT = "PULSA DISPARO O ESPACIO PARA EMPEZAR";
   private static final String RETURN_PROMPT = "EL HALL OF FAME SE ABRE A CONTINUACIÓN";
   private static final String WIN_DETAIL = "OBJETIVO CUMPLIDO";
   private static final String LOSE_DETAIL = "MISION FALLIDA";
@@ -150,10 +152,16 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /** Measures village names without owning a second font. */
   private final GlyphLayout villageLabelLayout = new GlyphLayout();
   /**
-   * Objective/playing/result lifecycle and the SPACE arming rule. It replaces the former
+   * Objective/playing/result lifecycle and the trigger arming rule. It replaces the former
    * {@code runFinished} boolean and keeps the mission from advancing or firing outside PLAYING.
    */
   private final PhaseOneScreenFlow flow = new PhaseOneScreenFlow();
+  /**
+   * Shared merged input service owned by the composition root; null only in the legacy constructors
+   * that keep a local keyboard reader. The screen never polls a physical device itself.
+   */
+  private final GameInput gameInput;
+  private final KeyboardInput fallbackKeyboard;
   private boolean disposed;
   private boolean goForwardPromptVisible = true;
   private int observedAstraLifeGeneration;
@@ -174,7 +182,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       GameId gameId,
       GamePhase phase,
       Supplier<PhaseResult> phaseSnapshot) {
-    this(publisher, controller, gameId, phase, phaseSnapshot, new GamePresentationSettings());
+    this(publisher, controller, gameId, phase, phaseSnapshot, new GamePresentationSettings(), null);
   }
 
   public PhaseOneScreen(
@@ -184,11 +192,29 @@ public final class PhaseOneScreen extends ScreenAdapter {
       GamePhase phase,
       Supplier<PhaseResult> phaseSnapshot,
       GamePresentationSettings presentationSettings) {
+    this(publisher, controller, gameId, phase, phaseSnapshot, presentationSettings, null);
+  }
+
+  /**
+   * @param gameInput shared merged keyboard/Joy-Con service; null keeps a local keyboard fallback
+   *     for legacy construction while production always injects the composition service
+   */
+  public PhaseOneScreen(
+      GameEventPublisher publisher,
+      PhaseOneGameController controller,
+      GameId gameId,
+      GamePhase phase,
+      Supplier<PhaseResult> phaseSnapshot,
+      GamePresentationSettings presentationSettings,
+      GameInput gameInput) {
     this.publisher = publisher;
     this.controller = controller;
     this.gameId = gameId;
     this.phase = phase;
     this.phaseSnapshot = phaseSnapshot;
+    this.gameInput = gameInput;
+    this.fallbackKeyboard = gameInput == null
+        ? new KeyboardInput(new GdxKeyState()) : null;
     camera = new OrthographicCamera();
     // Keep world units at logical-pixel scale so wider/taller windows expose more world.
     viewport = new ScreenViewport(camera);
@@ -319,44 +345,45 @@ public final class PhaseOneScreen extends ScreenAdapter {
     ScreenUtils.clear(Color.BLACK);
     // Presentation-only emergency blink clock; it never feeds simulation and is bounded per frame.
     hud.advanceBlink(delta);
+    MissionInput input = readInput();
     boolean canceledMissileModeThisFrame = false;
-    if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-      if (flow.consumeMissileEscape()) {
+    if (input.backJustPressed()) {
+      if (flow.consumeMissileCancel()) {
         controller.armAstraCannon();
         canceledMissileModeThisFrame = true;
       } else if (!flow.isResult()) {
-        // Before the terminal result, ESC abandons the run: it returns to welcome and never creates a
-        // Hall of Fame entry. After the result was captured the Hall takes over at the end of the
-        // frame, so an ESC on the frozen panel must not discard the pending candidate.
+        // Before the terminal result, BACK abandons the run: it returns to welcome and never creates
+        // a Hall of Fame entry. After the result was captured the Hall takes over at the end of the
+        // frame, so a BACK press on the frozen panel must not discard the pending candidate.
         publisher.publish(new GameAbandoned(gameId, phase));
         return;
       }
     }
-    if (Gdx.input.isKeyJustPressed(Input.Keys.M)) {
+    if (input.minimapJustPressed()) {
       minimap.toggle();
     }
-    boolean buttonPressedThisFrame = anyButtonJustPressed();
-    boolean spaceDown = Gdx.input.isKeyPressed(Input.Keys.SPACE);
-    boolean spaceJustPressed = Gdx.input.isKeyJustPressed(Input.Keys.SPACE);
-    flow.observeSpace(spaceDown);
-    // INTRO: the objective panel waits for one SPACE press. That press starts the run but simulates
-    // zero seconds and fires no shot, so the clock and the world stay frozen until SPACE is released
-    // again.
+    boolean buttonPressedThisFrame = input.anyButtonJustPressed();
+    boolean fireDown = input.fireHeld();
+    boolean fireJustPressed = input.fireJustPressed();
+    flow.observeTrigger(fireDown);
+    // INTRO: the objective panel waits for one fire press. That press starts the run but simulates
+    // zero seconds and fires no shot, so the clock and the world stay frozen until the trigger is
+    // released again.
     boolean startedThisFrame = false;
     if (flow.isIntro()) {
-      if (flow.consumeStartPress(spaceJustPressed)) {
+      if (flow.consumeStartPress(fireJustPressed)) {
         controller.start();
         startedThisFrame = true;
       }
     }
     boolean armedMissileThisFrame = false;
     if (!canceledMissileModeThisFrame && flow.isPlaying() && !startedThisFrame
-        && Gdx.input.isKeyJustPressed(Input.Keys.F) && !flow.isMissileArmed()
+        && input.armMissileJustPressed() && !flow.isMissileArmed()
         && controller.armAstraMissile()) {
       armedMissileThisFrame = flow.armMissile();
     }
     boolean missileLaunchRequested = !canceledMissileModeThisFrame && !armedMissileThisFrame
-        && flow.consumeMissileLaunch(spaceJustPressed);
+        && flow.consumeMissileLaunch(fireJustPressed);
     // Only an already-running mission advances, and never on the frame that consumed the start press.
     boolean simulate = flow.isPlaying() && !startedThisFrame;
     // The still-active slice of this frame: it bounds the clock and every simulation step to the
@@ -370,7 +397,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
       // Authoritative lives at the start of the frame. The coordinator owns the pool; the screen
       // only reports deaths and never keeps a diverging counter.
       int astraLives = phaseSnapshot.get().lives();
-      int earned = applyMovementInput(activeSeconds, shipsCoincidentVisible());
+      int earned = applyMovementInput(activeSeconds, shipsCoincidentVisible(), input);
       controller.advanceEncounter(activeSeconds);
       // Ghostwing groups are simulated in world coordinates during the active run only; their
       // presentation (sprites, explosions, minimap marker) belongs to the presentation child.
@@ -435,10 +462,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
         controller.armAstraCannon();
       }
       int weaponEarned = controller.advanceWeapons(activeSeconds, activeSeconds,
-          flow.fireTrigger(spaceDown), weaponsCoincident, escortsCoincident,
+          flow.fireTrigger(fireDown), weaponsCoincident, escortsCoincident,
           2f * VirtualScreenSize.HEIGHT * camera.zoom);
       // One audible M61 cue per real emission event, driven by the weapons' own monotonic counters,
-      // so a held SPACE key, a destroyed ship, a lost coincidence or the end of the run never plays
+      // so a held fire trigger, a destroyed ship, a lost coincidence or the end of the run never plays
       // a shot that no burst actually produced. Astra and Vesper share the same short cue.
       audio.playVulcanBursts(
           PhaseOneAudio.burstsSince(astraBurstsBefore, controller.astraGun().emissionCount())
@@ -633,7 +660,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
             GuidedMissileSheet.Heading.NORTH, GuidedMissileSheet.CombustionStage.SPENT),
         hudViewport.getWorldWidth(), hudViewport.getWorldHeight());
     // The objective panel and the frozen WIN/LOSE panel share the fixed HUD projection; the world
-    // and every reading above stay frozen underneath while either panel waits for SPACE.
+    // and every reading above stay frozen underneath while either panel waits for the fire press.
     if (flow.isIntro()) {
       drawObjectivePanel();
     } else if (flow.isResult()) {
@@ -649,6 +676,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
         hudViewport.getWorldHeight() / 2f, 0f);
     hudCamera.update();
     // render() recomputes camera bounds from the new world dimensions before selecting visible scenery.
+  }
+
+  @Override
+  public void hide() {
+    // The adapter is shared and owned by the composition root: resetting it here requires a neutral
+    // keyboard/Joy-Con sample before the next screen can act, without disposing shared state.
+    if (gameInput != null) {
+      gameInput.reset();
+    } else if (fallbackKeyboard != null) {
+      fallbackKeyboard.reset();
+    }
   }
 
   @Override
@@ -675,14 +713,16 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudFont.dispose();
   }
 
-  private static boolean anyButtonJustPressed() {
-    for (int key = 0; key < Input.Keys.MAX_KEYCODE; key++) {
-      if (Gdx.input.isKeyJustPressed(key)) return true;
+  /**
+   * One merged sample per frame from the shared service. The composition root already polled it; the
+   * local keyboard reader exists only for legacy construction without an injected service.
+   */
+  private MissionInput readInput() {
+    if (gameInput != null) {
+      return MissionInput.from(gameInput.current());
     }
-    for (int button = 0; button < 5; button++) {
-      if (Gdx.input.isButtonJustPressed(button)) return true;
-    }
-    return false;
+    return fallbackKeyboard == null
+        ? MissionInput.EMPTY : MissionInput.from(fallbackKeyboard.poll());
   }
 
   /** Plans the conservative world rectangle for the real rotated, zoomed camera view. */
@@ -747,15 +787,15 @@ public final class PhaseOneScreen extends ScreenAdapter {
     }
   }
 
-  private int applyMovementInput(float delta, boolean coincident) {
-    boolean left = Gdx.input.isKeyPressed(Input.Keys.LEFT);
-    boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
-    boolean up = Gdx.input.isKeyPressed(Input.Keys.UP);
-    boolean down = Gdx.input.isKeyPressed(Input.Keys.DOWN);
+  private int applyMovementInput(float delta, boolean coincident, MissionInput input) {
+    boolean left = input.left();
+    boolean right = input.right();
+    boolean up = input.up();
+    boolean down = input.down();
     PhaseOneScreenFlow.AimDirection aim = flow.aimDirection(left, right, up, down);
     controller.moveAstraMissileAim(aim.horizontal(), aim.vertical(), delta);
     FlightControls controls = flow.flightControls(left, right, up, down,
-        Gdx.input.isKeyJustPressed(Input.Keys.P));
+        input.ultraJustPressed());
     return controller.advanceFlight(controls, delta, coincident);
   }
 
@@ -1017,7 +1057,7 @@ public final class PhaseOneScreen extends ScreenAdapter {
   /**
    * Objective panel shown before the mission starts. It states both goals (three Vesper Raider and
    * the Bastion downed before it reaches its destination), the LOSE risk of a live arrival and the
-   * authoritative lives/limit summary, then asks for the confirming SPACE press.
+   * authoritative lives/limit summary, then asks for the confirming fire press.
    */
   private void drawObjectivePanel() {
     drawOverlayPanel(OBJECTIVE_TITLE, Color.CYAN,

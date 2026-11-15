@@ -6,12 +6,12 @@ import com.davidpe.cosmicaces.domain.player.FlightControls;
  * Pure interaction lifecycle of {@link PhaseOneScreen}: the objective panel ({@code INTRO}), the
  * running mission ({@code PLAYING}) and the frozen result frame ({@code RESULT}).
  *
- * <p>It also owns the SPACE arming rule so one physical press can never drive two actions: the press
- * that confirms the objective cannot also fire Astra. A press only acts again after SPACE has been
- * seen released. The terminal result is materialised as the Hall of Fame by the composition root at
- * the end of the frame, so {@code RESULT} is only the last frozen frame of the playable screen and
- * accepts no navigation press. The class has no LibGDX dependency and no game rules, so the whole
- * transition and input contract is unit tested without a window.
+ * <p>It also owns the trigger arming rule so one physical press can never drive two actions: the
+ * press that confirms the objective cannot also fire Astra. The trigger only acts again after it has
+ * been seen released. The terminal result is materialised as the Hall of Fame by the composition
+ * root at the end of the frame, so {@code RESULT} is only the last frozen frame of the playable
+ * screen and accepts no navigation press. The class has no LibGDX dependency and no game rules, so
+ * the whole transition and input contract is unit tested without a window.
  */
 final class PhaseOneScreenFlow {
 
@@ -26,7 +26,7 @@ final class PhaseOneScreenFlow {
 
   private Stage stage = Stage.INTRO;
   /** True until a press is consumed; a physical release re-arms the next press. */
-  private boolean spaceArmed = true;
+  private boolean triggerArmed = true;
   /** Weapon mode is presentation/input state; ammunition and aiming remain in the controller. */
   private boolean missileArmed;
 
@@ -57,36 +57,36 @@ final class PhaseOneScreenFlow {
     return true;
   }
 
-  /** A missile uses one fresh SPACE edge; holding the key cannot launch another. */
-  boolean consumeMissileLaunch(boolean spaceJustPressed) {
-    if (stage != Stage.PLAYING || !missileArmed || !spaceJustPressed || !spaceArmed) {
+  /** A missile uses one fresh fire edge; holding the trigger cannot launch another. */
+  boolean consumeMissileLaunch(boolean fireJustPressed) {
+    if (stage != Stage.PLAYING || !missileArmed || !fireJustPressed || !triggerArmed) {
       return false;
     }
-    spaceArmed = false;
+    triggerArmed = false;
     return true;
   }
 
-  /** Returns to cannon mode after a successful launch while consuming its SPACE press. */
+  /** Returns to cannon mode after a successful launch while consuming its fire press. */
   void missileLaunched() {
     if (stage != Stage.PLAYING || !missileArmed) return;
     missileArmed = false;
     // The launch press must be released before it can produce a cannon burst.
-    spaceArmed = false;
+    triggerArmed = false;
   }
 
-  /** Returns true when ESC should cancel missile mode instead of leaving the phase. */
-  boolean consumeMissileEscape() {
+  /** Returns true when the back action should cancel missile mode instead of leaving the phase. */
+  boolean consumeMissileCancel() {
     if (stage != Stage.PLAYING || !missileArmed) return false;
     missileArmed = false;
-    // A SPACE key held across the weapon switch must not fire the cannon.
-    spaceArmed = false;
+    // A fire trigger held across the weapon switch must not fire the cannon.
+    triggerArmed = false;
     return true;
   }
 
   /** Death, respawn or a result must not leave an armed weapon or a held trigger behind. */
   void resetWeaponMode() {
     missileArmed = false;
-    spaceArmed = false;
+    triggerArmed = false;
   }
 
   /** Maps the held arrows to a free world-axis aim direction only in missile mode. */
@@ -104,44 +104,45 @@ final class PhaseOneScreenFlow {
   }
 
   /**
-   * Records the physical SPACE state of this frame. Must be called once per frame before the press
-   * queries: a released key re-arms the latch, a held key keeps it consumed.
+   * Records the physical fire state of this frame. Must be called once per frame before the press
+   * queries: a released trigger re-arms the latch, a held trigger keeps it consumed.
    */
-  void observeSpace(boolean spaceDown) {
-    if (!spaceDown) {
-      spaceArmed = true;
+  void observeTrigger(boolean fireDown) {
+    if (!fireDown) {
+      triggerArmed = true;
     }
   }
 
   /**
-   * Consumes the objective press. Returns {@code true} only from {@code INTRO} on a fresh SPACE
-   * press, moving the flow to {@code PLAYING} and consuming the latch so the same SPACE cannot fire.
+   * Consumes the objective press. Returns {@code true} only from {@code INTRO} on a fresh fire
+   * press, moving the flow to {@code PLAYING} and consuming the latch so the same press cannot fire.
    */
-  boolean consumeStartPress(boolean spaceJustPressed) {
-    if (stage != Stage.INTRO || !spaceJustPressed || !spaceArmed) {
+  boolean consumeStartPress(boolean fireJustPressed) {
+    if (stage != Stage.INTRO || !fireJustPressed || !triggerArmed) {
       return false;
     }
-    spaceArmed = false;
+    triggerArmed = false;
     stage = Stage.PLAYING;
     return true;
   }
 
   /**
-   * True while a held SPACE may fire Astra: only during {@code PLAYING} and only once the key has
-   * been released since the last consumed press, so a held trigger from the objective never emits.
+   * True while a held trigger may fire Astra: only during {@code PLAYING} and only once the trigger
+   * has been released since the last consumed press, so a held trigger from the objective never
+   * emits.
    */
-  boolean fireTrigger(boolean spaceDown) {
-    return stage == Stage.PLAYING && !missileArmed && spaceDown && spaceArmed;
+  boolean fireTrigger(boolean fireDown) {
+    return stage == Stage.PLAYING && !missileArmed && fireDown && triggerArmed;
   }
 
   /**
    * Freezes the mission on its terminal result and consumes the latch, so the press that fired the
    * ending shot cannot be reused by any later action of this screen. The Hall of Fame transition is
-   * applied by the composition root at the end of the frame, not by a second SPACE press.
+   * applied by the composition root at the end of the frame, not by a second fire press.
    */
   void showResult() {
     stage = Stage.RESULT;
     missileArmed = false;
-    spaceArmed = false;
+    triggerArmed = false;
   }
 }

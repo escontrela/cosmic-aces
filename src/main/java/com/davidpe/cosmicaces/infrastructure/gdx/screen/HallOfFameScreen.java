@@ -29,6 +29,7 @@ import com.davidpe.cosmicaces.domain.game.PhaseOutcome;
 import com.davidpe.cosmicaces.domain.game.StartRequested;
 import com.davidpe.cosmicaces.domain.score.HallOfFameEntry;
 import com.davidpe.cosmicaces.infrastructure.gdx.event.GameEventPublisher;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.GameInput;
 import java.util.List;
 import java.util.Objects;
 
@@ -42,10 +43,10 @@ import java.util.Objects;
  * file is never read from {@code render} and no row is inserted without a successful
  * {@link HallOfFameSession#confirm(String)}.
  *
- * <p>In entry mode the automatic scroll is suspended, the editor owns the keyboard and the only way
- * out is a successful confirmation; a storage failure keeps both the candidate and the typed initials
- * so Enter can retry. A non-qualifying terminal result shows the ranking without an editor and
- * without writing anything.
+ * <p>In entry mode the automatic scroll is suspended, the editor owns the merged keyboard/Joy-Con
+ * sample and the only way out is a successful confirmation; a storage failure keeps both the
+ * candidate and the typed initials so the confirm action can retry. A non-qualifying terminal result
+ * shows the ranking without an editor and without writing anything.
  *
  * <p>Outside the editor, this screen is one of the two pages of the arcade attraction loop: it keeps
  * the shared {@link AttractCycle} paused only while the initials editor is open, lets Y start a game
@@ -87,6 +88,7 @@ public final class HallOfFameScreen extends ScreenAdapter {
   private final GameEventPublisher publisher;
   private final GameId gameId;
   private final GamePhase phase;
+  private final GameInput gameInput;
   private final HallOfFameLoadResult loadResult;
   private final OrthographicCamera camera;
   private final Viewport viewport;
@@ -111,12 +113,19 @@ public final class HallOfFameScreen extends ScreenAdapter {
 
   public HallOfFameScreen(HallOfFameSession session, HallOfFameScroll scroll,
       AttractCycle attractCycle, GameEventPublisher publisher, GameId gameId, GamePhase phase) {
+    this(session, scroll, attractCycle, publisher, gameId, phase, null);
+  }
+
+  public HallOfFameScreen(HallOfFameSession session, HallOfFameScroll scroll,
+      AttractCycle attractCycle, GameEventPublisher publisher, GameId gameId, GamePhase phase,
+      GameInput gameInput) {
     this.session = Objects.requireNonNull(session, "session");
     this.scroll = Objects.requireNonNull(scroll, "scroll");
     this.attractCycle = Objects.requireNonNull(attractCycle, "attractCycle");
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.gameId = Objects.requireNonNull(gameId, "gameId");
     this.phase = Objects.requireNonNull(phase, "phase");
+    this.gameInput = gameInput;
     this.view = session.view();
     this.loadResult = session.loadResult();
     // Every visit, including the terminal one, starts a complete attraction interval.
@@ -152,12 +161,13 @@ public final class HallOfFameScreen extends ScreenAdapter {
     // Input is applied before reading the ranking so a confirmed entry is drawn as consultation in
     // the same frame, with its new row already highlighted.
     boolean entryMode = view.entryRequested();
-    // The editor owns the keyboard and the attraction loop; a consult starts a game with Y exactly
-    // like the welcome INSERT COIN, at most once per visit.
+    // The editor owns the merged input and the attraction loop; a consult starts a game with the
+    // configured start action exactly like the welcome INSERT COIN, at most once per visit.
     attractCycle.setPaused(entryMode);
+    MenuInput menu = menuInput();
     if (entryMode) {
       handleEntryInput();
-    } else if (!startRequested && Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+    } else if (!startRequested && menu.startGame()) {
       startRequested = true;
       publisher.publish(new StartRequested(gameId, phase));
     }
@@ -229,19 +239,41 @@ public final class HallOfFameScreen extends ScreenAdapter {
     initialsFont.dispose();
   }
 
+  /** Reads the shared sample; the legacy constructor keeps the previous keyboard-only behavior. */
+  private MenuInput menuInput() {
+    if (gameInput != null) {
+      return MenuInput.from(gameInput.current());
+    }
+    return new MenuInput(
+        Gdx.input.isKeyJustPressed(Input.Keys.Y),
+        Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+            || Gdx.input.isKeyJustPressed(Input.Keys.NUMPAD_ENTER),
+        Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE),
+        Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE),
+        Gdx.input.isKeyJustPressed(Input.Keys.UP),
+        Gdx.input.isKeyJustPressed(Input.Keys.DOWN),
+        Gdx.input.isKeyJustPressed(Input.Keys.LEFT),
+        Gdx.input.isKeyJustPressed(Input.Keys.RIGHT),
+        Gdx.input.isKeyJustPressed(Input.Keys.F),
+        Gdx.input.isKeyJustPressed(Input.Keys.P),
+        Gdx.input.isKeyJustPressed(Input.Keys.M));
+  }
+
   /**
-   * Turns this frame's physical keys into editor actions. The detector ignores the first held keys
-   * (SPACE or arrows from the ending mission), so a shot can never confirm the entry and a held arrow
-   * never moves the cursor before the player actually presses it again.
+   * Turns this frame's merged sample into editor actions. The detector ignores the first held
+   * directions, confirm or mission actions from the ending mission, so a shot or a held stick can
+   * never confirm the entry or move the cursor before the player actually presses again.
    */
   private void handleEntryInput() {
-    HallOfFameEntryInput.Keys keys = new HallOfFameEntryInput.Keys(
-        heldOrJustPressed(Input.Keys.LEFT),
-        heldOrJustPressed(Input.Keys.RIGHT),
-        heldOrJustPressed(Input.Keys.UP),
-        heldOrJustPressed(Input.Keys.DOWN),
-        heldOrJustPressed(Input.Keys.ENTER) || heldOrJustPressed(Input.Keys.NUMPAD_ENTER),
-        heldOrJustPressed(Input.Keys.SPACE));
+    HallOfFameEntryInput.Keys keys = gameInput != null
+        ? HallOfFameEntryInput.Keys.from(gameInput.current())
+        : new HallOfFameEntryInput.Keys(
+            heldOrJustPressed(Input.Keys.LEFT),
+            heldOrJustPressed(Input.Keys.RIGHT),
+            heldOrJustPressed(Input.Keys.UP),
+            heldOrJustPressed(Input.Keys.DOWN),
+            heldOrJustPressed(Input.Keys.ENTER) || heldOrJustPressed(Input.Keys.NUMPAD_ENTER),
+            heldOrJustPressed(Input.Keys.SPACE));
     for (HallOfFameEntryInput.Action action : entryInput.poll(keys)) {
       apply(action);
       cursorBlinkSeconds = 0f;

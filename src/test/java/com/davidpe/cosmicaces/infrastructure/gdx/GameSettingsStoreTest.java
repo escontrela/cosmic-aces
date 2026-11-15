@@ -1,10 +1,18 @@
 package com.davidpe.cosmicaces.infrastructure.gdx;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ActionBindings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSettings;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSide;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.InputAction;
+import com.davidpe.cosmicaces.infrastructure.gdx.input.StickSettings;
 import org.junit.jupiter.api.Test;
 
 class GameSettingsStoreTest {
@@ -140,6 +148,114 @@ class GameSettingsStoreTest {
 
     assertEquals(0.27f, preferences.getFloat(ASTRA_BOTTOM_FRACTION_KEY), 0.0001f);
     assertEquals(0.27f, store.astraBottomFraction(), 0.0001f);
+  }
+
+  @Test
+  void controllerProfileBindingsAndStickRoundTripWithoutTouchingOtherSettings() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putString(CAMERA_MODE_KEY, "north-up").putFloat(ASTRA_BOTTOM_FRACTION_KEY, 0.27f);
+    GameSettingsStore store = storeWith(preferences);
+    ActionBindings custom = ActionBindings.genericDefaults()
+        .withBinding(InputAction.FIRE, 7)
+        .withBinding(InputAction.ARM_MISSILE, 9)
+        .withBinding(InputAction.ULTRA, 10)
+        .withBinding(InputAction.MINIMAP, 11)
+        .withBinding(InputAction.START_GAME, 12)
+        .withBinding(InputAction.CONFIRM, 7)
+        .withBinding(InputAction.BACK, 13)
+        .withBinding(InputAction.SETTINGS, 14);
+    ControllerSettings saved = new ControllerSettings(ControllerSide.RIGHT, custom,
+        new StickSettings(true, false, true, 0.4f), true);
+
+    store.saveControllerSettings(saved);
+
+    ControllerSettings reloaded = storeWith(preferences).controllerSettings();
+    assertEquals(ControllerSide.RIGHT, reloaded.profile());
+    assertTrue(reloaded.bindingsCustomised());
+    assertEquals(custom.asMap(), reloaded.bindings().asMap());
+    assertTrue(reloaded.stickSettings().swapAxes());
+    assertFalse(reloaded.stickSettings().invertX());
+    assertTrue(reloaded.stickSettings().invertY());
+    assertEquals(0.4f, reloaded.stickSettings().deadZone(), 0.0001f);
+    assertEquals(CameraMode.NORTH_UP, storeWith(preferences).cameraMode());
+    assertEquals(0.27f, storeWith(preferences).astraBottomFraction(), 0.0001f);
+  }
+
+  @Test
+  void missingControllerSettingsUseRecoverableDefaults() {
+    ControllerSettings settings = storeWith(new InMemoryPreferences()).controllerSettings();
+
+    assertEquals(ControllerSide.UNKNOWN, settings.profile());
+    assertFalse(settings.bindingsCustomised());
+    assertEquals(StickSettings.DEFAULTS, settings.stickSettings());
+    assertEquals(ActionBindings.genericDefaults().asMap(), settings.bindings().asMap());
+  }
+
+  @Test
+  void unknownVersionAndCorruptFieldsFallBackSafelyAndNeverCreateConflicts() {
+    InMemoryPreferences unsupported = new InMemoryPreferences();
+    unsupported.putInteger("controller.version", 99).putString("controller.profile", "left");
+    assertEquals(ControllerSide.UNKNOWN,
+        storeWith(unsupported).controllerSettings().profile());
+
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger("controller.version", 1)
+        .putString("controller.profile", "sideways")
+        .putBoolean("controller.bindings.custom", true)
+        .putString("controller.binding.FIRE", "broken")
+        .putInteger("controller.binding.ARM_MISSILE", -3)
+        .putInteger("controller.binding.ULTRA", 1)
+        .putInteger("controller.binding.NOT_AN_ACTION", 5)
+        .putFloat("controller.stick.swapAxes", 1f)
+        .putFloat("controller.stick.deadZone", 4f);
+    ControllerSettings settings = storeWith(preferences).controllerSettings();
+
+    assertEquals(ControllerSide.UNKNOWN, settings.profile());
+    assertTrue(settings.bindingsCustomised());
+    assertEquals(ActionBindings.genericDefaults().buttonFor(InputAction.FIRE),
+        settings.bindings().buttonFor(InputAction.FIRE));
+    assertEquals(ActionBindings.genericDefaults().buttonFor(InputAction.ARM_MISSILE),
+        settings.bindings().buttonFor(InputAction.ARM_MISSILE));
+    assertEquals(StickSettings.DEFAULT_DEAD_ZONE, settings.stickSettings().deadZone(), 0.0001f);
+    settings.bindings().asMap().forEach((action, button) -> assertNull(
+        settings.bindings().conflictingAction(action, button),
+        "saved bindings must be sanitised per context"));
+  }
+
+  @Test
+  void savedDuplicateBindingsAreSanitisedWithoutLosingOtherActions() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger("controller.version", 1)
+        .putBoolean("controller.bindings.custom", true)
+        .putInteger("controller.binding.FIRE", 1)
+        .putInteger("controller.binding.MINIMAP", 1);
+    ActionBindings bindings = storeWith(preferences).controllerSettings().bindings();
+
+    assertEquals(1, bindings.buttonFor(InputAction.FIRE));
+    assertNotEquals(1, bindings.buttonFor(InputAction.MINIMAP));
+    bindings.asMap().forEach((action, button) -> assertNull(
+        bindings.conflictingAction(action, button)));
+  }
+
+  @Test
+  void resettingControllersLeavesVideoAstraArmamentAndRankingSettingsUntouched() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+    store.saveCameraMode(CameraMode.NORTH_UP);
+    store.saveAstraBottomFraction(0.27f);
+    store.saveAstraMissilesPerLife(7);
+    store.saveControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+    preferences.putString("hallOfFame.entries", "[\"preserved\"]");
+
+    store.resetControllerSettings();
+
+    assertEquals(ControllerSettings.DEFAULTS.profile(), store.controllerSettings().profile());
+    assertEquals(CameraMode.NORTH_UP, store.cameraMode());
+    assertEquals(0.27f, store.astraBottomFraction(), 0.0001f);
+    assertEquals(7, store.astraMissilesPerLife());
+    assertEquals("[\"preserved\"]", preferences.getString("hallOfFame.entries"));
+    assertFalse(preferences.contains("controller.version"));
   }
 
   @Test
