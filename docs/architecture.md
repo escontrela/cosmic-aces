@@ -1402,6 +1402,43 @@ modo que la nave cubre su propia estela; los trazadores y el HUD conservan sus p
 se acopla al parpadeo del casco: el humo ya emitido sigue visible mientras se desvanece. La pantalla
 reinicia la estela en el cambio de `lifeGeneration`.
 
+### Estela de humo del viraje de los enemigos (COS-154)
+
+El modelo de humo de COS-152 vive ahora en `domain.effect.TurnSmokeTrail`; `AstraYawSmokeTrail` es su
+nombre publicado para la estela de Astra y no añade estado ni reglas. El mismo pool acotado, el muestreo
+por distancia, la vida de 0,85 s, el ancla por tramo y `TurnSmokeIntensity` se reutilizan para los
+enemigos, de modo que las dos estelas se comportan igual y no existen dos copias del modelo.
+
+`domain.effect.TurnSmokeTracker` es el estado presentacional de una aeronave enemiga. No conoce LibGDX,
+IA, combate ni cámara: la pantalla le entrega el tramo autorizado, si la aeronave está activa y el centro
+de su caja estable. Deriva el giro efectivo del cambio de dirección del desplazamiento real entre pasos,
+no del rumbo del sprite, porque conviven tres convenciones distintas (`VesperRaider` usa rumbo de
+descenso, `BastionBomber` mezcla `atan2(dx, dy)` en el tramo recto con la tangente de la órbita, y
+`BastionEscort` re-coloca y fija el rumbo del raider en formación) y la trayectoria es justo la curva que
+el humo debe dibujar. La cola se sitúa en `centro − dirección × TAIL_AFT_FRACTION × alto`, con
+`TAIL_AFT_FRACTION = 0,55` compartido con Astra.
+
+Solo emite con giro de al menos `MIN_TURN_RATE_DEGREES_PER_SECOND = 5°/s` (el mismo umbral semántico que
+la pose de viraje visible de Vesper), desplazamiento real mayor que `MIN_STEP_DISPLACEMENT = 0,02` u y
+velocidad plausible. Vuelo recto, nave estacionada, deriva lateral pura y frames congelados no emiten. Un
+salto de posición por encima de `MAX_PLAUSIBLE_SPEED = 1200` u/s (aparición, reaparición, recolocación en
+formación) o un giro superior a `MAX_TURN_RATE_DEGREES_PER_SECOND = 300°/s` cierran el ancla sin borrar
+el humo visible: las muestras siguen donde se emitieron, se disipan por edad y ninguna recta une dos
+vidas. La opacidad de cada emisión sale de `TurnSmokeIntensity.factorForSpeed(desplazamiento / tramo)`,
+así que a igual velocidad real la intensidad es igual, también para la escolta en formación, que no
+expone telemetría de velocidad propia.
+
+`infrastructure.gdx.screen.EnemyYawSmokeEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
+Mantiene un `TurnSmokeTracker` por identidad de aeronave (el Vesper, cada escolta y el Bastion) en un
+`IdentityHashMap`, de modo que dos naves que viran a la vez dejan arcos independientes y cada una
+conserva su propio pool acotado. No crea recursos nativos y no implementa `Disposable`. `update(delta,
+missionPlaying, controller)` se llama con `activeSeconds` después de `advanceEncounter`, limpia todas
+las estelas cuando la partida deja de estar en curso y deja de emitir para una nave destruida sin
+descartar el humo existente; una entrada no observada se sigue envejeciendo hasta desaparecer y entonces
+se retira. `drawWorldPass(gl, shapes, camera)` reutiliza `AlphaBlendPass` y el color de humo de Astra en
+una sola sesión `Filled`; `PhaseOneScreen` la dibuja tras el terreno y la estela de Astra, y antes del
+lote de cascos. Los cambios de IA, combate y trayectorias quedan fuera de este efecto.
+
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
 amarilla clara. `draw(shapes, tipX, tipY, forwardX, forwardY)` recibe coordenadas
@@ -1923,10 +1960,14 @@ com.davidpe.cosmicaces
 |   |       1. isSpeedElevated()  2. update()  3. clear()
 |   |       4. isEngaged()  5. particleCount()  6. particle()
 |   |       +-- Particle: cabeza, cola, alfa, ancho y progreso proa→cola.
-|   |   +-- AstraYawSmokeTrail: estela mundial acotada de humo del viraje (COS-152).
+|   |   +-- AstraYawSmokeTrail: nombre publicado de la estela de Astra; extiende TurnSmokeTrail (COS-152).
+|   |   +-- TurnSmokeTrail: pool mundial acotado de humo reutilizado por Astra y los enemigos (COS-154).
 |   |       1. update() [2 sobrecargas]  2. clear()  3. hasSamples()
 |   |       4. sampleCount()  5. sample()  6. isEmitting()
 |   |       +-- Sample: posición mundial congelada, edad, alfa inicial capturado y radio creciente.
+|   |   +-- TurnSmokeTracker: viraje efectivo por aeronave desde la trayectoria real y su estela (COS-154).
+|   |       1. update()  2. clear()  3. isEmitting()  4. measuredSpeed()
+|   |       5. hasSamples()  6. sampleCount()  7. sample()
 |   |   +-- TurnSmokeIntensity: factor de visibilidad continuo desde la velocidad real (COS-153).
 |   |       1. factorForSpeed()
 |   +-- weapon
@@ -2091,6 +2132,10 @@ com.davidpe.cosmicaces
             |   1. isEmitting()  2. update()  3. drawWorldPass()  4. reset()
             |   5. tailPoint()  6. sample()  7. sampleCount()
             |   +-- Tail: punto de emisión mutable reutilizado, sin asignación por frame.
+            +-- EnemyYawSmokeEffect: estelas mundiales de los enemigos al virar (COS-154).
+            |   1. update()  2. drawWorldPass()  3. clear()  4. hasSamples()
+            |   5. isEmitting(identity)  6. sampleCount(identity)  7. sample(identity, index)
+            |   +-- Tracked: tracker de una aeronave y su último centro observado.
             +-- AlphaBlendPass: blending alfa acotado a una pasada y restauración de GL (COS-138).
             |   1. run(gl, pass)  2. factores RGB/alfa independientes preservados
             +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable

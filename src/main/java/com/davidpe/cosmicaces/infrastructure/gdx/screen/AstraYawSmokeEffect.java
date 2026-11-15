@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.davidpe.cosmicaces.domain.effect.AstraYawSmokeTrail;
 import com.davidpe.cosmicaces.domain.effect.TurnSmokeIntensity;
+import com.davidpe.cosmicaces.domain.effect.TurnSmokeTracker;
 import com.davidpe.cosmicaces.domain.player.Astra;
 
 /**
@@ -27,13 +28,14 @@ import com.davidpe.cosmicaces.domain.player.Astra;
 final class AstraYawSmokeEffect {
 
   /**
-   * Distance from the hull box centre to the emission point, as a fraction of the box height. Slightly
-   * behind the tail edge so the smoke reads as leaving the hull instead of covering it.
+   * Distance from the hull box centre to the emission point, as a fraction of the box height.
+   * Slightly behind the tail edge so the smoke reads as leaving the hull instead of covering it. It
+   * is the shared {@link TurnSmokeTracker#TAIL_AFT_FRACTION}, also used by the enemy wakes.
    */
-  static final float TAIL_AFT_FRACTION = 0.55f;
+  static final float TAIL_AFT_FRACTION = TurnSmokeTracker.TAIL_AFT_FRACTION;
 
-  /** Soft grey smoke; the model supplies the per-puff alpha. */
-  private static final Color SMOKE_COLOR = new Color(0.80f, 0.82f, 0.86f, 1f);
+  /** Soft grey smoke; the model supplies the per-puff alpha. Shared with the enemy wake pass. */
+  static final Color SMOKE_COLOR = new Color(0.80f, 0.82f, 0.86f, 1f);
 
   private final AstraYawSmokeTrail trail = new AstraYawSmokeTrail();
   /** Owns the scoped GL blend state of the smoke pass; no native resource. */
