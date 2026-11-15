@@ -139,6 +139,26 @@ class PhaseOneScreenTest {
         "the captured framing must still place Astra at the configured height");
   }
 
+  @Test
+  void eachSuccessiveFlightCapturesTheDistanceSelectedBeforeStartingIt() {
+    WorldBounds world = new WorldBounds(3200f, 12000f);
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 0f, world);
+    // One instance shared by the welcome menu and the flight screens, as ScreenFactory does.
+    GamePresentationSettings settings = new GamePresentationSettings();
+    OrthographicCamera first = camera(1024f, 768f);
+    PhaseOneScreen.createFlightCamera(first, astra, settings);
+
+    // What the settings menu does between two flights.
+    settings.setCameraDistance(WelcomeScreen.cycleCameraDistance(CameraDistance.CURRENT, 1));
+    OrthographicCamera second = camera(1024f, 768f);
+    PhaseOneScreen.createFlightCamera(second, astra, settings);
+
+    assertEquals(CameraDistance.FAR.zoomFactor(), second.zoom, 1e-6f);
+    assertEquals(1f, first.zoom, 1e-6f,
+        "an in-flight screen keeps the level captured when it was built");
+  }
+
   private static OrthographicCamera camera(float width, float height) {
     OrthographicCamera camera = new HeadlessCamera();
     camera.setToOrtho(false, width, height);

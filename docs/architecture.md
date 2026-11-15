@@ -210,9 +210,12 @@ Vídeo, Cámara, Encuadre, Nave, Velocidades de Astra y Armamento son overlays d
 de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
 `Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra`, `Armamento` y `Cámara` con almacén de
 preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
-que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
-y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
-construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
+que funciona en memoria para la sesión. La página `Cámara` agrupa los dos ajustes que la partida captura al
+construir su pantalla: `Modo de cámara` (←/→ alterna `Seguimiento de Astra`, predeterminado, y
+`Norte fijo`) y `Distancia` (←/→ recorre `Actual`, `Alejada` y `Más alejada`, limitado en ambos
+extremos porque `Actual` es el encuadre más cercano disponible). `↑/↓` mueve el foco entre ambas
+filas, de modo que un cambio de distancia nunca altera el modo; la fila enfocada y el valor activo se
+distinguen en el overlay, y cada elección se guarda al instante, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
 para ambos modos; el valor guardado no se sobrescribe ni se pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el

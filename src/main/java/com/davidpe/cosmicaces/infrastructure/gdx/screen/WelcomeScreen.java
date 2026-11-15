@@ -22,6 +22,7 @@ import com.davidpe.cosmicaces.domain.scenery.Starfield;
 import com.davidpe.cosmicaces.domain.player.AstraVariant;
 import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 import com.davidpe.cosmicaces.domain.weapon.MissileConfig;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GameSettingsStore;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
@@ -90,6 +91,7 @@ public final class WelcomeScreen extends ScreenAdapter {
   private VideoDisplaySettings.DisplayCatalog videoCatalog;
   private int rootSelection;
   private int speedSelection;
+  private int cameraSelection;
   private FlightSpeeds flightSpeeds = FlightSpeeds.DEFAULTS;
   private int astraMissilesPerLife = MissileConfig.DEFAULTS.astraMissilesPerLife();
   private int guidedMissileMaxSpeed = (int) MissileConfig.DEFAULTS.maxSpeed();
@@ -534,19 +536,46 @@ public final class WelcomeScreen extends ScreenAdapter {
     }
   }
 
+  /**
+   * The camera page keeps one focused row: ←/→ only change the row the player selected with ↑/↓,
+   * so changing the distance can never alter the framing mode by accident.
+   */
   private void handleCameraInput(MenuInput menu) {
+    if (menu.up() || menu.down()) {
+      cameraSelection = cycleCameraRow(cameraSelection, menu.down() ? 1 : -1);
+    }
     int direction = menu.left() ? -1 : menu.right() ? 1 : 0;
     if (direction == 0) {
       return;
     }
-    presentationSettings.setCameraMode(
-        cycleCameraMode(presentationSettings.cameraMode(), direction));
+    if (CameraRow.values()[cameraSelection] == CameraRow.MODE) {
+      presentationSettings.setCameraMode(
+          cycleCameraMode(presentationSettings.cameraMode(), direction));
+    } else {
+      presentationSettings.setCameraDistance(
+          cycleCameraDistance(presentationSettings.cameraDistance(), direction));
+    }
   }
 
   /** Camera mode reached from {@code current} with ←/→, wrapping through the available modes. */
   static CameraMode cycleCameraMode(CameraMode current, int direction) {
     CameraMode[] modes = CameraMode.values();
     return modes[Math.floorMod(current.ordinal() + direction, modes.length)];
+  }
+
+  /**
+   * Distance reached from {@code current} with ←/→. It is clamped instead of wrapping: the current
+   * framing is the closest available view, so ← at {@link CameraDistance#CURRENT} stays there.
+   */
+  static CameraDistance cycleCameraDistance(CameraDistance current, int direction) {
+    CameraDistance[] distances = CameraDistance.values();
+    int index = Math.max(0, Math.min(distances.length - 1, current.ordinal() + direction));
+    return distances[index];
+  }
+
+  /** Focused camera row reached with ↑/↓, wrapping between the two adjustable values. */
+  static int cycleCameraRow(int selection, int adjustment) {
+    return Math.floorMod(selection + adjustment, CameraRow.values().length);
   }
 
   private List<RootOption> rootOptions() {
@@ -767,27 +796,57 @@ public final class WelcomeScreen extends ScreenAdapter {
   }
 
   private void drawCameraSettings(float left, float top) {
-    CameraMode active = presentationSettings.cameraMode();
+    CameraRow focused = CameraRow.values()[cameraSelection];
+    CameraMode activeMode = presentationSettings.cameraMode();
+    CameraDistance activeDistance = presentationSettings.cameraDistance();
+
+    settingsFont.setColor(focused == CameraRow.MODE ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (focused == CameraRow.MODE ? ">  " : "   ")
+        + "Modo de cámara para la próxima partida:", left, top);
     CameraMode[] modes = CameraMode.values();
-    settingsFont.setColor(Color.WHITE);
-    settingsFont.draw(batch, "Modo de cámara para la próxima partida:", left, top);
+    float modeLineTop = top - 34f;
     for (int index = 0; index < modes.length; index++) {
-      boolean selected = modes[index] == active;
+      boolean selected = modes[index] == activeMode;
       settingsFont.setColor(selected ? Color.GOLD : Color.WHITE);
-      settingsFont.draw(batch, (selected ? ">  " : "   ") + cameraModeLabel(modes[index])
-          + (selected ? "   (activo)" : ""), left, top - 44f - index * 38f);
+      settingsFont.draw(batch, "   " + cameraModeLabel(modes[index])
+          + (selected ? "   (activo)" : ""), left, modeLineTop - index * 30f);
     }
+
+    float distanceTop = modeLineTop - modes.length * 30f - 28f;
+    settingsFont.setColor(focused == CameraRow.DISTANCE ? Color.GOLD : Color.WHITE);
+    settingsFont.draw(batch, (focused == CameraRow.DISTANCE ? ">  " : "   ")
+        + "Distancia de cámara para la próxima partida:", left, distanceTop);
+    CameraDistance[] distances = CameraDistance.values();
+    float distanceLineTop = distanceTop - 34f;
+    for (int index = 0; index < distances.length; index++) {
+      boolean selected = distances[index] == activeDistance;
+      settingsFont.setColor(selected ? Color.GOLD : Color.WHITE);
+      settingsFont.draw(batch, "   " + cameraDistanceLabel(distances[index])
+          + (selected ? "   (activa)" : ""), left, distanceLineTop - index * 30f);
+    }
+
     settingsFont.setColor(Color.LIGHT_GRAY);
-    settingsFont.draw(batch, "←/→ cambiar el modo de cámara", left,
-        top - 44f - modes.length * 38f - 12f);
-    float hintTop = top - 44f - modes.length * 38f - 50f;
+    float hintTop = distanceLineTop - distances.length * 30f - 16f;
+    settingsFont.draw(batch, "↑/↓ elegir ajuste   ←/→ cambiar el valor", left, hintTop);
     settingsFont.draw(batch,
         "Seguimiento: la vista gira con Astra y conserva el porcentaje de encuadre.",
-        left, hintTop);
-    settingsFont.draw(batch, "Norte fijo: el norte permanece arriba y respeta el encuadre de Astra.",
         left, hintTop - 30f);
-    settingsFont.draw(batch, "La elección se guarda y se aplica al iniciar la próxima partida.",
+    settingsFont.draw(batch, "Norte fijo: el norte permanece arriba y respeta el encuadre de Astra.",
         left, hintTop - 60f);
+    settingsFont.draw(batch,
+        "«Actual» es el encuadre más cercano; cada paso aleja la cámara y muestra más mundo.",
+        left, hintTop - 90f);
+    settingsFont.draw(batch, "La elección se guarda y se aplica al iniciar la próxima partida.",
+        left, hintTop - 120f);
+  }
+
+  /** User-facing camera distance names; the base level is the historical framing. */
+  static String cameraDistanceLabel(CameraDistance distance) {
+    return switch (distance) {
+      case CURRENT -> "Actual";
+      case FAR -> "Alejada";
+      case FARTHEST -> "Más alejada";
+    };
   }
 
   private void drawControlsSettings(float left, float top, float panelY, float panelWidth) {
@@ -930,6 +989,11 @@ public final class WelcomeScreen extends ScreenAdapter {
 
   enum SettingsPage {
     CLOSED, ROOT, VIDEO, ASTRA, ASTRA_MODEL, SPEEDS, ARMAMENT, CAMERA, CONTROLS
+  }
+
+  /** Adjustable values inside the camera page; ↑/↓ moves the focus between them. */
+  enum CameraRow {
+    MODE, DISTANCE
   }
 
   /**
