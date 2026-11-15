@@ -250,6 +250,39 @@ class AstraYawSmokeEffectTest {
         "at the same real speed the trail looks the same whatever the configured targets are");
   }
 
+  @Test
+  void anUltraTurnKeepsGainingVisibilityUpToTheFactoryTarget() {
+    Astra turbo = astraAt(new FlightSpeeds(150, 650, 1000), 0f);
+    Astra oldReference = astraAt(new FlightSpeeds(150, 650, 750), 0f);
+    Astra factories = astraAt(FlightSpeeds.DEFAULTS, 0f);
+    AstraYawSmokeEffect turboEffect = new AstraYawSmokeEffect();
+    AstraYawSmokeEffect oldEffect = new AstraYawSmokeEffect();
+    AstraYawSmokeEffect factoryEffect = new AstraYawSmokeEffect();
+    FlightControls turn = new FlightControls(false, true, true, false, false);
+
+    // Real speed is built flying straight; only the turn itself emits smoke.
+    turbo.fly(new FlightControls(false, false, true, false, false), 2f, WORLD);
+    oldReference.fly(new FlightControls(false, false, false, false, true), 3f, WORLD);
+    factories.fly(new FlightControls(false, false, false, false, true), 3f, WORLD);
+    assertEquals(650f, turbo.flightSpeed(), 0.5f);
+    assertEquals(750f, oldReference.flightSpeed(), 0.5f);
+    assertEquals(FlightSpeeds.DEFAULTS.ultra(), factories.flightSpeed(), 0.5f);
+
+    turbo.fly(turn, STEP, WORLD);
+    oldReference.fly(turn, STEP, WORLD);
+    factories.fly(turn, STEP, WORLD);
+    turboEffect.update(STEP, true, true, turbo);
+    oldEffect.update(STEP, true, true, oldReference);
+    factoryEffect.update(STEP, true, true, factories);
+
+    float turboAlpha = turboEffect.sample(0).alpha();
+    float oldAlpha = oldEffect.sample(0).alpha();
+    float factoryAlpha = factoryEffect.sample(0).alpha();
+    assertTrue(oldAlpha > turboAlpha, "750 must look stronger than factory Turbo");
+    assertTrue(factoryAlpha > oldAlpha,
+        "the 750-1000 band must keep adding visibility up to the factory Ultra target");
+  }
+
   private static Astra astraAt(float yawDegrees) {
     return astraAt(SPEEDS, yawDegrees);
   }

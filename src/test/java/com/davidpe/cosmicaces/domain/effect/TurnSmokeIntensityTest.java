@@ -47,6 +47,21 @@ class TurnSmokeIntensityTest {
   }
 
   @Test
+  void theHighBandUpToTheFactoryUltraSpeedKeepsRaisingVisibility() {
+    float turbo = TurnSmokeIntensity.factorForSpeed(650f);
+    float oldReference = TurnSmokeIntensity.factorForSpeed(750f);
+    float ultra = TurnSmokeIntensity.factorForSpeed(1000f);
+
+    assertEquals(1000f, TurnSmokeIntensity.PEAK_SPEED, 0f,
+        "the peak reference follows the factory Ultra target");
+    assertTrue(turbo > 2f, "the Turbo look approved in COS-153 must survive the wider reference");
+    assertTrue(oldReference > turbo);
+    assertTrue(ultra > oldReference,
+        "accelerating from 750 to 1000 must keep making the smoke more visible");
+    assertEquals(TurnSmokeIntensity.PEAK_FACTOR, ultra, 1e-6f);
+  }
+
+  @Test
   void theFactorDependsOnlyOnTheRealSpeed() {
     // The mapping takes no mode, pose or configured target: two readings of the same real speed are
     // identical whatever produced them, so a mode switch alone cannot jump the visibility.

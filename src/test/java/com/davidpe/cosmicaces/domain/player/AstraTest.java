@@ -198,22 +198,45 @@ class AstraTest {
   @Test void ultraIsSingleUseAndBrakeWins() {
     Astra ship = new Astra();
     ship.placeAt(1600f, 6000f, 0f, WORLD);
-    ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
+    ship.fly(new FlightControls(false,false,false,false,true), 3f, WORLD);
     assertEquals(Astra.SpeedMode.ULTRA, ship.speedMode());
-    assertEquals(750f, ship.flightSpeed(), EPS);
-    assertEquals(6f, ship.ultraRemainingSeconds(), 0.02f);
-    ship.fly(new FlightControls(false,false,true,true,true), 2f, WORLD);
+    assertEquals(FlightSpeeds.DEFAULTS.ultra(), ship.flightSpeed(), EPS);
+    assertEquals(5f, ship.ultraRemainingSeconds(), 0.02f);
+    ship.fly(new FlightControls(false,false,true,true,true), 3f, WORLD);
     assertEquals(0f, ship.flightSpeed(), EPS);
-    assertEquals(4f, ship.ultraRemainingSeconds(), 0.02f);
+    assertEquals(2f, ship.ultraRemainingSeconds(), 0.02f);
     ship.fly(FlightControls.neutral(), 1f, WORLD);
     assertEquals(300f, ship.flightSpeed(), EPS);
-    ship.fly(new FlightControls(false,false,true,false,false), 4f, WORLD);
+    ship.fly(new FlightControls(false,false,true,false,false), 1f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
+    assertEquals(600f, ship.flightSpeed(), EPS);
+    ship.fly(new FlightControls(false,false,true,false,false), 2f, WORLD);
     assertEquals(FlightTuning.TURBO_SPEED, ship.flightSpeed(), EPS);
     ship.fly(new FlightControls(false,false,false,false,true), 2f, WORLD);
     assertEquals(0f, ship.ultraRemainingSeconds(), EPS);
     assertEquals(FlightTuning.NORMAL_SPEED, ship.flightSpeed(), EPS,
         "a spent Ultra cannot reactivate and recovers to cruise");
+  }
+
+  @Test void factoryUltraReachesAThousandAndOutrunsTurbo() {
+    float startY = 4000f;
+    Astra ultra = new Astra();
+    Astra turbo = new Astra();
+    ultra.placeAt(1600f, startY, 0f, WORLD);
+    turbo.placeAt(1600f, startY, 0f, WORLD);
+
+    ultra.fly(new FlightControls(false, false, false, false, true), 3f, WORLD);
+    turbo.fly(new FlightControls(false, false, true, false, false), 3f, WORLD);
+
+    assertEquals(FlightTuning.ULTRA_SPEED, FlightSpeeds.DEFAULTS.ultra(), EPS,
+        "the factory Ultra target is the approved 1000 u/s");
+    assertEquals(FlightTuning.ULTRA_SPEED, ultra.flightSpeed(), EPS,
+        "a factory Ultra burst from cruise reaches the target inside its window");
+    assertEquals(FlightTuning.TURBO_SPEED, turbo.flightSpeed(), EPS);
+    assertTrue(ultra.y() > turbo.y() + 200f,
+        "the same time at factory Ultra must cover more ground than Turbo");
+    assertTrue(ultra.ultraRemainingSeconds() > 0f,
+        "the target is reached well before the Ultra window closes");
   }
 
   @Test void shotAtFiresFromTwoDistinctMeasuredCannonMouths() {

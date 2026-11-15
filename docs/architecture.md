@@ -164,7 +164,7 @@ rumbo, velocidad instantánea, `SpeedMode` (NORMAL/TURBO/ULTRA), tiempo restante
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×36000: ocho anchos virtuales de 1024
 unidades y el triple de la longitud original de 12000. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
-Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
+Ultra 1000 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
@@ -234,7 +234,12 @@ tipado resuelve a `CURRENT` sin reescribir la clave guardada. Modo, encuadre y d
 persisten de forma independiente.
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
-incluir el adaptador de almacenamiento junto a la configuración de presentación.
+incluir el adaptador de almacenamiento junto a la configuración de presentación. Los objetivos de
+velocidad de fábrica viven en `FlightSpeeds.DEFAULTS`, derivado de `FlightTuning` (150/650/1000);
+un archivo escrito antes de COS-155 que guardó el antiguo Ultra de fábrica (750) se migra una sola
+vez a 1000 bajo la marca `astra.speed.ultraMigrated`, conservando Normal, Turbo y cualquier Ultra
+distinto de 750. La marca también se escribe al guardar velocidades, así que un 750 elegido después
+se conserva.
 `FlightCameraState` calcula posición, rumbo y zoom sin depender
 del nativo LibGDX y recibe el `CameraMode` y el `CameraDistance` al construirse; `FlightCamera` aplica ese estado a
 `OrthographicCamera`.
@@ -1370,8 +1375,8 @@ misión, abandono o nueva partida.
 
 `domain.effect.TurnSmokeIntensity` (COS-153) traduce la velocidad real integrada, no el modo
 seleccionado, a un factor de visibilidad continuo, monótono y acotado. El factor se queda en
-`SUBTLE_FACTOR = 1` hasta `SUBTLE_SPEED = 150` u/s, sube linealmente hasta `PEAK_FACTOR = 2,4` en
-`PEAK_SPEED = 750` u/s y se recorta por encima; una lectura no finita o negativa vuelve al factor
+`SUBTLE_FACTOR = 1` hasta `SUBTLE_SPEED = 150` u/s, sube linealmente hasta `PEAK_FACTOR = 2,98` en
+`PEAK_SPEED = 1000` u/s y se recorta por encima; una lectura no finita o negativa vuelve al factor
 sutil. Como solo depende de la velocidad, dos naves a la misma velocidad real reciben el mismo
 factor, y cambiar de modo por sí solo no provoca saltos. `AstraYawSmokeTrail.update(delta,
 emitting, intensityFactor, tailX, tailY)` guarda `BASE_PEAK_ALPHA * factor` (recortado a 1) en cada

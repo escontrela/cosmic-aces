@@ -24,15 +24,20 @@ public final class TurnSmokeIntensity {
 
   /**
    * Real speed at or above which the trail reaches its maximum visibility, in world units per
-   * second. It matches the reference Ultra speed, so Turbo and Ultra both add smoke up to the cap.
+   * second. It matches the reference Ultra speed of the factory settings, so the whole Turbo-to-Ultra
+   * band keeps adding smoke instead of saturating at the old 750 reference.
    */
-  public static final float PEAK_SPEED = 750f;
+  public static final float PEAK_SPEED = 1000f;
 
   /** Alpha multiplier applied at {@link #SUBTLE_SPEED} and below. */
   public static final float SUBTLE_FACTOR = 1f;
 
-  /** Alpha multiplier applied at {@link #PEAK_SPEED} and above. */
-  public static final float PEAK_FACTOR = 2.4f;
+  /**
+   * Alpha multiplier applied at {@link #PEAK_SPEED} and above. It extends the original slope over
+   * the wider reference instead of raising the curve earlier: the factor at the factory Turbo speed
+   * stays as approved in COS-153, while the new 750-1000 band gains visible steps.
+   */
+  public static final float PEAK_FACTOR = 2.98f;
 
   private TurnSmokeIntensity() {}
 

@@ -53,6 +53,8 @@ class FlightHudTest {
     assertEquals("RUMBO N 359", FlightHud.headingLine(-1f));
     assertEquals("VELOCIDAD 150 KM/H", FlightHud.velocityLine(150.4f));
     assertEquals("VELOCIDAD 0 KM/H", FlightHud.velocityLine(0.2f));
+    assertEquals("VELOCIDAD 1000 KM/H", FlightHud.velocityLine(1000f),
+        "the factory Ultra reading needs all four digits");
   }
 
   @Test void missileReadoutExplainsAmmoAndWhetherAnEnemyIsLocked() {

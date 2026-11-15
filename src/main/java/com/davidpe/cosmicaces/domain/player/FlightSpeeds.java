@@ -6,7 +6,12 @@ public record FlightSpeeds(int normal, int turbo, int ultra) {
   public static final int MIN_SPEED = 50;
   public static final int MAX_SPEED = 1000;
   public static final int ADJUSTMENT_STEP = 10;
-  public static final FlightSpeeds DEFAULTS = new FlightSpeeds(150, 650, 750);
+  /**
+   * Factory targets, taken from {@link FlightTuning} so the approved cruise, Turbo and Ultra
+   * references cannot drift apart from the stored defaults.
+   */
+  public static final FlightSpeeds DEFAULTS = new FlightSpeeds((int) FlightTuning.NORMAL_SPEED,
+      (int) FlightTuning.TURBO_SPEED, (int) FlightTuning.ULTRA_SPEED);
 
   public FlightSpeeds {
     validate(normal);
