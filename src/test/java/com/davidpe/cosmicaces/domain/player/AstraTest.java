@@ -31,8 +31,9 @@ class AstraTest {
         ship.placeAt(1600f, 6000f, 0f, WORLD);
         ship.fly(new FlightControls(!right, right, up, !up, false), 0.5f, WORLD);
         assertEquals(right ? 65f : -65f, ship.yawDegrees(), 0.01f);
-        assertEquals(right ? HeroShipSheet.Pose.YAW_RIGHT : HeroShipSheet.Pose.YAW_LEFT,
+        assertEquals(right ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.LEFT,
             ship.pose());
+        assertTrue(ship.isTurning(), "the turn order survives the reused bank pose");
       }
     }
     Astra ship = new Astra();
@@ -42,6 +43,92 @@ class AstraTest {
     assertEquals(1900f, ship.x(), EPS);
     assertEquals(6150f, ship.y(), EPS);
     assertEquals(HeroShipSheet.Pose.RIGHT, ship.pose());
+    assertFalse(ship.isTurning());
+  }
+
+  @Test void yawAndStrafeShareTheBankPoseOfEachSide() {
+    for (boolean right : new boolean[] {true, false}) {
+      Astra strafing = new Astra();
+      strafing.placeAt(1600f, 6000f, 0f, WORLD);
+      strafing.fly(new FlightControls(!right, right, false, false, false), 0.25f, WORLD);
+
+      Astra yawing = new Astra();
+      yawing.placeAt(1600f, 6000f, 0f, WORLD);
+      yawing.fly(new FlightControls(!right, right, true, false, false), 0.25f, WORLD);
+
+      assertEquals(strafePose(right), yawing.pose());
+      assertEquals(strafing.pose(), yawing.pose(),
+          "yawing must reuse the same bank bitmap as the strafe of that side");
+      assertFalse(strafing.isTurning());
+      assertTrue(yawing.isTurning());
+    }
+  }
+
+  @Test void advanceSignalFlagsOnlyPilotYawWithWorldDisplacement() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    Astra.Advance placed = ship.lastAdvance();
+    assertFalse(placed.turnedWhileMoving());
+
+    ship.fly(new FlightControls(false, true, true, false, false), 0.5f, WORLD);
+    Astra.Advance turn = ship.lastAdvance();
+    assertTrue(turn.serial() > placed.serial());
+    assertTrue(turn.turnedWhileMoving());
+    assertTrue(ship.isTurning());
+
+    ship.fly(new FlightControls(false, true, false, false, false), 0.5f, WORLD);
+    Astra.Advance strafe = ship.lastAdvance();
+    assertTrue(strafe.serial() > turn.serial());
+    assertFalse(strafe.turnedWhileMoving());
+    assertFalse(ship.isTurning());
+
+    ship.fly(FlightControls.neutral(), 0.5f, WORLD);
+    Astra.Advance straight = ship.lastAdvance();
+    assertTrue(straight.serial() > strafe.serial());
+    assertFalse(straight.turnedWhileMoving());
+  }
+
+  @Test void stoppedPilotTurnChangesHeadingWithoutFlaggingMovement() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false, false, false, true, false), 1f, WORLD);
+    assertEquals(0f, ship.flightSpeed(), EPS);
+    float yaw = ship.yawDegrees();
+    float x = ship.x();
+    float y = ship.y();
+
+    ship.fly(new FlightControls(false, true, false, true, false), 0.5f, WORLD);
+
+    assertNotEquals(yaw, ship.yawDegrees(), "the pilot yaw still turns the hull");
+    assertEquals(x, ship.x(), 0f);
+    assertEquals(y, ship.y(), 0f);
+    assertTrue(ship.isTurning());
+    assertFalse(ship.lastAdvance().turnedWhileMoving(),
+        "a stationary turn must not publish a movement advance");
+  }
+
+  @Test void borderSteeringIsNotReportedAsAPilotTurnAdvance() {
+    Astra ship = new Astra();
+    ship.placeAt(0f, 6000f, -90f, WORLD);
+    ship.fly(FlightControls.neutral(), 1f, WORLD);
+
+    assertFalse(ship.isTurning());
+    assertFalse(ship.lastAdvance().turnedWhileMoving());
+  }
+
+  @Test void placementAndRespawnInvalidateTheAdvanceSignal() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false, true, true, false, false), 0.5f, WORLD);
+    Astra.Advance turning = ship.lastAdvance();
+    assertTrue(turning.turnedWhileMoving());
+
+    ship.respawnAt(1600f, 6000f, WORLD);
+
+    Astra.Advance respawned = ship.lastAdvance();
+    assertTrue(respawned.serial() > turning.serial());
+    assertFalse(respawned.turnedWhileMoving());
+    assertFalse(ship.isTurning());
   }
 
   @Test void sustainedTurnCompletesFullHeadingRotation() {
@@ -160,6 +247,27 @@ class AstraTest {
     assertThrows(IllegalArgumentException.class, () -> ship.shotAt(0f, Float.NaN, 0f, 1200f));
     assertThrows(IllegalArgumentException.class, () -> ship.shotAt(0f, 0f, 0f, 0f));
   }
+
+  @Test void shotOriginsFollowTheBankPoseShownWhileYawing() {
+    Astra ship = new Astra();
+    ship.placeAt(1600f, 6000f, 0f, WORLD);
+    ship.fly(new FlightControls(false, true, true, false, false), 0.5f, WORLD);
+    assertEquals(HeroShipSheet.Pose.RIGHT, ship.pose());
+
+    float centerX = ship.x() + ship.drawWidth() / 2f;
+    float centerY = ship.y() + ship.drawHeight() / 2f;
+    GunBurst.Shot shot = ship.shotAt(centerX, centerY, ship.yawDegrees(), 1200f);
+    float[][] expected = expectedMuzzles(centerX, centerY, ship.yawDegrees(),
+        ship.pose(), ship.drawWidth(), ship.drawHeight());
+
+    assertEquals(expected.length, shot.muzzles().size());
+    for (int i = 0; i < expected.length; i++) {
+      assertEquals(expected[i][0], shot.muzzles().get(i).x(), 1e-3f,
+          "muzzle X must come from the visible bank pose");
+      assertEquals(expected[i][1], shot.muzzles().get(i).y(), 1e-3f,
+          "muzzle Y must come from the visible bank pose");
+    }
+  }
 @Test
   void framePartitionAndInvalidDelta() {
     Astra one = new Astra();
@@ -205,7 +313,7 @@ class AstraTest {
     turning.setMuzzleFlashVisible(true);
     Ship.SpritePlacement yawRight = spritePlacement(turning, new TextureRegion());
     HeroShipSheet.FiringPlacement yawExpected =
-        HeroShipSheet.firingPlacement(HeroShipSheet.Pose.YAW_RIGHT, true);
+        HeroShipSheet.firingPlacement(HeroShipSheet.Pose.RIGHT, true);
     assertEquals(yawExpected.offsetXPx() * yawRight.scale(), yawRight.offsetX(), 1e-3f);
 
     Astra accelerating = new Astra();
@@ -229,5 +337,30 @@ class AstraTest {
         Ship.class.getDeclaredMethod("spritePlacement", TextureRegion.class);
     method.setAccessible(true);
     return (Ship.SpritePlacement) method.invoke(ship, region);
+  }
+
+  private static HeroShipSheet.Pose strafePose(boolean right) {
+    return right ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.LEFT;
+  }
+
+  /** Same lateral/forward projection as {@code Astra.shotAt}, from the expected pose. */
+  private static float[][] expectedMuzzles(float centerX, float centerY, float yawDegrees,
+      HeroShipSheet.Pose pose, float drawWidth, float drawHeight) {
+    double radians = Math.toRadians(yawDegrees);
+    float forwardX = (float) Math.sin(radians);
+    float forwardY = (float) Math.cos(radians);
+    float rightX = (float) Math.cos(radians);
+    float rightY = (float) -Math.sin(radians);
+    java.util.List<HeroShipSheet.CannonMouth> mouths = HeroShipSheet.cannonMouths(pose);
+    float[][] result = new float[mouths.size()][];
+    for (int i = 0; i < mouths.size(); i++) {
+      HeroShipSheet.CannonMouth mouth = mouths.get(i);
+      float lateral = mouth.lateral() * drawWidth;
+      float forward = mouth.forward() * drawHeight;
+      result[i] = new float[] {
+          centerX + rightX * lateral + forwardX * forward,
+          centerY + rightY * lateral + forwardY * forward};
+    }
+    return result;
   }
 }

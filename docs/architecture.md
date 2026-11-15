@@ -731,7 +731,15 @@ separado su energía, impactos, cañones, puntos y muertes; la pantalla
 reutiliza las texturas compartidas de Vesper y solo emite disparos cuando escolta y Astra coinciden
 en cámara. La aparición inicial del Raider principal permanece independiente.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
-alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
+alabeo y dos de guiñada. Desde COS-150 el vuelo de Astra dibuja el alabeo del mismo lado en
+desplazamiento lateral y en giro yaw, y conserva los dos recortes de guiñada como arte medido de
+las láminas y sus variantes de disparo. La pose mostrada sigue gobernando región, colocación del
+sprite y bocas de cañón de `shotAt()`. `Astra.isTurning()` refleja la orden de giro de
+`FlightControls` (no la pose), por lo que el halo de `AstraLightEffect` mantiene su regla, y
+`Astra.lastAdvance()` publica un `Advance(serial, turnedWhileMoving)` inmutable que identifica el
+último avance integrado y si en un mismo paso actuaron el yaw del piloto y el desplazamiento
+mundial; la corrección de borde y el giro sin movimiento no lo activan. Las variantes de disparo
+ya están preparadas:
 `HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
 de cada PNG; `firingSheets()` las enumera sin cambiar las referencias de tamaño
 de las láminas de vuelo. `VesperRaiderSheet.firingInternalPath()`, `firingSlice()`
