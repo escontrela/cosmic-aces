@@ -1347,7 +1347,7 @@ continuar con la nave, efectos y explosiones. En guiñadas sostenidas, acumula e
 girado y dibuja halos suaves en ambas alas con radio proporcional, que se desvanecen al soltar el
 giro, morir Astra o terminar la fase. No modifica el sprite, su tamaño, movimiento ni reglas.
 
-### Estela de humo del viraje de Astra (COS-152)
+### Estela de humo del viraje de Astra (COS-152, COS-153)
 
 `domain.effect.AstraYawSmokeTrail` es un modelo puramente presentacional de la estela de humo que
 Astra deja en el mundo durante un giro de yaw con desplazamiento. No importa LibGDX, input, cámara,
@@ -1363,9 +1363,22 @@ de los FPS. Un frame aporta como máximo 0,25 s de envejecimiento y hasta 8 mues
 atrasado no vuelca una ráfaga sobre un segmento recto, sino que reinicia la separación desde la cola
 actual. La primera muestra de cada maniobra se coloca exactamente en la cola actual y detener la
 emisión borra el ancla de interpolación: dos virajes separados, una reaparición o un salto nunca quedan
-unidos por una línea recta. `SAMPLE_LIFETIME_SECONDS = 0,85` fija la vida de cada muestra; `alpha()`
-decrece de forma cuadrática hasta cero y `radius()` crece suavemente con la edad. `clear()` descarta
-todo el estado para muerte, reaparición, fin de misión, abandono o nueva partida.
+unidos por una línea recta. `SAMPLE_LIFETIME_SECONDS = 0,85` fija la vida de cada muestra;
+`alpha()` decrece de forma cuadrática desde el alfa con el que se emitió hasta cero y `radius()`
+crece suavemente con la edad. `clear()` descarta todo el estado para muerte, reaparición, fin de
+misión, abandono o nueva partida.
+
+`domain.effect.TurnSmokeIntensity` (COS-153) traduce la velocidad real integrada, no el modo
+seleccionado, a un factor de visibilidad continuo, monótono y acotado. El factor se queda en
+`SUBTLE_FACTOR = 1` hasta `SUBTLE_SPEED = 150` u/s, sube linealmente hasta `PEAK_FACTOR = 2,4` en
+`PEAK_SPEED = 750` u/s y se recorta por encima; una lectura no finita o negativa vuelve al factor
+sutil. Como solo depende de la velocidad, dos naves a la misma velocidad real reciben el mismo
+factor, y cambiar de modo por sí solo no provoca saltos. `AstraYawSmokeTrail.update(delta,
+emitting, intensityFactor, tailX, tailY)` guarda `BASE_PEAK_ALPHA * factor` (recortado a 1) en cada
+muestra al emitirla; la sobrecarga de cuatro argumentos conserva el factor sutil. Así, acelerar en
+Turbo o Ultra solo refuerza el humo nuevo, el ya emitido mantiene su alfa inicial y al frenar las
+emisiones nuevas vuelven gradualmente al aspecto sutil. La curva es reutilizable por las estelas de
+los enemigos de COS-154.
 
 `infrastructure.gdx.screen.AstraYawSmokeEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
 Posee una única instancia del modelo y un `AlphaBlendPass`; no crea texturas, shaders ni otros recursos
@@ -1378,7 +1391,9 @@ movimiento y los frames congelados; no lee teclas, pose ni temporizador de Ultra
 atrás `TAIL_AFT_FRACTION = 0,55` de la altura con el vector de avance `(sin yaw, cos yaw)`, igual que el
 vuelo y las bocas de cañón, para ambos modelos de Astra. `update(delta, missionPlaying, astraActive,
 astra)` limpia la estela cuando la partida no está en curso, deja de emitir si Astra está inactiva y
-mantiene el humo ya emitido envejeciendo; el parpadeo de invulnerabilidad no reinicia la emisión.
+mantiene el humo ya emitido envejeciendo; la intensidad de cada emisión sale de
+`TurnSmokeIntensity.factorForSpeed(astra.flightSpeed())` (COS-153), de modo que la opacidad sigue la
+velocidad real y no el modo. El parpadeo de invulnerabilidad no reinicia la emisión.
 
 `drawWorldPass(gl, shapes, camera)` fija `camera.combined`, abre su propia sesión `ShapeRenderer.ShapeType.Filled`
 y la cierra (volcando los vértices) antes de devolver el control, con la composición alfa acotada por
@@ -1909,9 +1924,11 @@ com.davidpe.cosmicaces
 |   |       4. isEngaged()  5. particleCount()  6. particle()
 |   |       +-- Particle: cabeza, cola, alfa, ancho y progreso proa→cola.
 |   |   +-- AstraYawSmokeTrail: estela mundial acotada de humo del viraje (COS-152).
-|   |       1. update()  2. clear()  3. hasSamples()
+|   |       1. update() [2 sobrecargas]  2. clear()  3. hasSamples()
 |   |       4. sampleCount()  5. sample()  6. isEmitting()
-|   |       +-- Sample: posición mundial congelada, edad, alfa decreciente y radio creciente.
+|   |       +-- Sample: posición mundial congelada, edad, alfa inicial capturado y radio creciente.
+|   |   +-- TurnSmokeIntensity: factor de visibilidad continuo desde la velocidad real (COS-153).
+|   |       1. factorForSpeed()
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.

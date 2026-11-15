@@ -5,6 +5,7 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.davidpe.cosmicaces.domain.effect.AstraYawSmokeTrail;
+import com.davidpe.cosmicaces.domain.effect.TurnSmokeIntensity;
 import com.davidpe.cosmicaces.domain.player.Astra;
 
 /**
@@ -20,7 +21,8 @@ import com.davidpe.cosmicaces.domain.player.Astra;
  *
  * <p>The emission point is derived from the stable hull box and the current heading, so it works for
  * both Astra models and both camera modes. Puffs are stored in world coordinates by the model and
- * therefore never follow the ship or rotate with the camera after they are emitted.
+ * therefore never follow the ship or rotate with the camera after they are emitted. Each new puff
+ * takes its opacity from {@link TurnSmokeIntensity} and Astra's real integrated speed.
  */
 final class AstraYawSmokeEffect {
 
@@ -50,10 +52,13 @@ final class AstraYawSmokeEffect {
   }
 
   /**
-   * Ages the trail with the mission-authorized slice and extends it while emitting. Ending the
-   * mission (result panel, abandonment, new game) discards the trail so no smoke survives into
-   * another run; a dead Astra only stops emitting, and her last puffs keep fading. The owning screen
-   * clears it explicitly when a new life starts.
+   * Ages the trail with the mission-authorized slice and extends it while emitting. New puffs take
+   * their visibility from Astra's real integrated speed through {@link TurnSmokeIntensity}, so the
+   * smoke grows gradually with Turbo/Ultra acceleration and returns to subtle as she brakes, while
+   * the puffs already in the world keep the alpha they were born with. Ending the mission (result
+   * panel, abandonment, new game) discards the trail so no smoke survives into another run; a dead
+   * Astra only stops emitting, and her last puffs keep fading. The owning screen clears it
+   * explicitly when a new life starts.
    */
   void update(float deltaSeconds, boolean missionPlaying, boolean astraActive, Astra astra) {
     if (astra == null) {
@@ -65,8 +70,9 @@ final class AstraYawSmokeEffect {
       return;
     }
     boolean emitting = isEmitting(missionPlaying, astraActive, astra);
+    float intensity = TurnSmokeIntensity.factorForSpeed(astra.flightSpeed());
     tailPoint(astra, tail);
-    trail.update(deltaSeconds, emitting, tail.x, tail.y);
+    trail.update(deltaSeconds, emitting, intensity, tail.x, tail.y);
   }
 
   /** Drops every puff immediately; used for explicit session transitions such as a new life. */

@@ -234,4 +234,62 @@ class AstraYawSmokeTrailTest {
     assertEquals(2000f, trail.sample(0).x(), 1e-4f);
     assertEquals(100f, trail.sample(0).y(), 1e-4f);
   }
+
+  @Test
+  void theSuppliedIntensityFactorOnlyScalesThePuffsItCreates() {
+    AstraYawSmokeTrail trail = new AstraYawSmokeTrail();
+    trail.update(STEP, true, TurnSmokeIntensity.SUBTLE_FACTOR, 100f, 100f);
+    float subtle = trail.sample(0).alpha();
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA, subtle, 1e-5f,
+        "the zero-factor delta keeps the default subtle peak alpha");
+
+    // Zero delta: no ageing inside this check, so any alpha change comes from the factor alone.
+    trail.update(0f, true, TurnSmokeIntensity.PEAK_FACTOR,
+        100f + AstraYawSmokeTrail.SAMPLE_SPACING, 100f);
+    assertTrue(trail.sampleCount() >= 2);
+    assertEquals(subtle, trail.sample(0).alpha(), 1e-6f,
+        "a puff already in the world keeps the alpha it was emitted with");
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA * TurnSmokeIntensity.PEAK_FACTOR,
+        trail.sample(trail.sampleCount() - 1).alpha(), 1e-5f,
+        "a new puff takes the higher visibility of its own emission");
+  }
+
+  @Test
+  void brakingLowersTheAlphaOfNewPuffsWithoutTouchingTheOldOnes() {
+    AstraYawSmokeTrail trail = new AstraYawSmokeTrail();
+    trail.update(STEP, true, TurnSmokeIntensity.PEAK_FACTOR, 0f, 50f);
+    float firstAlpha = trail.sample(0).alpha();
+    float x = 0f;
+    float previousNewest = firstAlpha;
+    for (float factor : new float[] {2.0f, 1.6f, TurnSmokeIntensity.SUBTLE_FACTOR}) {
+      x += AstraYawSmokeTrail.SAMPLE_SPACING;
+      trail.update(0f, true, factor, x, 50f);
+      float newest = trail.sample(trail.sampleCount() - 1).alpha();
+      assertTrue(newest < previousNewest,
+          "each slower emission must be subtler than the previous one");
+      previousNewest = newest;
+    }
+    assertEquals(TurnSmokeIntensity.SUBTLE_FACTOR * AstraYawSmokeTrail.BASE_PEAK_ALPHA,
+        previousNewest, 1e-5f, "the slowest emission returns to the subtle cruise alpha");
+    assertEquals(firstAlpha, trail.sample(0).alpha(), 1e-6f,
+        "decelerating never repaints the smoke already left behind");
+  }
+
+  @Test
+  void invalidOrExcessiveFactorsStayInsideTheVisibleRange() {
+    AstraYawSmokeTrail trail = new AstraYawSmokeTrail();
+    trail.update(STEP, true, Float.NaN, 10f, 10f);
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA, trail.sample(0).alpha(), 1e-5f,
+        "a non-finite factor falls back to the subtle cruise alpha");
+
+    trail.clear();
+    trail.update(STEP, true, -3f, 10f, 10f);
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA, trail.sample(0).alpha(), 1e-5f,
+        "a negative factor falls back to the subtle cruise alpha");
+
+    trail.clear();
+    trail.update(STEP, true, 100f, 10f, 10f);
+    assertEquals(1f, trail.sample(0).alpha(), 1e-6f,
+        "an excessive factor can never produce an out-of-range alpha");
+  }
 }

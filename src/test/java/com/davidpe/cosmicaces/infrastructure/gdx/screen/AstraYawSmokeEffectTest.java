@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.domain.effect.AstraYawSmokeTrail;
+import com.davidpe.cosmicaces.domain.effect.TurnSmokeIntensity;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
@@ -169,8 +171,91 @@ class AstraYawSmokeEffectTest {
     assertFalse(AstraYawSmokeEffect.isEmitting(true, true, null));
   }
 
+  @Test
+  void theFirstFramesOfACruiseTurnStaySubtle() {
+    Astra astra = astraAt(0f);
+    AstraYawSmokeEffect effect = new AstraYawSmokeEffect();
+    astra.fly(new FlightControls(false, true, true, false, false), STEP, WORLD);
+    effect.update(STEP, true, true, astra);
+
+    float alpha = effect.sample(effect.sampleCount() - 1).alpha();
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA
+            * TurnSmokeIntensity.factorForSpeed(astra.flightSpeed()),
+        alpha, 1e-5f, "the effect must read the real integrated speed");
+    assertTrue(alpha < AstraYawSmokeTrail.BASE_PEAK_ALPHA * 1.05f,
+        "leaving cruise must not suddenly make the smoke strongly visible");
+  }
+
+  @Test
+  void aTurboTurnEmitsClearlyMoreVisibleSmokeThanCruise() {
+    Astra astra = astraAt(0f);
+    AstraYawSmokeEffect effect = new AstraYawSmokeEffect();
+    // Build real speed flying straight; only the turn itself emits smoke.
+    astra.fly(new FlightControls(false, false, true, false, false), 2f, WORLD);
+    assertEquals(SPEEDS.turbo(), astra.flightSpeed(), 0.5f);
+
+    astra.fly(new FlightControls(false, true, true, false, false), STEP, WORLD);
+    effect.update(STEP, true, true, astra);
+    float turboAlpha = effect.sample(effect.sampleCount() - 1).alpha();
+    assertEquals(AstraYawSmokeTrail.BASE_PEAK_ALPHA
+            * TurnSmokeIntensity.factorForSpeed(astra.flightSpeed()),
+        turboAlpha, 1e-5f);
+    assertTrue(turboAlpha > AstraYawSmokeTrail.BASE_PEAK_ALPHA * 2f,
+        "a turn at Turbo speed must be clearly more visible than the cruise trail");
+  }
+
+  @Test
+  void brakingDuringTheTurnMakesOnlyTheNewSmokeSubtler() {
+    Astra astra = astraAt(0f);
+    AstraYawSmokeEffect effect = new AstraYawSmokeEffect();
+    astra.fly(new FlightControls(false, false, true, false, false), 2f, WORLD);
+    astra.fly(new FlightControls(false, true, true, false, false), STEP, WORLD);
+    effect.update(STEP, true, true, astra);
+    float fastAlpha = effect.sample(effect.sampleCount() - 1).alpha();
+    float fastX = effect.sample(effect.sampleCount() - 1).x();
+
+    float previousNewest = fastAlpha;
+    for (int frame = 0; frame < 20; frame++) {
+      astra.fly(new FlightControls(false, true, false, true, false), STEP, WORLD);
+      effect.update(STEP, true, true, astra);
+      float newest = effect.sample(effect.sampleCount() - 1).alpha();
+      assertTrue(newest < previousNewest,
+          "each new puff emitted while braking must be subtler than the previous one");
+      previousNewest = newest;
+    }
+    assertTrue(astra.flightSpeed() > TurnSmokeIntensity.SUBTLE_SPEED,
+        "the check runs while the ship is still flying fast enough to emit");
+    assertTrue(AstraYawSmokeEffect.isEmitting(true, true, astra));
+    assertEquals(fastX, effect.sample(0).x(), 1e-4f,
+        "the fastest puff stays anchored where it was emitted");
+    assertTrue(previousNewest < fastAlpha,
+        "the trail becomes subtler as the real speed drops");
+  }
+
+  @Test
+  void configuredSpeedTargetsNeverLeakIntoTheVisibleIntensity() {
+    Astra standard = astraAt(new FlightSpeeds(150, 650, 750), 0f);
+    Astra faster = astraAt(new FlightSpeeds(150, 900, 1000), 0f);
+    AstraYawSmokeEffect standardEffect = new AstraYawSmokeEffect();
+    AstraYawSmokeEffect fasterEffect = new AstraYawSmokeEffect();
+
+    standard.fly(new FlightControls(false, true, true, false, false), STEP, WORLD);
+    faster.fly(new FlightControls(false, true, true, false, false), STEP, WORLD);
+    assertEquals(standard.flightSpeed(), faster.flightSpeed(), 0f,
+        "both ships really fly at the same speed in this step");
+    standardEffect.update(STEP, true, true, standard);
+    fasterEffect.update(STEP, true, true, faster);
+
+    assertEquals(standardEffect.sample(0).alpha(), fasterEffect.sample(0).alpha(), 1e-6f,
+        "at the same real speed the trail looks the same whatever the configured targets are");
+  }
+
   private static Astra astraAt(float yawDegrees) {
-    Astra astra = new Astra(SPEEDS);
+    return astraAt(SPEEDS, yawDegrees);
+  }
+
+  private static Astra astraAt(FlightSpeeds speeds, float yawDegrees) {
+    Astra astra = new Astra(speeds);
     astra.placeAt(CENTER_X, CENTER_Y, yawDegrees, WORLD);
     return astra;
   }
