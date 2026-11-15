@@ -27,6 +27,7 @@ public final class GameSettingsStore {
   private static final String CONTROLLER_STICK_DEAD_ZONE = "controller.stick.deadZone";
   private static final String ASTRA_BOTTOM_FRACTION = "presentation.astraBottomFraction";
   private static final String CAMERA_MODE = "presentation.cameraMode";
+  private static final String CAMERA_DISTANCE = "presentation.cameraDistance";
   private static final String VIDEO_FULLSCREEN = "video.fullscreen";
   private static final String VIDEO_WIDTH = "video.width";
   private static final String VIDEO_HEIGHT = "video.height";
@@ -72,6 +73,24 @@ public final class GameSettingsStore {
 
   public void saveCameraMode(CameraMode mode) {
     preferences().putString(CAMERA_MODE, mode.id()).flush();
+  }
+
+  /**
+   * Saved camera pull-back; a missing, empty or unknown value resolves to the historical framing
+   * without rewriting the stored value. An incorrectly typed value falls back the same way.
+   */
+  public CameraDistance cameraDistance() {
+    Preferences prefs = preferences();
+    try {
+      return CameraDistance.fromId(
+          prefs.getString(CAMERA_DISTANCE, CameraDistance.CURRENT.id()));
+    } catch (IllegalArgumentException | ClassCastException invalidSavedValue) {
+      return CameraDistance.CURRENT;
+    }
+  }
+
+  public void saveCameraDistance(CameraDistance distance) {
+    preferences().putString(CAMERA_DISTANCE, distance.id()).flush();
   }
 
   public FlightSpeeds flightSpeeds() {

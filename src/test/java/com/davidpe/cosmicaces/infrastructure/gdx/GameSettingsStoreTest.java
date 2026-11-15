@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 class GameSettingsStoreTest {
 
   private static final String CAMERA_MODE_KEY = "presentation.cameraMode";
+  private static final String CAMERA_DISTANCE_KEY = "presentation.cameraDistance";
   private static final String ASTRA_BOTTOM_FRACTION_KEY = "presentation.astraBottomFraction";
   private static final String ASTRA_MISSILES_KEY = "astra.missiles.perLife";
   private static final String GUIDED_MISSILE_SPEED_KEY = "weapon.guidedMissile.maxSpeed";
@@ -151,6 +152,91 @@ class GameSettingsStoreTest {
   }
 
   @Test
+  void missingCameraDistanceUsesTheHistoricalFramingWithoutWritingIt() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(CameraDistance.CURRENT, store.cameraDistance());
+    assertFalse(preferences.contains(CAMERA_DISTANCE_KEY));
+    assertEquals(0, preferences.flushCount());
+  }
+
+  @Test
+  void unknownOrInvalidCameraDistanceFallsBackWithoutOverwritingOtherPreferences() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putString(CAMERA_DISTANCE_KEY, "ultra-wide")
+        .putString(CAMERA_MODE_KEY, "north-up")
+        .putFloat(ASTRA_BOTTOM_FRACTION_KEY, 0.27f);
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(CameraDistance.CURRENT, store.cameraDistance());
+    assertEquals("ultra-wide", preferences.getString(CAMERA_DISTANCE_KEY));
+    assertEquals(CameraMode.NORTH_UP, store.cameraMode());
+    assertEquals(0.27f, store.astraBottomFraction(), 0.0001f);
+
+    preferences.putString(CAMERA_DISTANCE_KEY, "");
+    assertEquals(CameraDistance.CURRENT, store.cameraDistance());
+    assertEquals("", preferences.getString(CAMERA_DISTANCE_KEY));
+
+    preferences.putFloat(CAMERA_DISTANCE_KEY, 1.25f);
+    assertEquals(CameraDistance.CURRENT, store.cameraDistance());
+    assertEquals(1.25f, preferences.getFloat(CAMERA_DISTANCE_KEY), 0.0001f);
+  }
+
+  @Test
+  void readsBackEveryPersistedCameraDistanceId() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+
+    store.saveCameraDistance(CameraDistance.FAR);
+    assertEquals("far", preferences.getString(CAMERA_DISTANCE_KEY));
+    assertEquals(CameraDistance.FAR, storeWith(preferences).cameraDistance());
+
+    store.saveCameraDistance(CameraDistance.FARTHEST);
+    assertEquals("farthest", preferences.getString(CAMERA_DISTANCE_KEY));
+    assertEquals(CameraDistance.FARTHEST, storeWith(preferences).cameraDistance());
+
+    store.saveCameraDistance(CameraDistance.CURRENT);
+    assertEquals("current", preferences.getString(CAMERA_DISTANCE_KEY));
+    assertEquals(CameraDistance.CURRENT, storeWith(preferences).cameraDistance());
+    assertTrue(preferences.flushCount() >= 3);
+  }
+
+  @Test
+  void cameraModeAndDistanceStayIndependentPreferences() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+    store.saveCameraMode(CameraMode.NORTH_UP);
+    store.saveAstraBottomFraction(0.27f);
+    store.saveCameraDistance(CameraDistance.FARTHEST);
+
+    GameSettingsStore reloaded = storeWith(preferences);
+    assertEquals(CameraMode.NORTH_UP, reloaded.cameraMode());
+    assertEquals(0.27f, reloaded.astraBottomFraction(), 0.0001f);
+    assertEquals(CameraDistance.FARTHEST, reloaded.cameraDistance());
+
+    reloaded.saveCameraMode(CameraMode.FOLLOW_ASTRA);
+    assertEquals(CameraDistance.FARTHEST, reloaded.cameraDistance());
+
+    reloaded.saveCameraDistance(CameraDistance.CURRENT);
+    assertEquals(CameraMode.FOLLOW_ASTRA, reloaded.cameraMode());
+    assertEquals(0.27f, reloaded.astraBottomFraction(), 0.0001f);
+  }
+
+  @Test
+  void resettingControllersLeavesTheCameraDistanceUntouched() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+    store.saveCameraDistance(CameraDistance.FAR);
+    store.saveControllerSettings(new ControllerSettings(ControllerSide.LEFT,
+        ActionBindings.genericDefaults(), StickSettings.DEFAULTS, false));
+
+    store.resetControllerSettings();
+
+    assertEquals(CameraDistance.FAR, store.cameraDistance());
+  }
+
+  @Test
   void controllerProfileBindingsAndStickRoundTripWithoutTouchingOtherSettings() {
     InMemoryPreferences preferences = new InMemoryPreferences();
     preferences.putString(CAMERA_MODE_KEY, "north-up").putFloat(ASTRA_BOTTOM_FRACTION_KEY, 0.27f);
@@ -263,6 +349,7 @@ class GameSettingsStoreTest {
     GameSettingsStore store = new GameSettingsStore();
 
     assertThrows(IllegalStateException.class, store::cameraMode);
+    assertThrows(IllegalStateException.class, store::cameraDistance);
   }
 
   private static GameSettingsStore storeWith(InMemoryPreferences preferences) {

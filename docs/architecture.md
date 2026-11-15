@@ -203,16 +203,19 @@ inferior de la imagen. El arte y la tipografía mantienen su escala con las dime
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
-contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
+contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo y el alejamiento de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
 Vídeo, Cámara, Encuadre, Nave, Velocidades de Astra y Armamento son overlays de infraestructura y no cambian la transición de Y ni el ESC
 de PhaseOne. La raíz de Ajustes se define con `RootOption`, que asocia cada entrada a su página:
 `Vídeo`, `Encuadre de Astra`, `Velocidades de Astra`, `Nave de Astra`, `Armamento` y `Cámara` con almacén de
 preferencias; sin almacén (constructores sin `GameSettingsStore`) se ofrecen `Vídeo`, `Encuadre de Astra` y `Cámara`,
-que funciona en memoria para la sesión. La página `Cámara` alterna con ←/→ `Seguimiento de Astra` (predeterminado)
-y `Norte fijo`, muestra el modo activo y guarda la elección al instante; la partida la captura al
-construir su pantalla, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
+que funciona en memoria para la sesión. La página `Cámara` agrupa los dos ajustes que la partida captura al
+construir su pantalla: `Modo de cámara` (←/→ alterna `Seguimiento de Astra`, predeterminado, y
+`Norte fijo`) y `Distancia` (←/→ recorre `Actual`, `Alejada` y `Más alejada`, limitado en ambos
+extremos porque `Actual` es el encuadre más cercano disponible). `↑/↓` mueve el foco entre ambas
+filas, de modo que un cambio de distancia nunca altera el modo; la fila enfocada y el valor activo se
+distinguen en el overlay, y cada elección se guarda al instante, nunca durante la misión. La página `Encuadre de Astra` muestra y ajusta el porcentaje 10–35 % desde el borde inferior
 para ambos modos; el valor guardado no se sobrescribe ni se pierde al cambiar de modo. `VideoDisplaySettings` consulta cada vez los modos que el monitor actual anuncia y
 aplica cambios de ventana/pantalla completa con restauración segura si el backend rechaza el modo.
 `GamePresentationSettings` aplica el encuadre de Astra (18 % inicial, 10–35 %, pasos de 1 %) y el
@@ -223,17 +226,23 @@ ese porcentaje en exploración y combate. También conserva el modo de cámara e
 bajo `presentation.cameraMode`; los IDs `follow-astra` y `north-up` son estables y un valor ausente,
 vacío o desconocido resuelve a `FOLLOW_ASTRA`. La carga no reescribe el valor guardado desconocido y
 cambiar de modo no altera el encuadre persistido: ambos modos usan ese porcentaje.
+También conserva el alejamiento de cámara elegido (`CameraDistance`) bajo
+`presentation.cameraDistance`: `CURRENT` (factor 1,00, encuadre actual y predeterminado),
+`FAR` (1,125) y `FARTHEST` (1,25); los IDs `current`, `far` y `farthest` son estables, los factores
+se declaran solo en `CameraDistance.zoomFactor()`, y un valor ausente, vacío, desconocido o mal
+tipado resuelve a `CURRENT` sin reescribir la clave guardada. Modo, encuadre y distancia se
+persisten de forma independiente.
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
 incluir el adaptador de almacenamiento junto a la configuración de presentación.
 `FlightCameraState` calcula posición, rumbo y zoom sin depender
-del nativo LibGDX y recibe el `CameraMode` al construirse; `FlightCamera` aplica ese estado a
+del nativo LibGDX y recibe el `CameraMode` y el `CameraDistance` al construirse; `FlightCamera` aplica ese estado a
 `OrthographicCamera`.
 En `FOLLOW_ASTRA`, el centro de Astra queda en el porcentaje persistido (18 % inicial,
 configurable entre 10–35 %) de la altura visible desde el borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
-1,00/1,08/1,15.
+1,00/1,08/1,15 como base de vuelo, multiplicada una sola vez por el factor de distancia.
 En `NORTH_UP`, Astra queda centrada horizontalmente y al porcentaje vertical persistido desde
 el borde inferior, independientemente de su rumbo. La cámara aplica sin retardo el centro mundial
 de Astra más un desplazamiento vertical `(0.5 - porcentaje) * alto lógico * zoom aplicado`,
@@ -242,23 +251,32 @@ arriba y el escenario se desplaza con el movimiento real de la nave. El desplaza
 recalcula con el zoom interpolado actual y el tamaño lógico efectivo para conservar exactamente
 el porcentaje durante combate, Ultra y resize. `FlightCamera` pasa al estado el alto de su
 cámara al construirlo (o el alto virtual de referencia si el viewport aún no está inicializado).
-El modo llega a la partida desde `GamePresentationSettings.cameraMode()`: `ScreenFactory`
-comparte esa instancia con `PhaseOneScreen`, y la pantalla captura el valor al construirse y lo
-pasa a `FlightCamera`, que crea su estado con ese `CameraMode` y lo aplica a la
+El modo y la distancia llegan a la partida desde `GamePresentationSettings.cameraMode()` y
+`cameraDistance()`: `ScreenFactory`
+comparte esa instancia con `PhaseOneScreen`, y la pantalla captura ambos valores al construirse y los
+pasa a `FlightCamera` (`createFlightCamera`), que crea su estado con ese `CameraMode` y
+`CameraDistance` y lo aplica a la
 `OrthographicCamera` antes del primer frame. Cada partida construye pantalla y cámara nuevas, así
-que dos partidas consecutivas pueden usar modos distintos sin arrastrar estado. `render()` actualiza
+que dos partidas consecutivas pueden usar modos y distancias distintos sin arrastrar estado. El
+factor de `CameraDistance` multiplica el zoom efectivo exactamente una vez, en
+`FlightCameraState.desiredZoom(...)`: el encuadre de exploración, los objetivos suavizados de zoom y
+la referencia de visibilidad del latch consumen el mismo valor, de modo que cada eje visible crece
+en la proporción elegida mientras las magnitudes mundiales (naves, armas, colisiones y velocidades)
+no cambian. `render()` actualiza
 la cámara después del movimiento y del combate y antes de planificar terreno, decidir coincidencia,
 colocar el indicador fuera de pantalla, avanzar Geran-4 y resolver armas. Todos esos consumidores
 leen la transformación efectiva de `camera` (`position`, `up`, `zoom` y el viewport real), nunca el
 yaw de Astra, por lo que ambos modos comparten una sola regla y el norte fijo no necesita caminos
 paralelos. `resize()` solo actualiza los viewports de mundo y HUD; la siguiente actualización válida
-recalcula el encuadre con el tamaño lógico nuevo.
+recalcula el encuadre con el tamaño lógico nuevo. El alejamiento no modifica el HUD ni el
+minimapa: ambos conservan su cámara y proyección fijas, mientras el terreno, la visibilidad de
+naves y armas y el indicador fuera de pantalla usan el zoom efectivo de la cámara de mundo.
 Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
 referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
 zoom del modo de vuelo; en `NORTH_UP`, centro de Astra más el desplazamiento vertical configurado con norte arriba; nunca el
 adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para conservar el porcentaje configurado desde el borde
+a zoom base `max(modo de vuelo, 1,25)` —multiplicado después por el factor de distancia— y recalcula el adelanto según ese zoom efectivo para conservar el porcentaje configurado desde el borde
 inferior (18 % inicial). En seguimiento se interpola con las mismas constantes (0,25 s zoom,
 0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer
@@ -1898,13 +1916,17 @@ com.davidpe.cosmicaces
         |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
         |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
         |   7. flightSpeeds()  8. saveFlightSpeeds()  9. savedVideoPreference()  10. saveVideoPreference()
+        |   11. cameraDistance()  12. saveCameraDistance()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
         +-- GamePresentationSettings: encuadre de Astra persistido; ajustable entre 10–35 %.
         |   1. loadFrom()  2. astraBottomFraction()  3. setAstraBottomFraction()
         |   4. adjustAstraBottomFraction()  5. astraVariant()  6. setAstraVariant()
         |   7. cycleAstraVariant()  8. cameraMode()  9. setCameraMode()
+        |   10. cameraDistance()  11. setCameraDistance()
         +-- CameraMode: modo de cámara persistido; IDs estables follow-astra/north-up y fallback a
         |   seguimiento. 1. id()  2. fromId()
+        +-- CameraDistance: alejamiento de cámara persistido; IDs estables current/far/farthest,
+        |   factores 1,00/1,125/1,25 y fallback a current. 1. id()  2. zoomFactor()  3. fromId()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()

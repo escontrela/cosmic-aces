@@ -3,6 +3,7 @@ package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,37 @@ class WelcomeScreenSettingsMenuTest {
     assertEquals(CameraMode.NORTH_UP, WelcomeScreen.cycleCameraMode(CameraMode.FOLLOW_ASTRA, -1));
     assertEquals(CameraMode.FOLLOW_ASTRA, WelcomeScreen.cycleCameraMode(CameraMode.NORTH_UP, 1));
     assertEquals(CameraMode.FOLLOW_ASTRA, WelcomeScreen.cycleCameraMode(CameraMode.NORTH_UP, -1));
+  }
+
+  @Test
+  void cameraPageFocusMovesBetweenTheModeAndDistanceRows() {
+    assertEquals(WelcomeScreen.CameraRow.DISTANCE.ordinal(),
+        WelcomeScreen.cycleCameraRow(WelcomeScreen.CameraRow.MODE.ordinal(), 1));
+    assertEquals(WelcomeScreen.CameraRow.MODE.ordinal(),
+        WelcomeScreen.cycleCameraRow(WelcomeScreen.CameraRow.DISTANCE.ordinal(), 1));
+    assertEquals(WelcomeScreen.CameraRow.DISTANCE.ordinal(),
+        WelcomeScreen.cycleCameraRow(WelcomeScreen.CameraRow.MODE.ordinal(), -1));
+    assertEquals(WelcomeScreen.CameraRow.MODE.ordinal(),
+        WelcomeScreen.cycleCameraRow(WelcomeScreen.CameraRow.DISTANCE.ordinal(), -1));
+  }
+
+  @Test
+  void cameraDistanceWalksEveryLevelAndStopsAtBothLimits() {
+    assertEquals(CameraDistance.CURRENT, WelcomeScreen.cycleCameraDistance(CameraDistance.CURRENT, -1),
+        "the historical framing is the closest view and cannot zoom in further");
+    assertEquals(CameraDistance.FAR, WelcomeScreen.cycleCameraDistance(CameraDistance.CURRENT, 1));
+    assertEquals(CameraDistance.FARTHEST, WelcomeScreen.cycleCameraDistance(CameraDistance.FAR, 1));
+    assertEquals(CameraDistance.FARTHEST,
+        WelcomeScreen.cycleCameraDistance(CameraDistance.FARTHEST, 1));
+    assertEquals(CameraDistance.FAR, WelcomeScreen.cycleCameraDistance(CameraDistance.FARTHEST, -1));
+    assertEquals(CameraDistance.CURRENT, WelcomeScreen.cycleCameraDistance(CameraDistance.FAR, -1));
+  }
+
+  @Test
+  void everyCameraDistanceHasAStableUserFacingLabel() {
+    assertEquals("Actual", WelcomeScreen.cameraDistanceLabel(CameraDistance.CURRENT));
+    assertEquals("Alejada", WelcomeScreen.cameraDistanceLabel(CameraDistance.FAR));
+    assertEquals("Más alejada", WelcomeScreen.cameraDistanceLabel(CameraDistance.FARTHEST));
   }
 
   private static List<String> labels(List<WelcomeScreen.RootOption> options) {

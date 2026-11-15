@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import org.junit.jupiter.api.Test;
 
@@ -136,6 +137,8 @@ class FlightCameraTest {
     assertEquals(1f, noFraction.up.x, 1e-5f);
     assertEquals(1f, withFraction.up.x, 1e-5f);
     assertEquals(Math.cos(Math.toRadians(90d)), noFraction.up.y, 1e-5f);
+    assertEquals(1f, noFraction.zoom, 1e-6f, "legacy construction keeps the historical zoom");
+    assertEquals(1f, withFraction.zoom, 1e-6f);
   }
 
   @Test void combatZoomReachesTheCameraInBothModes() {
@@ -190,6 +193,99 @@ class FlightCameraTest {
     assertEquals(followUpX, followCamera.up.x, 0f);
     assertEquals(followPositionY, followCamera.position.y, 0f);
     assertTrue(followCamera.up.x > 0.99f);
+  }
+
+  @Test void farthestDistanceScalesTheRotatedVisibleRectangleButNotTheWorldGeometry() {
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 45f, WORLD);
+    OrthographicCamera baseCamera = camera(1024f, 768f);
+    OrthographicCamera farthestCamera = camera(1024f, 768f);
+
+    new FlightCamera(baseCamera, astra, 0.18f, CameraMode.FOLLOW_ASTRA, CameraDistance.CURRENT);
+    new FlightCamera(farthestCamera, astra, 0.18f, CameraMode.FOLLOW_ASTRA,
+        CameraDistance.FARTHEST);
+
+    // Both cameras share Astra's heading and only the pulled-back distance changes the view.
+    assertEquals(baseCamera.up.x, farthestCamera.up.x, 0f);
+    assertEquals(baseCamera.up.y, farthestCamera.up.y, 0f);
+    assertEquals(1f, baseCamera.zoom, 1e-6f);
+    assertEquals(CameraDistance.FARTHEST.zoomFactor(), farthestCamera.zoom, 1e-6f);
+    assertEquals(CameraDistance.FARTHEST.zoomFactor(),
+        (farthestCamera.viewportWidth * farthestCamera.zoom)
+            / (baseCamera.viewportWidth * baseCamera.zoom),
+        1e-5f);
+
+    // A world point just outside the historical right edge: inside only the pulled-back view.
+    float rightX = baseCamera.up.y;
+    float rightY = -baseCamera.up.x;
+    float justOutsideBase = baseCamera.viewportWidth / 2f + 5f;
+    float pointX = baseCamera.position.x + rightX * justOutsideBase;
+    float pointY = baseCamera.position.y + rightY * justOutsideBase;
+    assertFalse(visible(baseCamera, pointX, pointY));
+    assertTrue(visible(farthestCamera, pointX, pointY));
+
+    // And a point just outside the farthest right edge stays hidden in both.
+    float outsideFarthest = farthestCamera.viewportWidth / 2f
+        * farthestCamera.zoom + 5f;
+    float farPointX = farthestCamera.position.x + rightX * outsideFarthest;
+    float farPointY = farthestCamera.position.y + rightY * outsideFarthest;
+    assertFalse(visible(baseCamera, farPointX, farPointY));
+    assertFalse(visible(farthestCamera, farPointX, farPointY));
+  }
+
+  @Test void distanceFactorReachesTheCameraInBothModesAndThroughCombat() {
+    for (CameraMode mode : CameraMode.values()) {
+      for (CameraDistance distance : CameraDistance.values()) {
+        Astra astra = new Astra();
+        astra.placeAt(1600f, 6000f, 45f, WORLD);
+        OrthographicCamera camera = camera(1024f, 768f);
+        FlightCamera flight = new FlightCamera(camera, astra, 0.30f, mode, distance);
+
+        assertEquals(distance.zoomFactor(), camera.zoom, 1e-5f,
+            "the selected distance must reach the camera before the first frame: "
+                + mode + " " + distance);
+        if (mode == CameraMode.NORTH_UP) {
+          assertNorthFramed(camera, astra, 0.30f);
+        }
+
+        FlightCameraState.CombatTarget target = new FlightCameraState.CombatTarget(true,
+            astraCentreX(astra), astraCentreY(astra), ENEMY_HALF_BOX);
+        for (int frame = 0; frame < 240; frame++) {
+          flight.update(astra, 1f / 60f, target, 1024f, 768f);
+        }
+        assertEquals(1.25f * distance.zoomFactor(), camera.zoom, 1e-4f,
+            "combat framing adds the distance factor: " + mode + " " + distance);
+        if (mode == CameraMode.NORTH_UP) {
+          assertNorthFramed(camera, astra, 0.30f);
+        }
+
+        for (int frame = 0; frame < 240; frame++) {
+          flight.update(astra, 1f / 60f, FlightCameraState.CombatTarget.none(), 1024f, 768f);
+        }
+        assertEquals(distance.zoomFactor(), camera.zoom, 1e-4f,
+            "the camera must return to the selected base framing: " + mode + " " + distance);
+      }
+    }
+  }
+
+  @Test void farthestDistanceKeepsTheNorthFramingAfterAResizeDuringFlight() {
+    Astra astra = new Astra();
+    astra.placeAt(2000f, 5000f, 210f, WORLD);
+    OrthographicCamera camera = camera(1024f, 768f);
+    FlightCamera flight = new FlightCamera(camera, astra, 0.30f, CameraMode.NORTH_UP,
+        CameraDistance.FARTHEST);
+
+    camera.setToOrtho(false, 1920f, 1080f);
+    flight.update(astra, 1f / 60f, FlightCameraState.CombatTarget.none(), 1920f, 1080f);
+
+    assertNorthFramed(camera, astra, 0.30f);
+    assertEquals(CameraDistance.FARTHEST.zoomFactor(), camera.zoom, 1e-6f);
+  }
+
+  private static boolean visible(OrthographicCamera camera, float worldX, float worldY) {
+    return CameraVisibility.shipVisible(worldX, worldY, 0f,
+        camera.position.x, camera.position.y, camera.up.x, camera.up.y,
+        camera.viewportWidth, camera.viewportHeight, camera.zoom);
   }
 
   private static OrthographicCamera camera(float width, float height) {
