@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
 import com.davidpe.cosmicaces.domain.player.Astra;
 import com.davidpe.cosmicaces.domain.player.FlightControls;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
@@ -396,6 +397,113 @@ class FlightCameraStateTest {
 
     state.update(astra, 1f / 60f);
     assertNorthFramed(state, astra);
+  }
+
+  // ---- Configurable camera distance (COS-148) ----
+
+  @Test void distanceFactorScalesTheFlightModeZoomExactlyOnce() {
+    for (CameraDistance distance : CameraDistance.values()) {
+      Astra astra = new Astra();
+      astra.placeAt(1600f, 6000f, 0f, WORLD);
+      FlightCameraState state = distanceState(astra, 0.18f, CameraMode.FOLLOW_ASTRA, distance);
+      assertEquals(distance.zoomFactor(), state.zoom(), 1e-5f,
+          "normal flight must keep the base zoom times the distance factor: " + distance);
+
+      astra.fly(new FlightControls(false, false, true, false, false), 1f, WORLD);
+      converge(state, astra, FlightCameraState.CombatTarget.none());
+      assertEquals(1.08f * distance.zoomFactor(), state.zoom(), 1e-4f,
+          "accelerated flight stacks the distance factor on 1.08: " + distance);
+
+      astra.fly(new FlightControls(false, false, false, false, true), 0.1f, WORLD);
+      converge(state, astra, FlightCameraState.CombatTarget.none());
+      assertEquals(1.15f * distance.zoomFactor(), state.zoom(), 1e-4f,
+          "Ultra stacks the distance factor on 1.15: " + distance);
+    }
+  }
+
+  @Test void distanceFactorAddsToCombatZoomAndReturnsToTheBaseInBothModes() {
+    for (CameraMode mode : CameraMode.values()) {
+      for (CameraDistance distance : CameraDistance.values()) {
+        Astra astra = new Astra();
+        astra.placeAt(1600f, 6000f, 45f, WORLD);
+        FlightCameraState state = distanceState(astra, 0.30f, mode, distance);
+        FlightCameraState.CombatTarget target =
+            targetAt(astraCentreX(astra), astraCentreY(astra));
+        for (int frame = 0; frame < 240; frame++) {
+          state.update(astra, 1f / 60f, target, 1024f, 768f);
+        }
+
+        assertTrue(state.combatActive(), "combat must engage: " + mode + " " + distance);
+        assertEquals(1.25f * distance.zoomFactor(), state.zoom(), 1e-4f,
+            "combat stacks the distance factor on 1.25: " + mode + " " + distance);
+        assertEquals(0.30f, bottomFraction(state, 768f), 0.001f,
+            "combat must keep the configured bottom fraction: " + mode + " " + distance);
+
+        for (int frame = 0; frame < 240; frame++) {
+          state.update(astra, 1f / 60f, FlightCameraState.CombatTarget.none(), 1024f, 768f);
+        }
+        assertFalse(state.combatActive());
+        assertEquals(distance.zoomFactor(), state.zoom(), 1e-4f,
+            "returning to exploration restores the base zoom times the distance: " + distance);
+        assertEquals(0.30f, bottomFraction(state, 768f), 0.001f);
+      }
+    }
+  }
+
+  @Test void farthestDistanceBringsATargetAtTheBaseViewEdgeIntoTheCombatFrame() {
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 0f, WORLD);
+    float baseReferenceX = refX(astra, 0f);
+    float baseReferenceY = refY(astra, 0f);
+    // Beyond the base half width (512) plus the enemy box margin (40), and inside the 1,25 view.
+    float targetX = baseReferenceX + 600f;
+
+    FlightCameraState base = distanceState(astra, 0.18f, CameraMode.FOLLOW_ASTRA,
+        CameraDistance.CURRENT);
+    base.update(astra, 1f / 60f, targetAt(targetX, baseReferenceY), 1024f, 768f);
+    assertFalse(base.combatActive(), "the historical view must not reach this target");
+
+    FlightCameraState farthest = distanceState(astra, 0.18f, CameraMode.FOLLOW_ASTRA,
+        CameraDistance.FARTHEST);
+    farthest.update(astra, 1f / 60f, targetAt(targetX, baseReferenceY), 1024f, 768f);
+    assertTrue(farthest.combatActive(), "the pulled-back view must include this target");
+  }
+
+  @Test void northUpKeepsTheConfiguredFractionForEveryDistanceAcrossLogicalSizes() {
+    for (CameraDistance distance : CameraDistance.values()) {
+      for (float[] viewport : new float[][] {
+          {1024f, 768f}, {1920f, 1080f}, {1440f, 900f}}) {
+        Astra astra = new Astra();
+        astra.placeAt(1600f, 6000f, 120f, WORLD);
+        FlightCameraState state = distanceState(astra, 0.30f, CameraMode.NORTH_UP, distance);
+        for (int frame = 0; frame < 30; frame++) {
+          state.update(astra, 1f / 60f, FlightCameraState.CombatTarget.none(),
+              viewport[0], viewport[1]);
+        }
+
+        assertNorthFramed(state, astra, 0.30f, viewport[1]);
+        assertEquals(distance.zoomFactor(), state.zoom(), 1e-4f,
+            "north-up exploration keeps the distance factor: " + distance);
+      }
+    }
+  }
+
+  private static FlightCameraState distanceState(Astra astra, float fraction, CameraMode mode,
+      CameraDistance distance) {
+    return new FlightCameraState(astra, fraction, mode, VirtualScreenSize.HEIGHT, distance);
+  }
+
+  private static void converge(FlightCameraState state, Astra astra,
+      FlightCameraState.CombatTarget target) {
+    for (int frame = 0; frame < 240; frame++) {
+      state.update(astra, 1f / 60f, target);
+    }
+  }
+
+  /** Astra's centre fraction above the visible bottom edge for the state's current framing. */
+  private static float bottomFraction(FlightCameraState state, float viewHeight) {
+    float visibleHeight = viewHeight * state.zoom();
+    return (visibleHeight / 2f - state.aheadDistance()) / visibleHeight;
   }
 
   private static void assertNorthFramed(FlightCameraState state, Astra astra) {

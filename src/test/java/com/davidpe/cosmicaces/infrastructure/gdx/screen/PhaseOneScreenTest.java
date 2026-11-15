@@ -5,6 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
+import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -101,5 +107,49 @@ class PhaseOneScreenTest {
 
     assertEquals(0f, panelY, "a panel taller than the viewport sits at the bottom edge");
     assertTrue(panelY + panelHeight > 0f);
+  }
+
+  @Test
+  void flightCameraCapturesTheConfiguredDistanceAndMode() {
+    WorldBounds world = new WorldBounds(3200f, 12000f);
+    Astra astra = new Astra();
+    astra.placeAt(1600f, 6000f, 0f, world);
+    GamePresentationSettings settings = new GamePresentationSettings();
+    OrthographicCamera current = camera(1024f, 768f);
+
+    PhaseOneScreen.createFlightCamera(current, astra, settings);
+
+    assertEquals(1f, current.zoom, 1e-6f,
+        "an installation without the distance preference keeps the historical framing");
+    assertEquals(0f, current.up.x, 1e-6f);
+    assertEquals(1f, current.up.y, 1e-6f, "the default mode is the tracking camera");
+
+    settings.setCameraDistance(CameraDistance.FARTHEST);
+    settings.setCameraMode(CameraMode.NORTH_UP);
+    OrthographicCamera farthest = camera(1024f, 768f);
+
+    PhaseOneScreen.createFlightCamera(farthest, astra, settings);
+
+    assertEquals(CameraDistance.FARTHEST.zoomFactor(), farthest.zoom, 1e-6f);
+    assertEquals(0f, farthest.up.x, 1e-6f);
+    assertEquals(1f, farthest.up.y, 1e-6f);
+    float bottomFraction = 0.5f + (astra.y() + astra.drawHeight() / 2f - farthest.position.y)
+        / (farthest.viewportHeight * farthest.zoom);
+    assertEquals(GamePresentationSettings.DEFAULT_ASTRA_BOTTOM_FRACTION, bottomFraction, 1e-5f,
+        "the captured framing must still place Astra at the configured height");
+  }
+
+  private static OrthographicCamera camera(float width, float height) {
+    OrthographicCamera camera = new HeadlessCamera();
+    camera.setToOrtho(false, width, height);
+    return camera;
+  }
+
+  /** Real camera except for the native frustum inverse, which these tests never read. */
+  private static final class HeadlessCamera extends OrthographicCamera {
+    @Override
+    public void update(boolean updateFrustum) {
+      super.update(false);
+    }
   }
 }

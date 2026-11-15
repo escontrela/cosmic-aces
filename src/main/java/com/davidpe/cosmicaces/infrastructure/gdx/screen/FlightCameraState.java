@@ -1,14 +1,18 @@
 package com.davidpe.cosmicaces.infrastructure.gdx.screen;
 
 import com.davidpe.cosmicaces.domain.player.Astra;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.CameraMode;
 import com.davidpe.cosmicaces.infrastructure.gdx.GamePresentationSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.VirtualScreenSize;
 
 /**
- * Pure presentation state for the world camera, framed by the selected {@link CameraMode}.
+ * Pure presentation state for the world camera, framed by the selected {@link CameraMode} and
+ * {@link CameraDistance}.
  *
- * <p>In {@link CameraMode#FOLLOW_ASTRA} it frames the current exploration viewport: a look-ahead
+ * <p>The selected distance multiplies the camera zoom exactly once, after the flight-mode or combat
+ * zoom has been chosen, so every framing receives the same pull-back and no world magnitude changes.
+ * In {@link CameraMode#FOLLOW_ASTRA} it frames the current exploration viewport: a look-ahead
  * derived from viewport height and a small zoom that only reflects the current flight mode. In
  * {@link CameraMode#NORTH_UP} world north stays up and Astra stays at the configured bottom fraction
  * without position lag, so the map scrolls with her displacement while she keeps her world heading. While
@@ -39,6 +43,8 @@ final class FlightCameraState {
   private float aheadDistance;
   private final float astraBottomFraction;
   private final CameraMode mode;
+  /** Orthographic pull-back captured when the screen is built; applied once to every zoom. */
+  private final float distanceZoomFactor;
   private boolean combatActive;
   private float combatExitSeconds;
 
@@ -55,8 +61,15 @@ final class FlightCameraState {
   }
 
   FlightCameraState(Astra astra, float astraBottomFraction, CameraMode mode, float viewHeight) {
+    this(astra, astraBottomFraction, mode, viewHeight, CameraDistance.CURRENT);
+  }
+
+  FlightCameraState(Astra astra, float astraBottomFraction, CameraMode mode, float viewHeight,
+      CameraDistance distance) {
     this.mode = mode == null ? CameraMode.FOLLOW_ASTRA : mode;
     this.astraBottomFraction = clampBottomFraction(astraBottomFraction);
+    distanceZoomFactor = distance == null
+        ? CameraDistance.CURRENT.zoomFactor() : distance.zoomFactor();
     zoom = desiredZoom(astra, false);
     if (northUp()) {
       frameNorthUp(astra, viewHeight);
@@ -227,9 +240,15 @@ final class FlightCameraState {
         + (float) Math.cos(Math.toRadians(yaw)) * ahead;
   }
 
-  private static float desiredZoom(Astra astra, boolean combat) {
+  /**
+   * Effective camera zoom: the flight-mode or combat base zoom multiplied by the selected distance
+   * factor. This is the single place that applies the pull-back, so exploration framing, the
+   * smoothed zoom targets and the visibility reference all consume exactly the same value.
+   */
+  private float desiredZoom(Astra astra, boolean combat) {
     float flightZoom = desiredFlightZoom(astra);
-    return combat ? Math.max(flightZoom, COMBAT_ZOOM) : flightZoom;
+    float baseZoom = combat ? Math.max(flightZoom, COMBAT_ZOOM) : flightZoom;
+    return baseZoom * distanceZoomFactor;
   }
 
   private static float clampBottomFraction(float fraction) {

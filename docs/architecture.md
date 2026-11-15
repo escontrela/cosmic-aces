@@ -233,13 +233,13 @@ persisten de forma independiente.
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
 incluir el adaptador de almacenamiento junto a la configuración de presentación.
 `FlightCameraState` calcula posición, rumbo y zoom sin depender
-del nativo LibGDX y recibe el `CameraMode` al construirse; `FlightCamera` aplica ese estado a
+del nativo LibGDX y recibe el `CameraMode` y el `CameraDistance` al construirse; `FlightCamera` aplica ese estado a
 `OrthographicCamera`.
 En `FOLLOW_ASTRA`, el centro de Astra queda en el porcentaje persistido (18 % inicial,
 configurable entre 10–35 %) de la altura visible desde el borde inferior; el adelanto del foco se calcula con el alto lógico efectivo y el
 zoom de vuelo para conservar esa posición en 4:3, 16:10 y 16:9. La cámara sigue
 el foco con 0,10 s de retardo y suaviza el yaw durante 0,25 s; usa zoom
-1,00/1,08/1,15.
+1,00/1,08/1,15 como base de vuelo, multiplicada una sola vez por el factor de distancia.
 En `NORTH_UP`, Astra queda centrada horizontalmente y al porcentaje vertical persistido desde
 el borde inferior, independientemente de su rumbo. La cámara aplica sin retardo el centro mundial
 de Astra más un desplazamiento vertical `(0.5 - porcentaje) * alto lógico * zoom aplicado`,
@@ -248,23 +248,32 @@ arriba y el escenario se desplaza con el movimiento real de la nave. El desplaza
 recalcula con el zoom interpolado actual y el tamaño lógico efectivo para conservar exactamente
 el porcentaje durante combate, Ultra y resize. `FlightCamera` pasa al estado el alto de su
 cámara al construirlo (o el alto virtual de referencia si el viewport aún no está inicializado).
-El modo llega a la partida desde `GamePresentationSettings.cameraMode()`: `ScreenFactory`
-comparte esa instancia con `PhaseOneScreen`, y la pantalla captura el valor al construirse y lo
-pasa a `FlightCamera`, que crea su estado con ese `CameraMode` y lo aplica a la
+El modo y la distancia llegan a la partida desde `GamePresentationSettings.cameraMode()` y
+`cameraDistance()`: `ScreenFactory`
+comparte esa instancia con `PhaseOneScreen`, y la pantalla captura ambos valores al construirse y los
+pasa a `FlightCamera` (`createFlightCamera`), que crea su estado con ese `CameraMode` y
+`CameraDistance` y lo aplica a la
 `OrthographicCamera` antes del primer frame. Cada partida construye pantalla y cámara nuevas, así
-que dos partidas consecutivas pueden usar modos distintos sin arrastrar estado. `render()` actualiza
+que dos partidas consecutivas pueden usar modos y distancias distintos sin arrastrar estado. El
+factor de `CameraDistance` multiplica el zoom efectivo exactamente una vez, en
+`FlightCameraState.desiredZoom(...)`: el encuadre de exploración, los objetivos suavizados de zoom y
+la referencia de visibilidad del latch consumen el mismo valor, de modo que cada eje visible crece
+en la proporción elegida mientras las magnitudes mundiales (naves, armas, colisiones y velocidades)
+no cambian. `render()` actualiza
 la cámara después del movimiento y del combate y antes de planificar terreno, decidir coincidencia,
 colocar el indicador fuera de pantalla, avanzar Geran-4 y resolver armas. Todos esos consumidores
 leen la transformación efectiva de `camera` (`position`, `up`, `zoom` y el viewport real), nunca el
 yaw de Astra, por lo que ambos modos comparten una sola regla y el norte fijo no necesita caminos
 paralelos. `resize()` solo actualiza los viewports de mundo y HUD; la siguiente actualización válida
-recalcula el encuadre con el tamaño lógico nuevo.
+recalcula el encuadre con el tamaño lógico nuevo. El alejamiento no modifica el HUD ni el
+minimapa: ambos conservan su cámara y proyección fijas, mientras el terreno, la visibilidad de
+naves y armas y el indicador fuera de pantalla usan el zoom efectivo de la cámara de mundo.
 Con COS-38 la cámara tiene un encuadre
 de combate: mientras el enemigo vivo intersecta el **encuadre de exploración de
 referencia** (en `FOLLOW_ASTRA`, foco derivado de Astra, yaw suavizado y adelanto del alto visible con
 zoom del modo de vuelo; en `NORTH_UP`, centro de Astra más el desplazamiento vertical configurado con norte arriba; nunca el
 adelanto/zoom de combate que se está decidiendo), el objetivo pasa
-a zoom `max(modo de vuelo, 1,25)` y recalcula el adelanto según ese zoom para conservar el porcentaje configurado desde el borde
+a zoom base `max(modo de vuelo, 1,25)` —multiplicado después por el factor de distancia— y recalcula el adelanto según ese zoom efectivo para conservar el porcentaje configurado desde el borde
 inferior (18 % inicial). En seguimiento se interpola con las mismas constantes (0,25 s zoom,
 0,10 s posición). El cambio es un latch con umbrales
 distintos: entra al cruzar el marco de exploración y sale solo tras permanecer

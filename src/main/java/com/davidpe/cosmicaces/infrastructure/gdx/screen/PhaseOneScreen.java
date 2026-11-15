@@ -224,10 +224,9 @@ public final class PhaseOneScreen extends ScreenAdapter {
     hudCamera.update();
     PhaseOneScenery phaseScenery = controller.phaseOneScenery();
     controller.placeAstraAtOperationsBase();
-    // The mode selected before the flight is captured here: one screen per run, so successive
-    // runs can use different modes without inheriting camera state.
-    flightCamera = new FlightCamera(camera, controller.astra(),
-        presentationSettings.astraBottomFraction(), presentationSettings.cameraMode());
+    // The mode and distance selected before the flight are captured here: one screen per run, so
+    // successive runs can use different framing without inheriting camera state.
+    flightCamera = createFlightCamera(camera, controller.astra(), presentationSettings);
 
     SpriteBatch loadedBatch = null;
     ShapeRenderer loadedShapes = null;
@@ -338,6 +337,17 @@ public final class PhaseOneScreen extends ScreenAdapter {
     controller.astra().setVisuals(astraVisuals);
     controller.setRaiderVisuals(raiderVisuals);
     controller.setBastionBomberVisuals(bastionBomberVisuals);
+  }
+
+  /**
+   * Builds this run's world camera from the preferences captured before the flight. Keeping the
+   * wiring in one factory makes the captured mode, framing and distance testable without a GL
+   * context; the screen calls it once, after Astra's initial placement.
+   */
+  static FlightCamera createFlightCamera(OrthographicCamera camera, Astra astra,
+      GamePresentationSettings presentationSettings) {
+    return new FlightCamera(camera, astra, presentationSettings.astraBottomFraction(),
+        presentationSettings.cameraMode(), presentationSettings.cameraDistance());
   }
 
   @Override

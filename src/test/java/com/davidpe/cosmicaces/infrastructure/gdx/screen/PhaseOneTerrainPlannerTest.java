@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.domain.game.WorldBounds;
+import com.davidpe.cosmicaces.infrastructure.gdx.CameraDistance;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainCatalog.Tile;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainPlanner.Bounds;
 import com.davidpe.cosmicaces.infrastructure.gdx.screen.PhaseOneTerrainPlanner.Camera;
@@ -295,6 +296,32 @@ class PhaseOneTerrainPlannerTest {
         seenRear = true;
       }
     }
+  }
+
+  @Test
+  void farthestDistanceCoversTheWidenedVisibleRectangleUntilTheMapLimits() {
+    WorldBounds world = new WorldBounds(8192f, 36000f);
+    Bounds base = PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(4096f, 6000f, 0f, 1f, 1f, REFERENCE_WIDTH, REFERENCE_HEIGHT), world);
+    Bounds farthest = PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(4096f, 6000f, 0f, 1f, CameraDistance.FARTHEST.zoomFactor(),
+            REFERENCE_WIDTH, REFERENCE_HEIGHT), world);
+
+    assertTrue(farthest.minX() <= base.minX(), "the pulled-back view starts further left");
+    assertTrue(farthest.minY() <= base.minY(), "the pulled-back view starts further down");
+    assertTrue(farthest.maxX() >= base.maxX(), "the pulled-back view ends further right");
+    assertTrue(farthest.maxY() >= base.maxY(), "the pulled-back view ends further up");
+    assertEquals(CameraDistance.FARTHEST.zoomFactor() * (base.maxX() - base.minX()),
+        farthest.maxX() - farthest.minX(), 0.001f);
+    assertEquals(CameraDistance.FARTHEST.zoomFactor() * (base.maxY() - base.minY()),
+        farthest.maxY() - farthest.minY(), 0.001f);
+
+    // Near a map corner the wider rectangle is clipped, never extended beyond the world.
+    Bounds clipped = PhaseOneTerrainPlanner.visibleBounds(
+        new Camera(100f, 100f, 0f, 1f, CameraDistance.FARTHEST.zoomFactor(),
+            REFERENCE_WIDTH, REFERENCE_HEIGHT), world);
+    assertEquals(0f, clipped.minX(), 0.001f);
+    assertEquals(0f, clipped.minY(), 0.001f);
   }
 
   @Test
