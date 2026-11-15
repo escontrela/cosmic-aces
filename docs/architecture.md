@@ -203,7 +203,7 @@ inferior de la imagen. El arte y la tipografía mantienen su escala con las dime
 `ScreenFactory` comparte `VideoDisplaySettings` y `GamePresentationSettings` entre la bienvenida
 y las fases durante la sesión de aplicación. `GameSettingsStore` usa las preferencias locales de
 LibGDX (archivo de ajustes de la aplicación), se inicializa en `CosmicAcesGame.create()` cuando el
-contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo de cámara, el tamaño de ventana y la selección de pantalla completa.
+contexto está disponible y persiste el encuadre, velocidades y modelo visual de Astra, el modo y el alejamiento de cámara, el tamaño de ventana y la selección de pantalla completa.
 Una preferencia de pantalla completa se valida contra el monitor actual al arrancar; si el modo ya
 no existe, la aplicación mantiene un modo utilizable. `WelcomeScreen` abre Ajustes con ESC; sus secciones
 Vídeo, Cámara, Encuadre, Nave, Velocidades de Astra y Armamento son overlays de infraestructura y no cambian la transición de Y ni el ESC
@@ -223,6 +223,12 @@ ese porcentaje en exploración y combate. También conserva el modo de cámara e
 bajo `presentation.cameraMode`; los IDs `follow-astra` y `north-up` son estables y un valor ausente,
 vacío o desconocido resuelve a `FOLLOW_ASTRA`. La carga no reescribe el valor guardado desconocido y
 cambiar de modo no altera el encuadre persistido: ambos modos usan ese porcentaje.
+También conserva el alejamiento de cámara elegido (`CameraDistance`) bajo
+`presentation.cameraDistance`: `CURRENT` (factor 1,00, encuadre actual y predeterminado),
+`FAR` (1,125) y `FARTHEST` (1,25); los IDs `current`, `far` y `farthest` son estables, los factores
+se declaran solo en `CameraDistance.zoomFactor()`, y un valor ausente, vacío, desconocido o mal
+tipado resuelve a `CURRENT` sin reescribir la clave guardada. Modo, encuadre y distancia se
+persisten de forma independiente.
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
 incluir el adaptador de almacenamiento junto a la configuración de presentación.
@@ -1898,13 +1904,17 @@ com.davidpe.cosmicaces
         |   1. initialize()  2. usePreferences() [inyección de backend para pruebas]  3. astraBottomFraction()
         |   4. saveAstraBottomFraction()  5. cameraMode()  6. saveCameraMode()
         |   7. flightSpeeds()  8. saveFlightSpeeds()  9. savedVideoPreference()  10. saveVideoPreference()
+        |   11. cameraDistance()  12. saveCameraDistance()
         +-- VirtualScreenSize: referencia de juego/ventana restaurada, 1024 x 768; no limita la vista.
         +-- GamePresentationSettings: encuadre de Astra persistido; ajustable entre 10–35 %.
         |   1. loadFrom()  2. astraBottomFraction()  3. setAstraBottomFraction()
         |   4. adjustAstraBottomFraction()  5. astraVariant()  6. setAstraVariant()
         |   7. cycleAstraVariant()  8. cameraMode()  9. setCameraMode()
+        |   10. cameraDistance()  11. setCameraDistance()
         +-- CameraMode: modo de cámara persistido; IDs estables follow-astra/north-up y fallback a
         |   seguimiento. 1. id()  2. fromId()
+        +-- CameraDistance: alejamiento de cámara persistido; IDs estables current/far/farthest,
+        |   factores 1,00/1,125/1,25 y fallback a current. 1. id()  2. zoomFactor()  3. fromId()
         +-- VideoDisplaySettings: catálogo y cambio seguro de modos del monitor actual; mantiene
         |   DisplayMode dentro del adaptador y expone VideoMode, DisplayCatalog, VideoState y ApplyResult.
         |   1. catalog()  2. currentState()  3. applyFullscreen()  4. applyWindowed()

@@ -13,6 +13,7 @@ public final class GamePresentationSettings {
   private float astraBottomFraction = DEFAULT_ASTRA_BOTTOM_FRACTION;
   private AstraVariant astraVariant = AstraVariant.ORIGINAL;
   private CameraMode cameraMode = CameraMode.FOLLOW_ASTRA;
+  private CameraDistance cameraDistance = CameraDistance.CURRENT;
   private GameSettingsStore settingsStore;
 
   void loadFrom(GameSettingsStore settingsStore) {
@@ -21,6 +22,7 @@ public final class GamePresentationSettings {
     setAstraVariant(settingsStore.astraVariant());
     // Assigned directly: the load itself must not rewrite an unknown saved id as the fallback.
     cameraMode = settingsStore.cameraMode();
+    cameraDistance = settingsStore.cameraDistance();
   }
 
   public float astraBottomFraction() {
@@ -81,6 +83,23 @@ public final class GamePresentationSettings {
     cameraMode = mode == null ? CameraMode.FOLLOW_ASTRA : mode;
     if (settingsStore != null) {
       settingsStore.saveCameraMode(cameraMode);
+    }
+  }
+
+  /** Persisted camera pull-back for the next flight; defaults to the historical framing. */
+  public CameraDistance cameraDistance() {
+    return cameraDistance;
+  }
+
+  /**
+   * Selects the camera pull-back for the next flight and persists it. This preference is
+   * independent from the camera mode and Astra's framing: selecting a distance never changes
+   * either, and a null selection falls back to {@link CameraDistance#CURRENT}.
+   */
+  public void setCameraDistance(CameraDistance distance) {
+    cameraDistance = distance == null ? CameraDistance.CURRENT : distance;
+    if (settingsStore != null) {
+      settingsStore.saveCameraDistance(cameraDistance);
     }
   }
 }
