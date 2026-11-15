@@ -37,6 +37,12 @@ public final class GameSettingsStore {
   private static final String ASTRA_NORMAL_SPEED = "astra.speed.normal";
   private static final String ASTRA_TURBO_SPEED = "astra.speed.turbo";
   private static final String ASTRA_ULTRA_SPEED = "astra.speed.ultra";
+  private static final String ASTRA_ULTRA_SPEED_MIGRATED = "astra.speed.ultraMigrated";
+  /**
+   * Ultra target shipped before COS-155 raised the factory value to 1000. It is only read to migrate
+   * settings written by an older build once.
+   */
+  private static final int LEGACY_FACTORY_ULTRA_SPEED = 750;
   private static final String ASTRA_VARIANT = "astra.variant";
   private static final String ASTRA_MISSILES_PER_LIFE = "astra.missiles.perLife";
   private static final String GUIDED_MISSILE_MAX_SPEED = "weapon.guidedMissile.maxSpeed";
@@ -93,21 +99,46 @@ public final class GameSettingsStore {
     preferences().putString(CAMERA_DISTANCE, distance.id()).flush();
   }
 
+  /**
+   * Saved per-mode targets, with the factory values on a missing or invalid entry. A settings file
+   * written before the Ultra increase stored the old factory target (750); it is migrated once to the
+   * current factory value without touching Normal, Turbo or any other custom Ultra.
+   */
   public FlightSpeeds flightSpeeds() {
     Preferences prefs = preferences();
     try {
-      return new FlightSpeeds(prefs.getInteger(ASTRA_NORMAL_SPEED, FlightSpeeds.DEFAULTS.normal()),
-          prefs.getInteger(ASTRA_TURBO_SPEED, FlightSpeeds.DEFAULTS.turbo()),
-          prefs.getInteger(ASTRA_ULTRA_SPEED, FlightSpeeds.DEFAULTS.ultra()));
+      return migrateLegacyUltraSpeed(prefs,
+          new FlightSpeeds(prefs.getInteger(ASTRA_NORMAL_SPEED, FlightSpeeds.DEFAULTS.normal()),
+              prefs.getInteger(ASTRA_TURBO_SPEED, FlightSpeeds.DEFAULTS.turbo()),
+              prefs.getInteger(ASTRA_ULTRA_SPEED, FlightSpeeds.DEFAULTS.ultra())));
     } catch (IllegalArgumentException invalidSavedSettings) {
       return FlightSpeeds.DEFAULTS;
     }
   }
 
+  /**
+   * One-time upgrade of a stored factory Ultra target to the current factory value. Older settings
+   * cannot distinguish a 750 chosen by the player from the factory value of that build, so the
+   * legacy number is only reinterpreted while the migration marker is absent. The marker is also
+   * written by {@link #saveFlightSpeeds(FlightSpeeds)}, so a 750 selected afterwards is preserved.
+   */
+  private static FlightSpeeds migrateLegacyUltraSpeed(Preferences prefs, FlightSpeeds saved) {
+    if (readBoolean(prefs, ASTRA_ULTRA_SPEED_MIGRATED, false)
+        || saved.ultra() != LEGACY_FACTORY_ULTRA_SPEED) {
+      return saved;
+    }
+    FlightSpeeds migrated = saved.withUltra(FlightSpeeds.DEFAULTS.ultra());
+    prefs.putInteger(ASTRA_ULTRA_SPEED, migrated.ultra())
+        .putBoolean(ASTRA_ULTRA_SPEED_MIGRATED, true).flush();
+    return migrated;
+  }
+
+  /** Saves the three targets together and records that the Ultra migration already happened. */
   public void saveFlightSpeeds(FlightSpeeds speeds) {
     preferences().putInteger(ASTRA_NORMAL_SPEED, speeds.normal())
         .putInteger(ASTRA_TURBO_SPEED, speeds.turbo())
-        .putInteger(ASTRA_ULTRA_SPEED, speeds.ultra()).flush();
+        .putInteger(ASTRA_ULTRA_SPEED, speeds.ultra())
+        .putBoolean(ASTRA_ULTRA_SPEED_MIGRATED, true).flush();
   }
 
   /** Missing, invalid or incorrectly typed values fall back without overwriting preferences. */

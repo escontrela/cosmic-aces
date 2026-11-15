@@ -16,7 +16,7 @@ Esta guía describe la estructura actual y los criterios para añadir clases baj
 | `domain.player` | Elementos propios del protagonista | Astra, controles de vuelo, parámetros de pilotaje y láminas de sprites. |
 | `domain.enemy` | Enemigos y encuentros | Naves enemigas, trayectorias, apariciones y sus sprites. |
 | `domain.weapon` | Elementos de las armas | Modelo de proyectiles rectos (`GunProjectile`) y guiados (`GuidedMissile`), cadencia, dibujo reutilizable de ráfagas, configuración/inventario/mira/objetivos, metadatos (`GuidedMissileSheet`) y su layout gráfico puro (`GuidedMissileSpriteLayout`). |
-| `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión, destellos y flujo de aire de Astra; sin reglas de daño/reaparición. |
+| `domain.effect` | Efectos gráficos reutilizables del juego | Recortes de explosión, destellos, flujo de aire de Astra y estela de humo del viraje; sin reglas de daño/reaparición. |
 | `domain.collision` | Geometría común entre fases | Contactos y trayectorias barridas; sin daño, input, cámara o reglas de enemigos. |
 | `domain.scenery` | Elementos reutilizables del escenario y modelo procedural del terreno | `Starfield`; mapa, configuración, regiones y distribución determinista de decoración. Sin carga de imágenes ni dependencia de pantallas. |
 | `infrastructure.gdx` | Composición de pantallas y configuración de presentación | ScreenFactory, resolución virtual, catálogo de vídeo y preferencias persistentes locales. |
@@ -164,7 +164,7 @@ rumbo, velocidad instantánea, `SpeedMode` (NORMAL/TURBO/ULTRA), tiempo restante
 `PhaseOneGameController.advanceFlight` aplica únicamente el delta que resta
 del recorrido y fija el mundo en 8192×36000: ocho anchos virtuales de 1024
 unidades y el triple de la longitud original de 12000. `FlightSpeeds` guarda los objetivos configurables de Astra (normal 150, turbo 650,
-Ultra 750 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
+Ultra 1000 u/s por defecto; independientes entre 50 y 1000 en pasos de 10).
 `FlightTuning` reúne aceleración, frenado y giro (130°/s; el desplazamiento lateral-solo conserva 300 u/s como
 `STRAFE_SPEED`, separado de la velocidad de crucero); el borde anticipa el giro
 según la velocidad y el recorte de posición es la última salvaguarda.
@@ -234,7 +234,12 @@ tipado resuelve a `CURRENT` sin reescribir la clave guardada. Modo, encuadre y d
 persisten de forma independiente.
 `GameSettingsStore` recibe el backend de `Preferences` mediante `initialize()` (LibGDX) o
 `usePreferences(Preferences)` (pruebas en memoria, sin contexto gráfico). El árbol de clases debe
-incluir el adaptador de almacenamiento junto a la configuración de presentación.
+incluir el adaptador de almacenamiento junto a la configuración de presentación. Los objetivos de
+velocidad de fábrica viven en `FlightSpeeds.DEFAULTS`, derivado de `FlightTuning` (150/650/1000);
+un archivo escrito antes de COS-155 que guardó el antiguo Ultra de fábrica (750) se migra una sola
+vez a 1000 bajo la marca `astra.speed.ultraMigrated`, conservando Normal, Turbo y cualquier Ultra
+distinto de 750. La marca también se escribe al guardar velocidades, así que un 750 elegido después
+se conserva.
 `FlightCameraState` calcula posición, rumbo y zoom sin depender
 del nativo LibGDX y recibe el `CameraMode` y el `CameraDistance` al construirse; `FlightCamera` aplica ese estado a
 `OrthographicCamera`.
@@ -731,7 +736,15 @@ separado su energía, impactos, cañones, puntos y muertes; la pantalla
 reutiliza las texturas compartidas de Vesper y solo emite disparos cuando escolta y Astra coinciden
 en cámara. La aparición inicial del Raider principal permanece independiente.
 Las láminas v3 de Astra y v4 de Vesper Raider tienen cinco recortes: las tres poses de
-alabeo y dos de guiñada. Las variantes de disparo ya están preparadas:
+alabeo y dos de guiñada. Desde COS-150 el vuelo de Astra dibuja el alabeo del mismo lado en
+desplazamiento lateral y en giro yaw, y conserva los dos recortes de guiñada como arte medido de
+las láminas y sus variantes de disparo. La pose mostrada sigue gobernando región, colocación del
+sprite y bocas de cañón de `shotAt()`. `Astra.isTurning()` refleja la orden de giro de
+`FlightControls` (no la pose), por lo que el halo de `AstraLightEffect` mantiene su regla, y
+`Astra.lastAdvance()` publica un `Advance(serial, turnedWhileMoving)` inmutable que identifica el
+último avance integrado y si en un mismo paso actuaron el yaw del piloto y el desplazamiento
+mundial; la corrección de borde y el giro sin movimiento no lo activan. Las variantes de disparo
+ya están preparadas:
 `HeroShipSheet.NORMAL_FIRING` y `ACCELERATE_FIRING` definen los recortes propios
 de cada PNG; `firingSheets()` las enumera sin cambiar las referencias de tamaño
 de las láminas de vuelo. `VesperRaiderSheet.firingInternalPath()`, `firingSlice()`
@@ -1339,6 +1352,98 @@ continuar con la nave, efectos y explosiones. En guiñadas sostenidas, acumula e
 girado y dibuja halos suaves en ambas alas con radio proporcional, que se desvanecen al soltar el
 giro, morir Astra o terminar la fase. No modifica el sprite, su tamaño, movimiento ni reglas.
 
+### Estela de humo del viraje de Astra (COS-152, COS-153)
+
+`domain.effect.AstraYawSmokeTrail` es un modelo puramente presentacional de la estela de humo que
+Astra deja en el mundo durante un giro de yaw con desplazamiento. No importa LibGDX, input, cámara,
+controles ni daño: recibe el tramo de tiempo autorizado por la pantalla, si la cola está emitiendo y
+la posición mundial de la cola, y devuelve muestras ya ancladas en el mundo. Cada muestra guarda la
+posición exacta del instante de emisión y no se recalcula con el rumbo posterior, de modo que el arco
+dibujado por el casco permanece aunque la nave siga volando y en cualquiera de los dos modos de cámara.
+
+El pool se crea una sola vez con `MAX_SAMPLES = 72` y se recicla: un giro largo recicla la muestra más
+antigua en lugar de crecer, y el dibujo no asigna objetos por frame. El muestreo es por distancia
+(`SAMPLE_SPACING = 9` unidades) a lo largo de la trayectoria de la cola, así que la densidad no depende
+de los FPS. Un frame aporta como máximo 0,25 s de envejecimiento y hasta 8 muestras nuevas; un frame
+atrasado no vuelca una ráfaga sobre un segmento recto, sino que reinicia la separación desde la cola
+actual. La primera muestra de cada maniobra se coloca exactamente en la cola actual y detener la
+emisión borra el ancla de interpolación: dos virajes separados, una reaparición o un salto nunca quedan
+unidos por una línea recta. `SAMPLE_LIFETIME_SECONDS = 0,85` fija la vida de cada muestra;
+`alpha()` decrece de forma cuadrática desde el alfa con el que se emitió hasta cero y `radius()`
+crece suavemente con la edad. `clear()` descarta todo el estado para muerte, reaparición, fin de
+misión, abandono o nueva partida.
+
+`domain.effect.TurnSmokeIntensity` (COS-153) traduce la velocidad real integrada, no el modo
+seleccionado, a un factor de visibilidad continuo, monótono y acotado. El factor se queda en
+`SUBTLE_FACTOR = 1` hasta `SUBTLE_SPEED = 150` u/s, sube linealmente hasta `PEAK_FACTOR = 2,98` en
+`PEAK_SPEED = 1000` u/s y se recorta por encima; una lectura no finita o negativa vuelve al factor
+sutil. Como solo depende de la velocidad, dos naves a la misma velocidad real reciben el mismo
+factor, y cambiar de modo por sí solo no provoca saltos. `AstraYawSmokeTrail.update(delta,
+emitting, intensityFactor, tailX, tailY)` guarda `BASE_PEAK_ALPHA * factor` (recortado a 1) en cada
+muestra al emitirla; la sobrecarga de cuatro argumentos conserva el factor sutil. Así, acelerar en
+Turbo o Ultra solo refuerza el humo nuevo, el ya emitido mantiene su alfa inicial y al frenar las
+emisiones nuevas vuelven gradualmente al aspecto sutil. La curva es reutilizable por las estelas de
+los enemigos de COS-154.
+
+`infrastructure.gdx.screen.AstraYawSmokeEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
+Posee una única instancia del modelo y un `AlphaBlendPass`; no crea texturas, shaders ni otros recursos
+nativos y por tanto no implementa `Disposable`. `isEmitting(missionPlaying, astraActive, astra)` exige
+partida en curso, Astra viva/activa y que `Astra.lastAdvance().turnedWhileMoving()` sea verdadero: es la
+señal de COS-151, que solo se activa cuando el yaw del piloto desplazó realmente la nave en el paso
+integrado. Quedan excluidos el vuelo recto, el strafe puro, la corrección de borde, el giro frenado sin
+movimiento y los frames congelados; no lee teclas, pose ni temporizador de Ultra.
+`tailPoint(astra, tail)` sitúa la emisión detrás del casco: centro de la caja estable desplazado hacia
+atrás `TAIL_AFT_FRACTION = 0,55` de la altura con el vector de avance `(sin yaw, cos yaw)`, igual que el
+vuelo y las bocas de cañón, para ambos modelos de Astra. `update(delta, missionPlaying, astraActive,
+astra)` limpia la estela cuando la partida no está en curso, deja de emitir si Astra está inactiva y
+mantiene el humo ya emitido envejeciendo; la intensidad de cada emisión sale de
+`TurnSmokeIntensity.factorForSpeed(astra.flightSpeed())` (COS-153), de modo que la opacidad sigue la
+velocidad real y no el modo. El parpadeo de invulnerabilidad no reinicia la emisión.
+
+`drawWorldPass(gl, shapes, camera)` fija `camera.combined`, abre su propia sesión `ShapeRenderer.ShapeType.Filled`
+y la cierra (volcando los vértices) antes de devolver el control, con la composición alfa acotada por
+`AlphaBlendPass`. `PhaseOneScreen` lo llama después de dibujar el terreno y antes del lote del casco, de
+modo que la nave cubre su propia estela; los trazadores y el HUD conservan sus pasadas. El adaptador no
+se acopla al parpadeo del casco: el humo ya emitido sigue visible mientras se desvanece. La pantalla
+reinicia la estela en el cambio de `lifeGeneration`.
+
+### Estela de humo del viraje de los enemigos (COS-154)
+
+El modelo de humo de COS-152 vive ahora en `domain.effect.TurnSmokeTrail`; `AstraYawSmokeTrail` es su
+nombre publicado para la estela de Astra y no añade estado ni reglas. El mismo pool acotado, el muestreo
+por distancia, la vida de 0,85 s, el ancla por tramo y `TurnSmokeIntensity` se reutilizan para los
+enemigos, de modo que las dos estelas se comportan igual y no existen dos copias del modelo.
+
+`domain.effect.TurnSmokeTracker` es el estado presentacional de una aeronave enemiga. No conoce LibGDX,
+IA, combate ni cámara: la pantalla le entrega el tramo autorizado, si la aeronave está activa y el centro
+de su caja estable. Deriva el giro efectivo del cambio de dirección del desplazamiento real entre pasos,
+no del rumbo del sprite, porque conviven tres convenciones distintas (`VesperRaider` usa rumbo de
+descenso, `BastionBomber` mezcla `atan2(dx, dy)` en el tramo recto con la tangente de la órbita, y
+`BastionEscort` re-coloca y fija el rumbo del raider en formación) y la trayectoria es justo la curva que
+el humo debe dibujar. La cola se sitúa en `centro − dirección × TAIL_AFT_FRACTION × alto`, con
+`TAIL_AFT_FRACTION = 0,55` compartido con Astra.
+
+Solo emite con giro de al menos `MIN_TURN_RATE_DEGREES_PER_SECOND = 5°/s` (el mismo umbral semántico que
+la pose de viraje visible de Vesper), desplazamiento real mayor que `MIN_STEP_DISPLACEMENT = 0,02` u y
+velocidad plausible. Vuelo recto, nave estacionada, deriva lateral pura y frames congelados no emiten. Un
+salto de posición por encima de `MAX_PLAUSIBLE_SPEED = 1200` u/s (aparición, reaparición, recolocación en
+formación) o un giro superior a `MAX_TURN_RATE_DEGREES_PER_SECOND = 300°/s` cierran el ancla sin borrar
+el humo visible: las muestras siguen donde se emitieron, se disipan por edad y ninguna recta une dos
+vidas. La opacidad de cada emisión sale de `TurnSmokeIntensity.factorForSpeed(desplazamiento / tramo)`,
+así que a igual velocidad real la intensidad es igual, también para la escolta en formación, que no
+expone telemetría de velocidad propia.
+
+`infrastructure.gdx.screen.EnemyYawSmokeEffect` es el adaptador gráfico propiedad de `PhaseOneScreen`.
+Mantiene un `TurnSmokeTracker` por identidad de aeronave (el Vesper, cada escolta y el Bastion) en un
+`IdentityHashMap`, de modo que dos naves que viran a la vez dejan arcos independientes y cada una
+conserva su propio pool acotado. No crea recursos nativos y no implementa `Disposable`. `update(delta,
+missionPlaying, controller)` se llama con `activeSeconds` después de `advanceEncounter`, limpia todas
+las estelas cuando la partida deja de estar en curso y deja de emitir para una nave destruida sin
+descartar el humo existente; una entrada no observada se sigue envejeciendo hasta desaparecer y entonces
+se retira. `drawWorldPass(gl, shapes, camera)` reutiliza `AlphaBlendPass` y el color de humo de Astra en
+una sola sesión `Filled`; `PhaseOneScreen` la dibuja tras el terreno y la estela de Astra, y antes del
+lote de cascos. Los cambios de IA, combate y trayectorias quedan fuera de este efecto.
+
 `domain.weapon.GunBurstVisual` dibuja un proyectil trazador fino inspirado en
 `docs/art/rafagas-inspiration.png`: estela ámbar afilada, trazo dorado y punta
 amarilla clara. `draw(shapes, tipX, tipY, forwardX, forwardY)` recibe coordenadas
@@ -1860,6 +1965,16 @@ com.davidpe.cosmicaces
 |   |       1. isSpeedElevated()  2. update()  3. clear()
 |   |       4. isEngaged()  5. particleCount()  6. particle()
 |   |       +-- Particle: cabeza, cola, alfa, ancho y progreso proa→cola.
+|   |   +-- AstraYawSmokeTrail: nombre publicado de la estela de Astra; extiende TurnSmokeTrail (COS-152).
+|   |   +-- TurnSmokeTrail: pool mundial acotado de humo reutilizado por Astra y los enemigos (COS-154).
+|   |       1. update() [2 sobrecargas]  2. clear()  3. hasSamples()
+|   |       4. sampleCount()  5. sample()  6. isEmitting()
+|   |       +-- Sample: posición mundial congelada, edad, alfa inicial capturado y radio creciente.
+|   |   +-- TurnSmokeTracker: viraje efectivo por aeronave desde la trayectoria real y su estela (COS-154).
+|   |       1. update()  2. clear()  3. isEmitting()  4. measuredSpeed()
+|   |       5. hasSamples()  6. sampleCount()  7. sample()
+|   |   +-- TurnSmokeIntensity: factor de visibilidad continuo desde la velocidad real (COS-153).
+|   |       1. factorForSpeed()
 |   +-- weapon
 |   |   +-- GunTuning: cadencia, velocidad y duración del fogonazo del M61 Vulcan.
 |   |   +-- GunProjectile: proyectil rectilíneo con origen y rumbo congelados.
@@ -2018,6 +2133,14 @@ com.davidpe.cosmicaces
             +-- AstraAirflowEffect: trazos de aire procedurales anclados al casco (COS-137).
             |   1. isEligible()  2. update()  3. drawWorldPass()  4. reset()
             |   +-- Streak: destino mutable reutilizado por el dibujo, sin asignación por frame.
+            +-- AstraYawSmokeEffect: humo mundial tras la cola durante el viraje (COS-152).
+            |   1. isEmitting()  2. update()  3. drawWorldPass()  4. reset()
+            |   5. tailPoint()  6. sample()  7. sampleCount()
+            |   +-- Tail: punto de emisión mutable reutilizado, sin asignación por frame.
+            +-- EnemyYawSmokeEffect: estelas mundiales de los enemigos al virar (COS-154).
+            |   1. update()  2. drawWorldPass()  3. clear()  4. hasSamples()
+            |   5. isEmitting(identity)  6. sampleCount(identity)  7. sample(identity, index)
+            |   +-- Tracked: tracker de una aeronave y su último centro observado.
             +-- AlphaBlendPass: blending alfa acotado a una pasada y restauración de GL (COS-138).
             |   1. run(gl, pass)  2. factores RGB/alfa independientes preservados
             +-- FlightCameraState: estado por CameraMode (seguimiento interpolado o encuadre configurable

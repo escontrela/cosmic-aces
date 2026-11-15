@@ -15,6 +15,20 @@ public final class Astra extends Ship {
 
   public enum SpeedMode { NORMAL, TURBO, ULTRA }
 
+  /**
+   * Identity and outcome of the most recent validated flight advance, published for presentation
+   * effects. {@code serial} grows by one on every {@link #fly} call that integrates time and is
+   * invalidated on placement and respawn, so a consumer can distinguish a fresh advance from a
+   * repeated read of an older one. {@code turnedWhileMoving} is true only when the pilot's own yaw
+   * and a real world displacement happened inside the same integration step; border auto-steering
+   * and turning without displacement never set it.
+   */
+  public record Advance(long serial, boolean turnedWhileMoving) {
+    public Advance {
+      if (serial < 0) throw new IllegalArgumentException("Advance serial must be non-negative");
+    }
+  }
+
   public static final float DEFAULT_SPEED = FlightTuning.NORMAL_SPEED;
   // The tighter v3 slices need a larger pixel scale to retain the existing on-screen ship size.
   private static final float SPRITE_SCALE = 0.145f;
@@ -24,6 +38,8 @@ public final class Astra extends Ship {
   private Visuals visuals;
   private AstraVariant variant = AstraVariant.ORIGINAL;
   private HeroShipSheet.Pose pose = HeroShipSheet.Pose.NEUTRAL;
+  private boolean turning;
+  private Advance lastAdvance = new Advance(0L, false);
   private boolean accelerating;
   private boolean muzzleFlashVisible;
   private float yawDegrees;
@@ -73,7 +89,12 @@ public final class Astra extends Ship {
 
   /** True while the current flight input is yawing Astra rather than strafing. */
   public boolean isTurning() {
-    return pose == HeroShipSheet.Pose.YAW_LEFT || pose == HeroShipSheet.Pose.YAW_RIGHT;
+    return turning;
+  }
+
+  /** Snapshot of the last validated flight advance, for presentational effects such as the wake. */
+  public Advance lastAdvance() {
+    return lastAdvance;
   }
 
   public float flightSpeed() {
@@ -108,6 +129,8 @@ public final class Astra extends Ship {
     }
     setPosition(world.clampX(x, drawWidth()), world.clampY(y, drawHeight()));
     this.yawDegrees = normalizeYaw(yawDegrees);
+    turning = false;
+    lastAdvance = new Advance(lastAdvance.serial() + 1L, false);
   }
 
   /** Resets this life at the southern runway threshold, facing north like a newly launched plane. */
@@ -120,6 +143,7 @@ public final class Astra extends Ship {
     speedMode = SpeedMode.NORMAL;
     ultraRemainingSeconds = 0f;
     pose = HeroShipSheet.Pose.NEUTRAL;
+    turning = false;
     accelerating = false;
     muzzleFlashVisible = false;
   }
@@ -136,22 +160,29 @@ public final class Astra extends Ship {
       ultraUsed = true;
       ultraRemainingSeconds = FlightTuning.ULTRA_SECONDS;
     }
-    pose = controls.turning()
-        ? (controls.lateral() < 0 ? HeroShipSheet.Pose.YAW_LEFT : HeroShipSheet.Pose.YAW_RIGHT)
-        : controls.lateral() < 0 ? HeroShipSheet.Pose.LEFT
-        : controls.lateral() > 0 ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.NEUTRAL;
+    // Yawing reuses the bank of the same side, so the pose no longer tells a turn from a strafe.
+    turning = controls.turning();
+    int lateral = controls.lateral();
+    pose = lateral < 0 ? HeroShipSheet.Pose.LEFT
+        : lateral > 0 ? HeroShipSheet.Pose.RIGHT : HeroShipSheet.Pose.NEUTRAL;
+    boolean turnedWhileMoving = false;
     float remaining = deltaSeconds;
     while (remaining > 0f) {
       float step = Math.min(remaining, FlightTuning.MAX_STEP_SECONDS);
-      advanceStep(controls, step, world);
+      turnedWhileMoving |= advanceStep(controls, step, world);
       remaining -= step;
       if (remaining < 0.000001f) {
         break;
       }
     }
+    lastAdvance = new Advance(lastAdvance.serial() + 1L, turnedWhileMoving);
   }
 
-  private void advanceStep(FlightControls controls, float step, WorldBounds world) {
+  /**
+   * Integrates one bounded step and reports whether it both applied the pilot's own yaw and moved
+   * Astra in the world; border steering and stationary turns report false.
+   */
+  private boolean advanceStep(FlightControls controls, float step, WorldBounds world) {
     boolean ultra = ultraRemainingSeconds > 0f;
     speedMode = controls.down() ? SpeedMode.NORMAL
         : ultra ? SpeedMode.ULTRA : controls.up() ? SpeedMode.TURBO : SpeedMode.NORMAL;
@@ -166,7 +197,8 @@ public final class Astra extends Ship {
 
     int lateral = controls.lateral();
     boolean avoidingBorder = steerFromBorder(step, world);
-    if (controls.turning() && !avoidingBorder) {
+    boolean pilotYaw = controls.turning() && !avoidingBorder;
+    if (pilotYaw) {
       yawDegrees = normalizeYaw(yawDegrees + lateral * FlightTuning.YAW_RATE_DEGREES * step);
     }
     double radians = Math.toRadians(yawDegrees);
@@ -175,8 +207,11 @@ public final class Astra extends Ship {
     float strafe = controls.turning() ? 0f : lateral * FlightTuning.STRAFE_SPEED;
     float nextX = x() + (forwardX * flightSpeed + forwardY * strafe) * step;
     float nextY = y() + (forwardY * flightSpeed - forwardX * strafe) * step;
+    float previousX = x();
+    float previousY = y();
     setPosition(world.clampX(nextX, drawWidth()), world.clampY(nextY, drawHeight()));
     ultraRemainingSeconds = Math.max(0f, ultraRemainingSeconds - step);
+    return pilotYaw && (x() != previousX || y() != previousY);
   }
 
   private boolean steerFromBorder(float step, WorldBounds world) {

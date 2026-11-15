@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.davidpe.cosmicaces.application.PhaseOneGameController;
+import com.davidpe.cosmicaces.domain.player.FlightSpeeds;
 import com.davidpe.cosmicaces.infrastructure.gdx.input.ActionBindings;
 import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSettings;
 import com.davidpe.cosmicaces.infrastructure.gdx.input.ControllerSide;
@@ -22,6 +23,74 @@ class GameSettingsStoreTest {
   private static final String ASTRA_BOTTOM_FRACTION_KEY = "presentation.astraBottomFraction";
   private static final String ASTRA_MISSILES_KEY = "astra.missiles.perLife";
   private static final String GUIDED_MISSILE_SPEED_KEY = "weapon.guidedMissile.maxSpeed";
+  private static final String NORMAL_SPEED_KEY = "astra.speed.normal";
+  private static final String TURBO_SPEED_KEY = "astra.speed.turbo";
+  private static final String ULTRA_SPEED_KEY = "astra.speed.ultra";
+
+  @Test
+  void factoryFlightSpeedsReadBackWithoutWritingAndPersistEveryTarget() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(new FlightSpeeds(150, 650, 1000), store.flightSpeeds(),
+        "a fresh install uses the new factory Ultra target");
+    assertFalse(preferences.contains(NORMAL_SPEED_KEY));
+    assertEquals(0, preferences.flushCount(), "reading the defaults must not write them");
+
+    FlightSpeeds custom = new FlightSpeeds(200, 700, 1000);
+    store.saveFlightSpeeds(custom);
+    assertEquals(custom, storeWith(preferences).flightSpeeds());
+    assertEquals(200, preferences.getInteger(NORMAL_SPEED_KEY));
+    assertEquals(700, preferences.getInteger(TURBO_SPEED_KEY));
+    assertEquals(1000, preferences.getInteger(ULTRA_SPEED_KEY));
+  }
+
+  @Test
+  void legacyFactoryUltraMigratesOnceAndKeepsTheOtherTargets() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger(NORMAL_SPEED_KEY, 200).putInteger(TURBO_SPEED_KEY, 700)
+        .putInteger(ULTRA_SPEED_KEY, 750);
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(new FlightSpeeds(200, 700, 1000), store.flightSpeeds(),
+        "the old factory Ultra target becomes the new one");
+    assertEquals(200, preferences.getInteger(NORMAL_SPEED_KEY));
+    assertEquals(700, preferences.getInteger(TURBO_SPEED_KEY));
+    assertEquals(1000, preferences.getInteger(ULTRA_SPEED_KEY));
+    assertEquals(new FlightSpeeds(200, 700, 1000), storeWith(preferences).flightSpeeds(),
+        "the migration is not repeated on later reads");
+  }
+
+  @Test
+  void migrationKeepsACustomUltraAndALaterSevenFiftySelection() {
+    InMemoryPreferences customUltra = new InMemoryPreferences();
+    customUltra.putInteger(ULTRA_SPEED_KEY, 800);
+    GameSettingsStore customStore = storeWith(customUltra);
+
+    assertEquals(800, customStore.flightSpeeds().ultra(),
+        "an Ultra target other than the old factory value is a player choice");
+    assertEquals(800, customUltra.getInteger(ULTRA_SPEED_KEY));
+    assertEquals(0, customUltra.flushCount());
+
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger(ULTRA_SPEED_KEY, 750);
+    GameSettingsStore store = storeWith(preferences);
+    assertEquals(1000, store.flightSpeeds().ultra());
+    store.saveFlightSpeeds(store.flightSpeeds().withUltra(750));
+
+    assertEquals(750, storeWith(preferences).flightSpeeds().ultra(),
+        "after the one-time migration an explicit 750 is preserved");
+  }
+
+  @Test
+  void invalidSavedFlightSpeedsFallBackWithoutBeingRewritten() {
+    InMemoryPreferences preferences = new InMemoryPreferences();
+    preferences.putInteger(ULTRA_SPEED_KEY, 5000);
+    GameSettingsStore store = storeWith(preferences);
+
+    assertEquals(new FlightSpeeds(150, 650, 1000), store.flightSpeeds());
+    assertEquals(5000, preferences.getInteger(ULTRA_SPEED_KEY));
+  }
 
   @Test
   void missileCapacityDefaultsToTwoAndPersistsBothBounds() {

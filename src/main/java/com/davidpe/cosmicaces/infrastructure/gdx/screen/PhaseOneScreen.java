@@ -143,6 +143,10 @@ public final class PhaseOneScreen extends ScreenAdapter {
   private final ShipHitFlashRenderer hitFlashRenderer;
   private final AstraLightEffect astraLightEffect;
   private final AstraAirflowEffect astraAirflowEffect = new AstraAirflowEffect();
+  /** World-space yaw smoke; owns no native resource, so it needs no dispose step. */
+  private final AstraYawSmokeEffect astraYawSmokeEffect = new AstraYawSmokeEffect();
+  /** World-space enemy turn wakes; owns no native resource, so it needs no dispose step. */
+  private final EnemyYawSmokeEffect enemyYawSmokeEffect = new EnemyYawSmokeEffect();
   private final PhaseOneAudio audio;
   private final BitmapFont font;
   private final BitmapFont hudFont;
@@ -426,6 +430,8 @@ public final class PhaseOneScreen extends ScreenAdapter {
         flow.resetWeaponMode();
         controller.armAstraCannon();
         goForwardPromptVisible = true;
+        // A new life must not inherit the previous hull's smoke arc.
+        astraYawSmokeEffect.reset();
       }
       // Publish this frame's Astra losses before any snapshot read so the coordinator (and the
       // completion snapshot below) always sees the already-decremented pool.
@@ -518,9 +524,23 @@ public final class PhaseOneScreen extends ScreenAdapter {
     // keeps the existing cruise-speed guard, so braking to normal also clears it.
     astraAirflowEffect.update(activeSeconds, flow.isPlaying(), controller.isAstraActive(),
         controller.astra());
+    // Yaw smoke: emitted only by the pilot's own yaw while Astra really moves, stored in world
+    // coordinates and left to fade once the turn ends. It shares the mission-authorized slice and
+    // is independent from the hull's invulnerability blink.
+    astraYawSmokeEffect.update(activeSeconds, flow.isPlaying(), controller.isAstraActive(),
+        controller.astra());
+    // Enemy turn wakes share the same mission-authorized slice and world coordinates. They are fed
+    // after the encounters advanced this frame, so the smoke follows the arc the aircraft really
+    // flew; ending the run discards them and a dead enemy only stops emitting.
+    enemyYawSmokeEffect.update(activeSeconds, flow.isPlaying(), controller);
     batch.setProjectionMatrix(camera.combined);
     shapes.setProjectionMatrix(camera.combined);
     drawTerrain(terrainBounds);
+    // World-space smoke behind the tail, drawn after the terrain and before the hull batch so the
+    // ship always covers its own wake. It never rotates with the camera or the ship. Enemy wakes use
+    // the same pass and projection, each aircraft behind its own arc.
+    astraYawSmokeEffect.drawWorldPass(Gdx.gl, shapes, camera);
+    enemyYawSmokeEffect.drawWorldPass(Gdx.gl, shapes, camera);
     // Feed the cannon's own emission pulse into the ship visuals right before the draw, so the
     // muzzle flash and the burst share one clock and no extra timer exists in the screen.
     controller.astra().setMuzzleFlashVisible(controller.astraGun().flashVisible());

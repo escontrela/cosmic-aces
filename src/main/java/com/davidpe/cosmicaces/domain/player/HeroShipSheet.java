@@ -6,11 +6,16 @@ import java.util.List;
  * Metadata of the hero ship sprite sheets. Each sheet is described by its classpath location, its
  * dimensions and the pose slices measured from the alpha channel. The normal sheet shows the ship
  * cruising; the accelerate sheet is the same ship with the engine flame lit. Both v3 sheets lay
- * five images left to right: right bank, neutral, left bank, right yaw and left yaw.
+ * five images left to right: right bank, neutral, left bank, right yaw and left yaw. Astra flies
+ * with the bank of the same side in both lateral displacement and yaw (COS-150); the two yaw slices
+ * stay measured because they are part of the bundled art and its firing variants.
  */
 public final class HeroShipSheet {
 
-  /** The five ship poses in sheet order. Yaw poses are ready for directional flight. */
+  /**
+   * The five ship poses in sheet order. {@code YAW_RIGHT}/{@code YAW_LEFT} are retained sheet art
+   * that flight no longer selects; yawing draws the bank of the same side.
+   */
   public enum Pose {
     RIGHT,
     NEUTRAL,
